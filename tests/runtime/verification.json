@@ -1,0 +1,92 @@
+{
+  "status": "partial",
+  "testedAt": "2026-09-22",
+  "sourceCommit": null,
+  "repository": "https://github.com/phiraphatdev/ViperHub-NextGen",
+  "executor": "Potassium",
+  "executorVersion": "v2.4.9",
+  "os": "Windows",
+  "clientVersion": "0.739.0.7390687",
+  "game": "AnimeVanguards",
+  "placeId": 16146832113,
+  "placeVersion": 22443,
+  "artifactHashes": {
+    "loader": "591ae46a8e2b2ff5caef65405e54275d42bf1018666a151702324bf01d60d8aa",
+    "ui": "07bffde8cd7e897de1fc59b8cdaf49801f7d6d2905f891c19a06cc78b0c45188",
+    "AnimeVanguards": "f4cf0eb91883b70b6db7556c7ba8decccf8684f308dde99bd30aab9931649c59",
+    "AnimeExpeditions": "b7e57e7c3b602e9acbbaf8d051e3480832f905faec9cf71dc2d36191a77964e1"
+  },
+  "checks": [
+    {
+      "name": "Exact game detection and placeholder start",
+      "result": "passed",
+      "observed": "ready; alive=true; gameId=AnimeVanguards"
+    },
+    {
+      "name": "WindUI overview/settings/diagnostics construction",
+      "result": "passed",
+      "observed": "window present; selected tab 1; rendered overview text"
+    },
+    {
+      "name": "Toggle and slider callbacks in live UI objects",
+      "result": "passed",
+      "observed": "notifications=false; uiScale=1.05"
+    },
+    {
+      "name": "Dropdown selection",
+      "result": "passed",
+      "observed": "Dark selected through live control"
+    },
+    {
+      "name": "Keybind picker save",
+      "result": "passed",
+      "observed": "F4 read from picker Value and persisted"
+    },
+    {
+      "name": "Config write/readback",
+      "result": "passed",
+      "observed": "decoded file matches F4/1.05/false"
+    },
+    {
+      "name": "Destroy and reopen",
+      "result": "passed",
+      "observed": "old alive=false; old root Parent=nil; old cleanup count=0; new ready"
+    },
+    {
+      "name": "Config loaded after reopening loader",
+      "result": "passed",
+      "observed": "new store and UI read F4/1.05/false"
+    },
+    {
+      "name": "Duplicate root prevention",
+      "result": "passed",
+      "observed": "one WindUI root after repeated starts"
+    },
+    {
+      "name": "RightShift input",
+      "result": "passed",
+      "observed": "VirtualInputManager keyboard event closed UI, second event reopened it"
+    },
+    {
+      "name": "Restore test settings",
+      "result": "passed",
+      "observed": "notifications=true; uiScale=1; Dark; temporary audit state removed. Latest live config reported LeftAlt; the cause of that later key change was not established."
+    }
+  ],
+  "pending": [
+    "Rejoin persistence",
+    "Anime Expeditions live test",
+    "Delta and remaining executor/OS matrix",
+    "Physical/touch input coverage",
+    "Exhaustive third-party connection/task leak profiling",
+    "Published GitHub Raw release path",
+    "Committed source provenance"
+  ],
+  "limits": "Control values were exercised through live WindUI object methods; RightShift used simulated keyboard input. This is not a complete device compatibility certification.",
+  "testedAtTimezone": "UTC",
+  "latestConnectionCheck": {
+    "checkedAtUtc": "2026-09-22T22:46:04Z",
+    "state": "disconnected",
+    "note": "Earlier live observations retained; no new live result inferred"
+  }
+}

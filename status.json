@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "games": {
+    "AnimeVanguards": {
+      "state": "disabled",
+      "reason": "Foundation runtime validation pending"
+    },
+    "AnimeExpeditions": {
+      "state": "disabled",
+      "reason": "Foundation runtime validation pending"
+    }
+  }
+}

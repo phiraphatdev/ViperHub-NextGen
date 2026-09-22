@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "windui": {
+    "repository": "https://github.com/Footagesus/WindUI",
+    "commit": "7dd8a34a6bb59635c7b5f18ce9d46558a8cde138",
+    "version": "1.6.66",
+    "upstreamSha256": "06f880e8e086ab2e77d06ac754e4857c8851fc177eb29c43adf53e9e478e4ea0",
+    "vendoredSha256": "07bffde8cd7e897de1fc59b8cdaf49801f7d6d2905f891c19a06cc78b0c45188",
+    "patches": [
+      "Remove Synapse request fallback",
+      "Disable GUI protection hooks",
+      "Use six bundled icon tables instead of downloading mutable code",
+      "Route third-party print/warn to sanitized diagnostic sink"
+    ],
+    "licenseSha256": "44d844d76e61f8a2ce40cba22d1962d65153c8f140d94d52eb2cbad3c25f6020"
+  },
+  "tools": {
+    "darklua": {
+      "version": "0.19.0",
+      "url": "https://github.com/seaofvoices/darklua/releases/download/v0.19.0/darklua-windows-x86_64.zip",
+      "sha256": "e099313a768a0628bce861123dff6959f0c7dc49b5c353d9523a144c1fa2124e",
+      "executables": {
+        "darklua": "0c8df78d9d99e21f0a095e975bb7449e49155398d3f7cae46a9b0527fa491bd2"
+      }
+    },
+    "stylua": {
+      "version": "2.5.2",
+      "url": "https://github.com/JohnnyMorganz/StyLua/releases/download/v2.5.2/stylua-windows-x86_64.zip",
+      "sha256": "e77d0ea1226b8b389b43f702240091249a96eea25857281f90ea24d0eb9eb969",
+      "executables": {
+        "stylua": "b125543e4312c9b6b1a113040f2d217cc24e25c0b31d7445d9697fa7ad7e056d"
+      }
+    },
+    "luau": {
+      "version": "0.739",
+      "url": "https://github.com/luau-lang/luau/releases/download/0.739/luau-windows.zip",
+      "sha256": "c5db8c3273f056416da224fd3cf20aa4644afb5af8498303b6b87ca0bd843ad1",
+      "executables": {
+        "luau-analyze": "0ff813bbdda567f10ca077f7f75914e0acd25e5465a63cf41602c481b70e2795",
+        "luau-ast": "e5e68fadc88057c3f78a734a6b8d916d9bf785e58f27eb0179a8a4ef183b90c8",
+        "luau-compile": "fe685c8522730da3ac706beb97a2460afca668749de1c6167d4e5c78aec0b33b",
+        "luau": "d8f3850576c68bcb5b377ea214c787bda2d588c19b6bc0bc38abf95fe9bc022d"
+      }
+    }
+  }
+}
