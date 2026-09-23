@@ -1,7 +1,6 @@
 # คู่มือผู้ใช้ ViperHub NextGen
 
-> **สถานะ 0.1.0: development foundation — ยังไม่เปิดให้ใช้งานเป็น release**
-> `status.json` ตั้ง Anime Vanguards และ Anime Expeditions เป็น `disabled` ทั้งคู่
+> **สถานะ 0.1.0: beta foundation** — ตรวจ `status.json` ล่าสุดก่อนใช้งาน
 > และยังไม่มีฟีเจอร์ช่วยเล่นหรือควบคุมเกม เอกสารนี้อธิบาย UI และการทดสอบ foundation เท่านั้น
 
 ## 1. ViperHub NextGen คืออะไร
@@ -12,8 +11,8 @@ ViperHub NextGen เป็นโครงพื้นฐาน Luau สำหร
 
 | เกม | Place ID ที่ลงทะเบียน | สถานะ production | ผลทดสอบที่มี |
 | --- | ---: | --- | --- |
-| Anime Vanguards | `16146832113` | ปิดใช้งาน | Potassium v2.4.9 และ v2.5.0/Windows: foundation บางส่วน |
-| Anime Expeditions | `84515722934860` | ปิดใช้งาน | Potassium v2.5.0/Windows: foundation บางส่วน |
+| Anime Vanguards | `16146832113` | ดู `status.json` | มีหลักฐาน foundation บน Potassium/Windows |
+| Anime Expeditions | `84515722934860` | ดู `status.json` | มีหลักฐาน foundation บน Potassium/Windows |
 
 ข้อมูล Place ID ใน registry เป็น **exact match**: place อื่นใน universe เดียวกันไม่ถูกนับว่ารองรับโดยอัตโนมัติ
 ผล Potassium ข้างต้นบันทึกไว้ใน `tests/runtime/verification.json`, `tests/runtime/AnimeVanguards-2026-09-24.json` และ `tests/runtime/AnimeExpeditions-2026-09-24.json`; ยังไม่ยืนยันการ rejoin
@@ -22,7 +21,7 @@ ViperHub NextGen เป็นโครงพื้นฐาน Luau สำหร
 ## 2. ก่อนเริ่มใช้งาน
 
 - ใช้เฉพาะ Roblox client/สภาพแวดล้อมที่คุณได้รับอนุญาตให้ทดสอบ
-- ช่วงนี้ให้ทดสอบผ่าน **local smoke harness** เท่านั้น ไม่ใช้ URL ของ release ที่ยังไม่มี
+- ใช้ release loader เฉพาะ revision ที่ผู้ดูแลประกาศและเมื่อเกมใน `status.json` เป็น `ready`; นักพัฒนาใช้ local smoke harness ได้
 - ต้องมี `loadstring` และ Roblox runtime; การดาวน์โหลด release ในอนาคตต้องมี HTTP ที่ใช้งานได้
 - การบันทึกข้าม session ต้องมี `readfile`, `writefile`, `isfile`, `isfolder` และ `makefolder` ครบ
   ถ้าไม่มี UI ยังใช้ได้ แต่ Settings จะแสดง `Session only: filesystem APIs unavailable`
@@ -44,9 +43,9 @@ Set-Location 'C:\Users\phiraphat.pk\Documents\projects\_github\viper-hub-nextgen
 แล้วอ่านสถานะด้วย `tests/runtime/Readback.luau` ตาม [คู่มือทดสอบ](TESTING.md)
 การรันคำสั่งในเครื่องผ่าน ไม่ได้ยืนยันว่า UI ทำงานจริงใน Roblox
 
-**อย่าคัดลอก loader URL แบบเดาเอง:** ขณะนี้ `manifest.json` ยังเป็น `development`, `sourceCommit`
-และ `artifactRevision` ยังเป็น `null` และเกมยัง `disabled` ทั้งสองเกม
-หลัง release ที่ผ่านการตรวจจริงแล้วเท่านั้น จึงใช้ URL ที่ผู้ดูแลประกาศพร้อม commit ที่ตรวจสอบได้
+**อย่าคัดลอก loader URL แบบเดาเอง:** อ่าน `manifest.json.artifactRevision` จาก release commit ที่ประกาศ
+แล้วใช้ `https://raw.githubusercontent.com/phiraphatdev/ViperHub-NextGen/<artifactRevision>/dist/loader.lua`
+ตรวจ `status.json` ว่าเกมที่เข้าอยู่เป็น `ready`; foundation นี้ยังไม่มีฟีเจอร์ gameplay
 
 ## 4. เมื่อเปิด UI ได้แล้ว
 
