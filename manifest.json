@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "loaderVersion": "0.1.0",
   "minLoaderVersion": "0.1.0",
-  "sourceCommit": "4ff6095243aa610e5e264058ce431ced0b3a8bab",
+  "sourceCommit": "5a511f11a48f20f8a962d331f86fbc5a1a3a2819",
   "mode": "release",
   "repository": "phiraphatdev/ViperHub-NextGen",
-  "artifactRevision": "fad8a2188624d5709abdf4b53ad529664df611b2",
+  "artifactRevision": null,
   "artifacts": {
     "loader": {
       "path": "dist/loader.lua",
