@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {validateProject,validateSourceManifest,validateReleaseScope,validateEvidence,GAME_IDS} from './release-guards.mjs';
+import {deriveGames,validateProject,validateSourceManifest,validateReleaseScope,validateEvidence,GAME_IDS} from './release-guards.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 process.chdir(root);
 const read=p=>fs.readFileSync(p,'utf8');
@@ -18,9 +18,13 @@ const files=dir=>fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirecto
 const inputs=['src','vendor','scripts','tests','.darklua.json','.luaurc','stylua.toml','dependencies.lock.json'];
 const entries={loader:'src/bootstrap/Main.luau',AnimeVanguards:'src/games/AnimeVanguards/Entry.luau',AnimeExpeditions:'src/games/AnimeExpeditions/Entry.luau'};
 const paths={loader:'loader.lua',ui:'ui.lua',AnimeVanguards:'games/AnimeVanguards.lua',AnimeExpeditions:'games/AnimeExpeditions.lua'};
+function gameSources(){return {
+    registry:read('src/games/Registry.luau'),
+    metadata:Object.fromEntries(GAME_IDS.map(id=>[id,read('src/games/'+id+'/Metadata.luau')])),
+};}
 function projectCheck(manifest=json('manifest.json')){
-    const metadata=Object.fromEntries(GAME_IDS.map(id=>[id,read('src/games/'+id+'/Metadata.luau')]));
-    validateProject(manifest,json('status.json'),read('src/games/Registry.luau'),metadata);
+    const sources=gameSources();
+    validateProject(manifest,json('status.json'),sources.registry,sources.metadata);
 }
 function vendorCheck(){
     const lock=json('dependencies.lock.json');
@@ -47,6 +51,8 @@ function buildInto(directory){
 }
 function build(){
     const manifest=json('manifest.json');
+    const sources=gameSources();
+    manifest.games=deriveGames(sources.registry,sources.metadata);
     projectCheck(manifest);
     const release=process.argv.includes('--release');
     const tier=release ? (process.argv.includes('--tier') ? process.argv[process.argv.indexOf('--tier')+1] : 'stable') : null;

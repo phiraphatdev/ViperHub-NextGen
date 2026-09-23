@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {validateProject, validateSourceManifest, validateReleaseScope, validateEvidence, GAME_IDS, REQUIRED_CHECKS} from '../scripts/release-guards.mjs';
+import {deriveGames, validateProject, validateSourceManifest, validateReleaseScope, validateEvidence, GAME_IDS, REQUIRED_CHECKS} from '../scripts/release-guards.mjs';
 
 const read = p => fs.readFileSync(new URL('../' + p, import.meta.url), 'utf8');
 const manifest = JSON.parse(read('manifest.json'));
@@ -10,6 +10,13 @@ const metadata = Object.fromEntries(GAME_IDS.map(id => [id, read(`src/games/${id
 const clone = value => structuredClone(value);
 const rejects = (fn, message) => assert.throws(fn, {message: new RegExp(message)});
 validateProject(manifest, status, registry, metadata);
+assert.deepEqual(deriveGames(registry, metadata), manifest.games);
+const nextVersion = '9.9.9';
+const changedMetadata = {...metadata, AnimeVanguards: metadata.AnimeVanguards.replace(/local VERSION = "[^"]+"/, `local VERSION = "${nextVersion}"`)};
+const syncedManifest = {...manifest, games: deriveGames(registry, changedMetadata)};
+assert.equal(syncedManifest.games.AnimeVanguards.version, nextVersion);
+validateProject(syncedManifest, status, registry, changedMetadata);
+rejects(() => validateProject(manifest, status, registry, changedMetadata), 'metadata mismatch');
 const betaManifest = {...manifest, releaseTier: 'beta', releaseGames: ['AnimeVanguards']};
 validateReleaseScope(betaManifest, status);
 const wronglyReady = clone(status);

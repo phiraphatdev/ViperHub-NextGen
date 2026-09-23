@@ -65,6 +65,8 @@ scripts/setup-tools.ps1 bootstraps pinned development executables under ignored 
 darklua bundles relative Luau imports and removes type syntax; UI is copied from verified vendor source.
 Each artifact is syntax-compiled; a second build must match hashes exactly.
 Build metadata avoids wall-clock timestamps, random seeds and self-referential commit hashes.
+`Metadata.luau` เป็น source of truth ของข้อมูลเกม; build สร้าง `manifest.games` จาก source และ check ตรวจ drift แบบ read-only.
+`finalize-local-release.ps1 -Commit` รวมขั้น build และ local A/B commits หลังมี clean source S กับ runtime evidence แล้ว; ไม่ push/tag/เปิด status.
 
 ## Evidence behind decisions
 

@@ -28,21 +28,33 @@ export function readMetadata(source) {
     return {id, name, version, lastUpdated, placeIds};
 }
 
+export function deriveGames(registrySource, metadata) {
+    const registryEntries = [...registrySource.matchAll(/require\("\.\/(\w+)\/Metadata"\)/g)].map(m => m[1]);
+    if (registryEntries.length !== GAME_IDS.length || new Set(registryEntries).size !== GAME_IDS.length ||
+        registryEntries.some(id => !GAME_IDS.includes(id))) fail('Registry games differ from manifest');
+    const allPlaces = new Set();
+    const games = {};
+    for (const id of GAME_IDS) {
+        const game = readMetadata(metadata[id]);
+        if (game.id !== id) fail('Game metadata mismatch: ' + id);
+        for (const placeId of game.placeIds) {
+            if (allPlaces.has(placeId)) fail('Invalid or duplicate Place ID: ' + id);
+            allPlaces.add(placeId);
+        }
+        games[id] = {version: game.version, lastUpdated: game.lastUpdated, name: game.name, placeIds: game.placeIds};
+    }
+    return games;
+}
+
 export function validateProject(manifest, status, registrySource, metadata) {
     if (!record(manifest) || manifest.schemaVersion !== 1 || !keysEqual(manifest.games, GAME_IDS)) fail('Invalid manifest games');
     if (!record(status) || status.schemaVersion !== 1 || !keysEqual(status.games, GAME_IDS)) fail('Invalid status games');
-    const registryEntries = [...registrySource.matchAll(/require\("\.\/(\w+)\/Metadata"\)/g)].map(m => m[1]);
-    if (registryEntries.length !== GAME_IDS.length || new Set(registryEntries).size !== GAME_IDS.length || registryEntries.some(id => !GAME_IDS.includes(id))) fail('Registry games differ from manifest');
-    const allPlaces = new Set();
+    const games = deriveGames(registrySource, metadata);
     for (const id of GAME_IDS) {
-        const game = readMetadata(metadata[id]);
+        const game = games[id];
         const manifestGame = manifest.games[id];
-        if (game.id !== id || !record(manifestGame) || manifestGame.version !== game.version || manifestGame.lastUpdated !== game.lastUpdated ||
+        if (!record(manifestGame) || manifestGame.version !== game.version || manifestGame.lastUpdated !== game.lastUpdated ||
             manifestGame.name !== game.name || JSON.stringify(manifestGame.placeIds) !== JSON.stringify(game.placeIds)) fail('Game metadata mismatch: ' + id);
-        for (const placeId of game.placeIds) {
-            if (!Number.isSafeInteger(placeId) || placeId <= 0 || allPlaces.has(placeId)) fail('Invalid or duplicate Place ID: ' + id);
-            allPlaces.add(placeId);
-        }
         const state = status.games[id];
         if (!record(state) || !['disabled', 'maintenance', 'ready'].includes(state.state) || typeof state.reason !== 'string' || !state.reason.trim()) fail('Invalid game status: ' + id);
     }
