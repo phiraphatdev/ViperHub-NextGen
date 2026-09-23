@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {validateProject, validateSourceManifest, validateEvidence, GAME_IDS, REQUIRED_CHECKS} from '../scripts/release-guards.mjs';
+import {validateProject, validateSourceManifest, validateReleaseScope, validateEvidence, GAME_IDS, REQUIRED_CHECKS} from '../scripts/release-guards.mjs';
 
 const read = p => fs.readFileSync(new URL('../' + p, import.meta.url), 'utf8');
 const manifest = JSON.parse(read('manifest.json'));
@@ -10,6 +10,12 @@ const metadata = Object.fromEntries(GAME_IDS.map(id => [id, read(`src/games/${id
 const clone = value => structuredClone(value);
 const rejects = (fn, message) => assert.throws(fn, {message: new RegExp(message)});
 validateProject(manifest, status, registry, metadata);
+const betaManifest = {...manifest, releaseTier: 'beta', releaseGames: ['AnimeVanguards']};
+validateReleaseScope(betaManifest, status);
+const wronglyReady = clone(status);
+wronglyReady.games.AnimeExpeditions.state = 'ready';
+rejects(() => validateReleaseScope(betaManifest, wronglyReady), 'Ready game outside release scope');
+rejects(() => validateReleaseScope({...betaManifest, releaseGames: ['AnimeVanguards', 'AnimeVanguards']}, status), 'Invalid release scope metadata');
 const mixedPlaceMetadata = {...metadata, AnimeVanguards: metadata.AnimeVanguards.replace('placeIds = { 16146832113 }', 'placeIds = { 16146832113, "bad" }')};
 rejects(() => validateProject(manifest, status, registry, mixedPlaceMetadata), 'Invalid game metadata Place ID');
 
@@ -43,6 +49,22 @@ const passed = {
     })),
 };
 validateEvidence(passed, sha, manifest);
+const betaOne = clone(passed);
+betaOne.tier = 'beta';
+betaOne.targetGames = ['AnimeVanguards'];
+betaOne.limits = 'Potassium/Windows foundation only';
+betaOne.runs.pop();
+delete betaOne.runs[0].checks.rejoinPersistence;
+delete betaOne.runs[0].checks.cleanup;
+validateEvidence(betaOne, sha, manifest, {tier: 'beta', games: ['AnimeVanguards']});
+rejects(() => validateEvidence(betaOne, sha, manifest, {tier: 'beta', games: ['AnimeExpeditions']}), 'scope differs');
+rejects(() => validateEvidence(betaOne, sha, manifest, {tier: 'stable', games: ['AnimeVanguards']}), 'Stable release requires all');
+const betaWithoutLimits = clone(betaOne);
+delete betaWithoutLimits.limits;
+rejects(() => validateEvidence(betaWithoutLimits, sha, manifest, {tier: 'beta', games: ['AnimeVanguards']}), 'limitations must be documented');
+const betaMissingControl = clone(betaOne);
+delete betaMissingControl.runs[0].checks.controls;
+rejects(() => validateEvidence(betaMissingControl, sha, manifest, {tier: 'beta', games: ['AnimeVanguards']}), 'Incomplete runtime run');
 const partial = clone(passed);
 partial.status = 'partial';
 rejects(() => validateEvidence(partial, sha, manifest), 'runtime evidence');

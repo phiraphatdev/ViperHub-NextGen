@@ -5,6 +5,7 @@
 Public source; no obfuscation. WindUI via a pinned, locally adapted vendor bundle.
 Two independent placeholder games. PlaceId allowlist; no automatic support for all places in a universe.
 sourceCommit tracks source provenance; artifactRevision identifies the commit holding shipped dist files.
+Release policy has Dev, Beta and Stable tiers. Beta evidence is scoped to selected games; unpublished or unselected games stay disabled.
 No gameplay features or anti-cheat evasion.
 
 ## Boundaries
@@ -73,4 +74,3 @@ Build metadata avoids wall-clock timestamps, random seeds and self-referential c
 - darklua: https://github.com/seaofvoices/darklua — native module bundling/transformation tool.
 
 These are public-source observations, not a claim about private or leaked internal hub architecture.
-

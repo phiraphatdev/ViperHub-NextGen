@@ -4,7 +4,7 @@
 ![Runtime](https://img.shields.io/badge/runtime-Potassium_AV_partial-yellow)
 
 Multi-game Luau foundation พร้อม WindUI และโครงสร้างแยก game module
-สถานะปัจจุบัน: development scaffold; **ยังไม่มีฟีเจอร์ gameplay**
+สถานะปัจจุบัน: local release candidate สำหรับ beta foundation (ยังไม่เผยแพร่); **ยังไม่มีฟีเจอร์ gameplay**
 ตรวจ foundation/UI จริงบน Potassium/Windows ในทั้งสองเกมแล้วบางส่วน; ดู tests/runtime/verification.json และ tests/runtime/AnimeExpeditions-2026-09-24.json
 
 | เกม | Place ID ที่ตรวจสอบแล้ว | Module | Runtime |
@@ -56,4 +56,5 @@ Loader URL: **ยังไม่มี deployment URL จริง** เพร�
 - [Third-party attribution](THIRD_PARTY_NOTICES.md)
 
 status.json เริ่มด้วย disabled ทั้งสองเกมจนกว่าจะผ่าน runtime gate
+นโยบาย release แยก Dev/Beta/Stable; Beta เลือกเปิดเฉพาะเกมที่มีหลักฐานจริง ดู [Release](docs/RELEASING.md)
 ชุดทดสอบ local ใช้ artifact ที่ build บนเครื่อง จึงไม่ต้องเผยแพร่ GitHub หรือเปิด endpoint ภายนอกเพื่อทดสอบ

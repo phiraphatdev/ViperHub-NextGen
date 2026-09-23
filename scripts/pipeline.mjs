@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {validateProject,validateSourceManifest,validateEvidence,GAME_IDS} from './release-guards.mjs';
+import {validateProject,validateSourceManifest,validateReleaseScope,validateEvidence,GAME_IDS} from './release-guards.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 process.chdir(root);
 const read=p=>fs.readFileSync(p,'utf8');
@@ -49,6 +49,9 @@ function build(){
     const manifest=json('manifest.json');
     projectCheck(manifest);
     const release=process.argv.includes('--release');
+    const tier=release ? (process.argv.includes('--tier') ? process.argv[process.argv.indexOf('--tier')+1] : 'stable') : null;
+    const gamesArgument=process.argv.includes('--games') ? process.argv[process.argv.indexOf('--games')+1] : null;
+    const releaseGames=gamesArgument ? gamesArgument.split(',') : GAME_IDS;
     let sourceCommit=null;
     if(release){
         sourceCommit=git('rev-parse','HEAD');
@@ -57,15 +60,17 @@ function build(){
         if(!repository?.match(/^[\w-]+\/[\w.-]+$/))throw Error('An actual owner/repository is required');
         // Actual runtime evidence is a gate, not an inferred result of unit tests.
         const evidence=json('work/runtime-verification.json');
-        validateEvidence(evidence,sourceCommit,manifest);
+        validateEvidence(evidence,sourceCommit,manifest,{tier,games:releaseGames});
         manifest.repository=repository;
     }
     manifest.sourceCommit=sourceCommit;manifest.mode=release?'release':'development';
+    if(release){manifest.releaseTier=tier;manifest.releaseGames=releaseGames;}
     manifest.artifactRevision=null;
     manifest.artifacts=buildInto('dist');
     write('manifest.json',JSON.stringify(manifest,null,2)+'\n');
     write('manifest.txt',[
         'ViperHub NextGen '+manifest.version,'Mode: '+manifest.mode,
+        ...(release ? ['Tier: '+tier,'Games: '+releaseGames.join(',')] : []),
         'sourceCommit: '+(sourceCommit??'unavailable; uncommitted development build'),
         ...Object.entries(manifest.artifacts).map(([id,a])=>id+' '+a.sha256+' '+a.bytes+' bytes'),'',
     ].join('\n'));
@@ -80,6 +85,7 @@ function verify(development=false){
     if(Object.keys(m.artifacts).length!==4)throw Error('Missing artifacts');
     if(!development){
         if(m.mode!=='release'||!m.sourceCommit?.match(/^[a-f0-9]{40}$/)||!m.artifactRevision?.match(/^[a-f0-9]{40}$/))throw Error('Not a published release manifest');
+        validateReleaseScope(m,json('status.json'));
         git('cat-file','-e',m.sourceCommit+'^{commit}');
         if(git('diff',m.sourceCommit,'--',...inputs))throw Error('Build inputs differ from sourceCommit');
         if(git('ls-files','--others','--exclude-standard','--',...inputs))throw Error('Untracked build inputs');

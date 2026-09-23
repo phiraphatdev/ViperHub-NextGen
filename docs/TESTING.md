@@ -29,10 +29,11 @@ rerun teardown และ startup failure cleanup แต่ไม่จำลอ�
 ชื่อ/เวอร์ชัน executor, OS, PlaceId, source commit, artifact hash และผลแต่ละข้อเป็นหลักฐานที่ต้องบันทึก
 tests/runtime/verification.json บันทึกผลจริงแบบ partial พร้อม artifact hashes
 สำหรับ release ให้สร้าง work/runtime-verification.json ซึ่งอยู่นอก Git commit ที่กำลังทดสอบ
-รูปแบบ release: status=`passed`, sourceCommit, artifactHashes และ runs อย่างน้อยหนึ่งรายการต่อเกม โดยไม่กำหนด executor ล่วงหน้า
+รูปแบบ release: status=`passed`, sourceCommit, artifactHashes, tier (`beta` หรือ `stable`), targetGames และ runs อย่างน้อยหนึ่งรายการต่อเกมใน scope โดยไม่กำหนด executor ล่วงหน้า
 แต่ละคู่ gameId/executor ต้องไม่ซ้ำกัน และทุก run ที่ส่งมาต้องผ่านครบ
 แต่ละ run ต้องมี gameId, executor, executorVersion, clientVersion, os, testedAt (ISO timestamp), placeId, status=`passed`
-และ checks object ที่มี startup/ui/controls/configReadback/rejoinPersistence/cleanup แต่ละอันมี result=`passed` และ observed ที่เป็นผลอ่านกลับจริง
+และ checks object: Beta บังคับ startup/ui/controls/configReadback; Stable บังคับเพิ่ม rejoinPersistence/cleanup แต่ละอันมี result=`passed` และ observed ที่เป็นผลอ่านกลับจริง
+Beta ต้องมี `limits` บอกสิ่งที่ยังไม่ผ่านหรือไม่ได้ทดสอบอย่างชัดเจน ผลของเกมที่ไม่ได้เลือกไม่ขวาง beta แต่เกมนั้นต้องคง `disabled`
 `tests/release-guards.test.mjs` ใช้ข้อมูล fixture จำลองเพื่อทดสอบ validator เท่านั้น ไม่ใช่หลักฐาน runtime
 ห้ามเติม passed ถ้าไม่มี client หรืออาศัย mock tests อย่างเดียว
 

@@ -1,6 +1,18 @@
 # Releasing
 
-มี source commit S ในเครื่องสำหรับเตรียม release แล้ว (`git rev-parse HEAD`); ยังไม่ tag, push หรือเผยแพร่
+ใช้ `git rev-parse HEAD` ตรวจ source commit ของ candidate ปัจจุบัน; ยังไม่ tag, push หรือเผยแพร่
+
+## ระดับการปล่อย
+
+| ระดับ | เกณฑ์ | ขอบเขต |
+| --- | --- | --- |
+| Dev | Local unit/mock/build ผ่าน | ใช้ local harness; ไม่เปิด production |
+| Beta | หลักฐานจริงของ startup, UI, controls และ config readback อย่างน้อยหนึ่ง environment **ต่อเกมที่จะเปิด** พร้อมระบุข้อจำกัด | เกมอื่นคง `disabled`; ไม่อ้างรองรับ executor อื่น |
+| Stable | เพิ่ม rejoin persistence และ cleanup สำหรับเกมที่ลงทะเบียนทั้งหมด | ตรวจเส้นทาง published loader ก่อนประกาศ |
+
+Beta ไม่บังคับรายชื่อ executor หรือให้ทุกเกมใน registry ผ่านพร้อมกัน แต่ไม่ผ่อน hash, sourceCommit,
+artifactRevision, การตรวจรูปแบบข้อมูล หรือการหยุดโหลดอย่างปลอดภัย การทดสอบผ่านด้วย control-object methods
+ต้องอธิบายว่าไม่ได้รับรอง physical/touch input; ห้ามเขียนเป็นผลอุปกรณ์จริง
 
 ## Three revisions avoid self-referential hashes
 
@@ -25,9 +37,11 @@ S ไม่จำเป็นต้องเท่ากับ A หรือ B 
 10. Tag B ด้วย semantic version vX.Y.Z และเผยแพร่เมื่อผู้ใช้อนุมัติ
 
 Build release ปฏิเสธ source ที่ไม่ clean, repository ที่ไม่ถูกต้อง หรือ runtime evidence ที่ไม่ตรง source commit/artifact hashes
-Release gate ต้องมีผล `passed` อย่างน้อยหนึ่ง runtime run ต่อเกม โดยไม่ล็อกรายชื่อ executor
+Stable gate ต้องมีผล `passed` อย่างน้อยหนึ่ง runtime run ต่อทุกเกมที่ลงทะเบียน
+Beta gate ต้องมีผล `passed` อย่างน้อยหนึ่ง runtime run ต่อเกมที่ระบุใน `-Games` เท่านั้น
 หลักฐานแต่ละ run ต้องระบุชื่อ executor ที่ใช้จริง และการผ่านบนตัวหนึ่งไม่ใช่คำรับรองว่าใช้ได้กับตัวอื่น
-แต่ละ run ต้องมี executor/client version, OS, เวลา, Place ID และผล startup, UI, controls, config readback, rejoin persistence และ cleanup พร้อม observation
+ทุก run ต้องมี executor/client version, OS, เวลา, Place ID และ observation; Beta บังคับ startup, UI, controls, config readback ส่วน Stable เพิ่ม rejoin persistence และ cleanup
+ตัวอย่าง Beta: `./scripts/build.ps1 -Release -Tier Beta -Games AnimeVanguards,AnimeExpeditions -Repository 'phiraphatdev/ViperHub-NextGen'`
 ไม่มี MCP หรือหลักฐานไม่ครบให้คง status เป็น partial/disabled และห้ามอ้างว่า release พร้อม
 `verify-release` ตรวจ immutable source fields ใน manifest เทียบ S; อนุญาตเฉพาะ build/publication fields ที่ต้องเปลี่ยนใน A/B
 `status.json` เป็น operational metadata ที่อาจเปลี่ยนใน B จึงตรวจ schema/game keys/state แต่ไม่ได้อ้างว่า sourceCommit ผูก reason/status แบบ byte-for-byte
