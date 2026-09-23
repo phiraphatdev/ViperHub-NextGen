@@ -1,0 +1,50 @@
+{
+  "status": "partial",
+  "testedAtUtc": "2026-09-23T20:55:24Z",
+  "sourceCommit": null,
+  "mode": "development local harness",
+  "clientId": "4a106fcb-9ed2-4ef8-9c66-6989f236421b",
+  "placeId": 16146832113,
+  "placeVersion": 22443,
+  "gameId": "AnimeVanguards",
+  "executor": "Potassium",
+  "executorVersion": "v2.5.0",
+  "os": "Windows",
+  "robloxClientVersion": "0.740.0.7400927",
+  "harnessSha256": "15b6f785d82a1b3ff3b32af012ef2a962525c482e8db78adc0e52251db754027",
+  "checks": [
+    {
+      "name": "Exact place and foundation startup",
+      "result": "passed",
+      "observed": "get-game-info PlaceId=16146832113, PlaceVersion=22443; session ready, alive=true, gameId=AnimeVanguards, diagnostics PLACEHOLDER_STARTED and FOUNDATION_READY"
+    },
+    {
+      "name": "WindUI overview and settings construction",
+      "result": "passed",
+      "observed": "Window captured in Roblox screenshot with Anime Vanguards overview, Settings and Diagnostics tabs; five Settings controls present"
+    },
+    {
+      "name": "Settings callbacks and file readback",
+      "result": "passed",
+      "observed": "Live control Set changed notifications=false and uiScale=1.05; Save callback ran; config store and executor file readback contained both values"
+    },
+    {
+      "name": "Loader rerun and config reload",
+      "result": "passed",
+      "observed": "Old session stopped/alive=false/cleanupCount=0; old Window parent detached; new session ready/alive=true; new config read notifications=false and uiScale=1.05"
+    },
+    {
+      "name": "Restore settings",
+      "result": "passed",
+      "observed": "Controls restored notifications=true and uiScale=1; Save callback ran; executor file and config store readback matched restored values; temporary audit state removed"
+    }
+  ],
+  "pending": [
+    "Roblox rejoin persistence",
+    "Physical keyboard and touch input on this source",
+    "Full WindUI resource leak profiling",
+    "Published GitHub Raw release path",
+    "Committed source provenance"
+  ],
+  "limits": "Control values were exercised through live WindUI object methods, not physical device input. No gameplay feature or remote action was tested."
+}

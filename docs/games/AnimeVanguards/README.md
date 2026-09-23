@@ -9,5 +9,4 @@ Features: placeholder lifecycle and foundation UI only; no gameplay features.
 Usage: start the generated local smoke harness in this place and inspect Overview.
 Production availability: disabled pending actual runtime evidence.
 Game patch compatibility: unknown; a public page identity is not a runtime compatibility test.
-Executor compatibility: Potassium v2.4.9 / Windows foundation checks passed partially; other targets unverified. See ../../EXECUTORS.md.
-
+Executor compatibility: Potassium v2.4.9 / Windows and current-source Potassium v2.5.0 / Windows foundation checks passed partially; other environments unverified. See ../../EXECUTORS.md and ../../../tests/runtime/AnimeVanguards-2026-09-24.json.

@@ -9,5 +9,4 @@ Features: placeholder lifecycle and foundation UI only; no gameplay features.
 Usage: start the generated local smoke harness in this place and inspect Overview.
 Production availability: disabled pending actual runtime evidence.
 Game patch compatibility: unknown; a public page identity is not a runtime compatibility test.
-Executor compatibility: all targets unverified; see ../../EXECUTORS.md.
-
+Executor compatibility: Potassium v2.5.0 / Windows foundation partially verified on 2026-09-24; no compatibility claim for other environments. See ../../EXECUTORS.md and ../../../tests/runtime/AnimeExpeditions-2026-09-24.json.

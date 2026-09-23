@@ -67,8 +67,17 @@ function ManifestClient.validate(value: unknown, repository: string): Types.Mani
             or not Version.parse(entry.version)
             or type(entry.lastUpdated) ~= "string"
             or not string.match(entry.lastUpdated :: string, "^%d%d%d%d%-%d%d%-%d%d$")
+            or type(entry.name) ~= "string"
+            or #entry.name == 0
+            or type(entry.placeIds) ~= "table"
+            or #entry.placeIds == 0
         then
             return nil
+        end
+        for _, placeId in entry.placeIds do
+            if not Validation.isFinite(placeId) or placeId % 1 ~= 0 or placeId <= 0 then
+                return nil
+            end
         end
     end
     return data :: any

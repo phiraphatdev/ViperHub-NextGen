@@ -29,11 +29,18 @@ rerun teardown และ startup failure cleanup แต่ไม่จำลอ�
 ชื่อ/เวอร์ชัน executor, OS, PlaceId, source commit, artifact hash และผลแต่ละข้อเป็นหลักฐานที่ต้องบันทึก
 tests/runtime/verification.json บันทึกผลจริงแบบ partial พร้อม artifact hashes
 สำหรับ release ให้สร้าง work/runtime-verification.json ซึ่งอยู่นอก Git commit ที่กำลังทดสอบ
-รูปแบบอย่างน้อย: status, sourceCommit, executor, clientVersion, os, checks พร้อมหลักฐานจริง
+รูปแบบ release: status=`passed`, sourceCommit, artifactHashes และ runs อย่างน้อยหนึ่งรายการต่อเกม โดยไม่กำหนด executor ล่วงหน้า
+แต่ละคู่ gameId/executor ต้องไม่ซ้ำกัน และทุก run ที่ส่งมาต้องผ่านครบ
+แต่ละ run ต้องมี gameId, executor, executorVersion, clientVersion, os, testedAt (ISO timestamp), placeId, status=`passed`
+และ checks object ที่มี startup/ui/controls/configReadback/rejoinPersistence/cleanup แต่ละอันมี result=`passed` และ observed ที่เป็นผลอ่านกลับจริง
+`tests/release-guards.test.mjs` ใช้ข้อมูล fixture จำลองเพื่อทดสอบ validator เท่านั้น ไม่ใช่หลักฐาน runtime
 ห้ามเติม passed ถ้าไม่มี client หรืออาศัย mock tests อย่างเดียว
 
 ## Current result
 
+2026-09-24: Anime Vanguards current-source foundation partially verified on Potassium v2.5.0 / Windows using the local harness. Startup, visible UI, settings file readback, loader rerun and restoration were observed. Rejoin and physical input remain pending. See ../tests/runtime/AnimeVanguards-2026-09-24.json.
+
+2026-09-24: Anime Expeditions foundation partially verified on Potassium v2.5.0 / Windows using the local harness. Startup, visible UI, settings file readback, loader rerun and restoration were observed. Rejoin and physical input remain pending. See ../tests/runtime/AnimeExpeditions-2026-09-24.json.
+
 A client connected during the task: Potassium v2.4.9 / Windows, Anime Vanguards place version 22443. Foundation startup, live control methods, config write/readback, destroy/reopen persistence and simulated RightShift keyboard toggling passed. Rejoin and the other game/executors remain pending. See ../tests/runtime/verification.json.
 Artifact and local mock checks are reproducible using check.ps1; console output is the current local evidence.
-

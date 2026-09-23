@@ -10,8 +10,8 @@
   "artifacts": {
     "loader": {
       "path": "dist/loader.lua",
-      "sha256": "591ae46a8e2b2ff5caef65405e54275d42bf1018666a151702324bf01d60d8aa",
-      "bytes": 45964
+      "sha256": "f2fb723496c37e72c73abd70755ffb251f9c7179373f6604e01747667fcfe1ac",
+      "bytes": 46324
     },
     "ui": {
       "path": "dist/ui.lua",
@@ -32,11 +32,19 @@
   "games": {
     "AnimeVanguards": {
       "version": "0.1.0",
-      "lastUpdated": "2026-09-22"
+      "lastUpdated": "2026-09-22",
+      "name": "Anime Vanguards",
+      "placeIds": [
+        16146832113
+      ]
     },
     "AnimeExpeditions": {
       "version": "0.1.0",
-      "lastUpdated": "2026-09-22"
+      "lastUpdated": "2026-09-22",
+      "name": "Anime Expeditions",
+      "placeIds": [
+        84515722934860
+      ]
     }
   }
 }

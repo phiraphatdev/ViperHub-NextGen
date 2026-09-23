@@ -5,12 +5,12 @@
 
 Multi-game Luau foundation พร้อม WindUI และโครงสร้างแยก game module
 สถานะปัจจุบัน: development scaffold; **ยังไม่มีฟีเจอร์ gameplay**
-ตรวจ foundation/UI จริงบน Potassium v2.4.9 / Windows ใน Anime Vanguards แล้วบางส่วน; ดู tests/runtime/verification.json
+ตรวจ foundation/UI จริงบน Potassium/Windows ในทั้งสองเกมแล้วบางส่วน; ดู tests/runtime/verification.json และ tests/runtime/AnimeExpeditions-2026-09-24.json
 
 | เกม | Place ID ที่ตรวจสอบแล้ว | Module | Runtime |
 | --- | --- | --- | --- |
 | Anime Vanguards | 16146832113 | Placeholder 0.1.0 | Potassium/Windows: partial |
-| Anime Expeditions | 84515722934860 | Placeholder 0.1.0 | Unverified |
+| Anime Expeditions | 84515722934860 | Placeholder 0.1.0 | Potassium/Windows: partial |
 
 การรองรับนี้คือการตรวจตัวเกมและโครง module เท่านั้น ไม่ครอบคลุมทุกแมพใน Universe
 
@@ -46,6 +46,7 @@ Loader URL: **ยังไม่มี deployment URL จริง** เพร�
 
 ## เอกสาร
 
+- [คู่มือผู้ใช้](docs/USER_MANUAL.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [เพิ่ม game module](docs/CONTRIBUTING.md)
 - [Executor compatibility](docs/EXECUTORS.md)
@@ -56,4 +57,3 @@ Loader URL: **ยังไม่มี deployment URL จริง** เพร�
 
 status.json เริ่มด้วย disabled ทั้งสองเกมจนกว่าจะผ่าน runtime gate
 ชุดทดสอบ local ใช้ artifact ที่ build บนเครื่อง จึงไม่ต้องเผยแพร่ GitHub หรือเปิด endpoint ภายนอกเพื่อทดสอบ
-

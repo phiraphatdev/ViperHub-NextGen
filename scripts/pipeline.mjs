@@ -4,6 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {validateProject,validateSourceManifest,validateEvidence,GAME_IDS} from './release-guards.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 process.chdir(root);
 const read=p=>fs.readFileSync(p,'utf8');
@@ -17,6 +18,10 @@ const files=dir=>fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirecto
 const inputs=['src','vendor','scripts','tests','.darklua.json','.luaurc','stylua.toml','dependencies.lock.json'];
 const entries={loader:'src/bootstrap/Main.luau',AnimeVanguards:'src/games/AnimeVanguards/Entry.luau',AnimeExpeditions:'src/games/AnimeExpeditions/Entry.luau'};
 const paths={loader:'loader.lua',ui:'ui.lua',AnimeVanguards:'games/AnimeVanguards.lua',AnimeExpeditions:'games/AnimeExpeditions.lua'};
+function projectCheck(manifest=json('manifest.json')){
+    const metadata=Object.fromEntries(GAME_IDS.map(id=>[id,read('src/games/'+id+'/Metadata.luau')]));
+    validateProject(manifest,json('status.json'),read('src/games/Registry.luau'),metadata);
+}
 function vendorCheck(){
     const lock=json('dependencies.lock.json');
     if(digest('vendor/WindUI/source.lua')!==lock.windui.vendoredSha256)throw Error('WindUI checksum mismatch');
@@ -42,6 +47,7 @@ function buildInto(directory){
 }
 function build(){
     const manifest=json('manifest.json');
+    projectCheck(manifest);
     const release=process.argv.includes('--release');
     let sourceCommit=null;
     if(release){
@@ -51,7 +57,7 @@ function build(){
         if(!repository?.match(/^[\w-]+\/[\w.-]+$/))throw Error('An actual owner/repository is required');
         // Actual runtime evidence is a gate, not an inferred result of unit tests.
         const evidence=json('work/runtime-verification.json');
-        if(evidence.status!=='passed'||evidence.sourceCommit!==sourceCommit||!evidence.clientVersion||!evidence.os)throw Error('Current-source runtime evidence is required');
+        validateEvidence(evidence,sourceCommit,manifest);
         manifest.repository=repository;
     }
     manifest.sourceCommit=sourceCommit;manifest.mode=release?'release':'development';
@@ -66,7 +72,7 @@ function build(){
     console.log('Built '+Object.keys(manifest.artifacts).length+' artifacts ('+manifest.mode+')');
 }
 function verify(development=false){
-    vendorCheck();const m=json('manifest.json');
+    vendorCheck();const m=json('manifest.json');projectCheck(m);
     for(const [id,a]of Object.entries(m.artifacts)){
         if(a.path!=='dist/'+paths[id])throw Error('Unexpected artifact path');
         if(digest(a.path)!==a.sha256||fs.statSync(a.path).size!==a.bytes)throw Error('Artifact mismatch: '+id);
@@ -77,6 +83,7 @@ function verify(development=false){
         git('cat-file','-e',m.sourceCommit+'^{commit}');
         if(git('diff',m.sourceCommit,'--',...inputs))throw Error('Build inputs differ from sourceCommit');
         if(git('ls-files','--others','--exclude-standard','--',...inputs))throw Error('Untracked build inputs');
+        validateSourceManifest(m,JSON.parse(git('show',m.sourceCommit+':manifest.json')));
         for(const a of Object.values(m.artifacts)){
             const bytes=execFileSync('git',['show',m.artifactRevision+':'+a.path],{cwd:root,maxBuffer:16*1024*1024});
             if(crypto.createHash('sha256').update(bytes).digest('hex')!==a.sha256)throw Error('Published revision mismatch');
@@ -97,6 +104,8 @@ function harness(){
 }
 function check(){
     vendorCheck();
+    projectCheck();
+    console.log(run('node',['tests/release-guards.test.mjs']));
     console.log(run(tool('stylua'),['--check','src','tests']));
     console.log(run(tool('luau','luau-analyze'),['src','tests']));
     for(const p of files('src').filter(p=>p.endsWith('.luau'))){

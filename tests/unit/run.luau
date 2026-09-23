@@ -217,8 +217,18 @@ local function validManifest(): any
         minLoaderVersion = "0.1.0",
         artifacts = artifacts,
         games = {
-            AnimeVanguards = { version = "0.1.0", lastUpdated = "2026-09-22" },
-            AnimeExpeditions = { version = "0.1.0", lastUpdated = "2026-09-22" },
+            AnimeVanguards = {
+                version = "0.1.0",
+                lastUpdated = "2026-09-22",
+                name = "Anime Vanguards",
+                placeIds = { 16146832113 },
+            },
+            AnimeExpeditions = {
+                version = "0.1.0",
+                lastUpdated = "2026-09-22",
+                name = "Anime Expeditions",
+                placeIds = { 84515722934860 },
+            },
         },
     }
 end

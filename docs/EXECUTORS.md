@@ -2,18 +2,15 @@
 
 ## Evidence status
 
-| Target | Priority | OS/version | Actual result |
-| --- | --- | --- | --- |
-| Delta | 1 | Not supplied | Unverified |
-| Potassium | 2 | v2.4.9 / Windows | Anime Vanguards foundation partially verified |
-| Volt | 3 | Not supplied | Unverified |
-| Wave | 4 | Not supplied | Unverified |
-| madium | 5 | Identity/version not confirmed | Unverified |
-| Real | 6 | Identity/version not confirmed | Unverified |
+| Executor actually observed | OS/version | Actual result |
+| --- | --- | --- |
+| Potassium | v2.4.9 / Windows | Anime Vanguards foundation partially verified |
+| Potassium | v2.5.0 / Windows | Anime Expeditions foundation partially verified |
+| Potassium | v2.5.0 / Windows | Anime Vanguards current-source foundation partially verified |
 
-The original requirement mentioned both four and six executors. All six are recorded as targets;
-the mandatory release matrix must be agreed before a compatibility claim or release.
-No name-based compatibility assumptions are encoded in the loader.
+ไม่มี allowlist หรือ mandatory matrix ของ executor ใน loader หรือ release gate
+ความเข้ากันได้ตัดสินจาก capability detection และหลักฐานที่ทดสอบจริงเป็นราย environment เท่านั้น
+ผลของ executor หนึ่งไม่ยืนยันผลของ executor อื่น
 
 ## APIs and fallback
 

@@ -17,6 +17,6 @@ export type Manifest = {
     repository: string?,
     artifactRevision: string?,
     artifacts: { [string]: Artifact },
-    games: { [string]: { version: string, lastUpdated: string } },
+    games: { [string]: { version: string, lastUpdated: string, name: string, placeIds: { number } } },
 }
 return {}
