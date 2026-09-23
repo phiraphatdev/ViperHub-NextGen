@@ -18,11 +18,13 @@ assert.equal(syncedManifest.games.AnimeVanguards.version, nextVersion);
 validateProject(syncedManifest, status, registry, changedMetadata);
 rejects(() => validateProject(manifest, status, registry, changedMetadata), 'metadata mismatch');
 const betaManifest = {...manifest, releaseTier: 'beta', releaseGames: ['AnimeVanguards']};
-validateReleaseScope(betaManifest, status);
-const wronglyReady = clone(status);
+const scopedStatus = clone(status);
+for (const gameId of GAME_IDS) scopedStatus.games[gameId].state = 'disabled';
+validateReleaseScope(betaManifest, scopedStatus);
+const wronglyReady = clone(scopedStatus);
 wronglyReady.games.AnimeExpeditions.state = 'ready';
 rejects(() => validateReleaseScope(betaManifest, wronglyReady), 'Ready game outside release scope');
-rejects(() => validateReleaseScope({...betaManifest, releaseGames: ['AnimeVanguards', 'AnimeVanguards']}, status), 'Invalid release scope metadata');
+rejects(() => validateReleaseScope({...betaManifest, releaseGames: ['AnimeVanguards', 'AnimeVanguards']}, scopedStatus), 'Invalid release scope metadata');
 const mixedPlaceMetadata = {...metadata, AnimeVanguards: metadata.AnimeVanguards.replace('placeIds = { 16146832113 }', 'placeIds = { 16146832113, "bad" }')};
 rejects(() => validateProject(manifest, status, registry, mixedPlaceMetadata), 'Invalid game metadata Place ID');
 
