@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "games": {
     "AnimeVanguards": {
-      "state": "disabled",
-      "reason": "Foundation runtime validation pending"
+      "state": "ready",
+      "reason": "Beta foundation only; no gameplay features"
     },
     "AnimeExpeditions": {
-      "state": "disabled",
-      "reason": "Foundation runtime validation pending"
+      "state": "ready",
+      "reason": "Beta foundation only; no gameplay features"
     }
   }
 }
