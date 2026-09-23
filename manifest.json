@@ -6,7 +6,7 @@
   "sourceCommit": "f5de8312ee023fe7b0c82602684983764b44f2fa",
   "mode": "release",
   "repository": "phiraphatdev/ViperHub-NextGen",
-  "artifactRevision": null,
+  "artifactRevision": "af39a11236b66776d756b5362cdebcc7df3dfce4",
   "artifacts": {
     "loader": {
       "path": "dist/loader.lua",
