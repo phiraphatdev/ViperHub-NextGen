@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — foundation 0.1.0
+## v0.1.0 Beta — foundation
 
 - Added modular bootstrap, lifecycle/cleanup and bounded diagnostics.
 - Added exact PlaceId detection and independent placeholders for Anime Vanguards and Anime Expeditions.
@@ -12,6 +12,5 @@
 - Fixed initial tab selection and keybind-picker save synchronization based on live observations.
 - Added manifest/registry metadata consistency checks, strict release evidence validation, negative tests and a Thai user manual.
 - Verified current-source foundation startup, visible UI, settings file readback and loader-rerun persistence in both games on Potassium v2.5.0 / Windows; see the dated partial records in `tests/runtime/`.
-- Rejoin persistence, physical input on the current source, published loader path and other environments remain unverified.
-
-No release tag or production deployment has been created.
+- Beta foundation is enabled for both registered games. The published loader path was read back as ready, alive and window-present in Anime Vanguards and Anime Expeditions. Earlier controls/config observations were carried forward because shipped artifact hashes are byte-identical.
+- No gameplay features. Physical/touch input and other environments are not certified.

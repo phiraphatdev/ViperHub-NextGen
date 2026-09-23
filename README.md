@@ -1,16 +1,16 @@
 # ViperHub NextGen
 
-![State](https://img.shields.io/badge/state-foundation-orange)
-![Runtime](https://img.shields.io/badge/runtime-Potassium_AV_partial-yellow)
+![State](https://img.shields.io/badge/state-beta_foundation-blue)
+![Runtime](https://img.shields.io/badge/runtime-Potassium_Windows_limited-yellow)
 
 Multi-game Luau foundation พร้อม WindUI และโครงสร้างแยก game module
 สถานะปัจจุบัน: beta foundation; ตรวจสถานะเปิดใช้งานล่าสุดที่ `status.json` ก่อนโหลด; **ยังไม่มีฟีเจอร์ gameplay**
-ตรวจ foundation/UI จริงบน Potassium/Windows ในทั้งสองเกมแล้วบางส่วน; ดู tests/runtime/verification.json และ tests/runtime/AnimeExpeditions-2026-09-24.json
+มีหลักฐาน runtime foundation บน Potassium/Windows ในทั้งสองเกม แต่ไม่ได้รับรองทุก executor หรือ physical/touch input; ดู `work/runtime-verification.json` สำหรับ release gate ในเครื่อง และ `tests/runtime/` สำหรับบันทึกที่ติดตามใน repo
 
 | เกม | Place ID ที่ตรวจสอบแล้ว | Module | Runtime |
 | --- | --- | --- | --- |
-| Anime Vanguards | 16146832113 | Placeholder 0.1.0 | Potassium/Windows: partial |
-| Anime Expeditions | 84515722934860 | Placeholder 0.1.0 | Potassium/Windows: partial |
+| Anime Vanguards | 16146832113 | Placeholder 0.1.0 | Potassium/Windows: beta foundation; production loader readback |
+| Anime Expeditions | 84515722934860 | Placeholder 0.1.0 | Potassium/Windows: beta foundation; production loader readback |
 
 การรองรับนี้คือการตรวจตัวเกมและโครง module เท่านั้น ไม่ครอบคลุมทุกแมพใน Universe
 
@@ -42,6 +42,7 @@ check ตรวจ format, strict type analysis, unit tests, bundled bootstrap �
 
 Loader URL สำหรับ release ที่เปิดแล้วดูจาก `manifest.json.artifactRevision` ของ commit ที่ประกาศเท่านั้น
 รูปแบบคือ `https://raw.githubusercontent.com/phiraphatdev/ViperHub-NextGen/<artifactRevision>/dist/loader.lua`
+Beta 0.1.0: [loader.lua](https://raw.githubusercontent.com/phiraphatdev/ViperHub-NextGen/af39a11236b66776d756b5362cdebcc7df3dfce4/dist/loader.lua)
 อย่าใช้ SHA เก่าหรือเดา revision เอง; `VIPER_REPOSITORY` ใช้ override สำหรับ deployment/test
 
 ## เอกสาร
