@@ -1,6 +1,6 @@
 # Releasing
 
-ใช้ `git rev-parse HEAD` ตรวจ source commit ของ candidate ปัจจุบัน; ยังไม่ tag, push หรือเผยแพร่
+ดู source commit S จาก `manifest.json.sourceCommit` และดู metadata commit ปัจจุบันด้วย `git rev-parse HEAD`; ยังไม่ tag, push หรือเผยแพร่
 
 ## ระดับการปล่อย
 
