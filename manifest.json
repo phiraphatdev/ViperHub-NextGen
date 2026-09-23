@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "loaderVersion": "0.1.0",
   "minLoaderVersion": "0.1.0",
-  "sourceCommit": null,
-  "mode": "development",
+  "sourceCommit": "b4cf0bb31b3117e1d191cb8ee863a8dbe5ad3377",
+  "mode": "release",
   "repository": "phiraphatdev/ViperHub-NextGen",
   "artifactRevision": null,
   "artifacts": {
