@@ -1,0 +1,45 @@
+{
+  "status": "partial",
+  "mode": "development local harness",
+  "sourceCommit": null,
+  "gameId": "AnimeExpeditions",
+  "clientId": "c8fbf1cf-bd1d-4843-a87d-2f257c2df6cc",
+  "placeId": 84515722934860,
+  "placeVersion": 44951,
+  "jobId": "05568777-9024-4421-bb56-a5ad494c8d5d",
+  "harnessSha256": "cb204a290a4c63145430e432095e3374113e722cc9fb9048c53d279b33f598dd",
+  "checks": [
+    {
+      "name": "Foundation startup",
+      "result": "passed",
+      "observed": "MCP readback: ready, alive=true, matching gameId, windowPresent=true, diagnostics PLACEHOLDER_STARTED and FOUNDATION_READY"
+    },
+    {
+      "name": "Visual Overview",
+      "result": "passed",
+      "observed": "Roblox window screenshot showed ViperHub NextGen Foundation 0.2.0, matching game name, module 0.2.0, Overview/Settings/Diagnostics tabs"
+    },
+    {
+      "name": "Settings controls and file readback",
+      "result": "passed",
+      "observed": "Live WindUI control Set changed notifications=false and uiScale=1.05; config store and executor JSON file both read back those values"
+    },
+    {
+      "name": "Loader rerun persistence",
+      "result": "passed",
+      "observed": "After rerunning local harness, session returned ready and loaded notifications=false and uiScale=1.05 from file"
+    },
+    {
+      "name": "Restore settings",
+      "result": "passed",
+      "observed": "Controls restored notifications=true and uiScale=1; config store and executor JSON file readback matched restored values"
+    }
+  ],
+  "pending": [
+    "Physical keyboard/touch input for this candidate",
+    "Client close/rejoin persistence",
+    "Published GitHub Raw path",
+    "Committed source provenance"
+  ],
+  "limits": "Local harness, not published loader; no gameplay feature was tested. Control Set methods are not physical input."
+}

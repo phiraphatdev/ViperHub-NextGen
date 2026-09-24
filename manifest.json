@@ -1,49 +1,55 @@
 {
   "schemaVersion": 1,
-  "version": "0.1.0",
-  "loaderVersion": "0.1.0",
-  "minLoaderVersion": "0.1.0",
-  "sourceCommit": "f5de8312ee023fe7b0c82602684983764b44f2fa",
+  "version": "0.2.0",
+  "loaderVersion": "0.2.0",
+  "minLoaderVersion": "0.2.0",
+  "sourceCommit": null,
   "mode": "release",
   "repository": "phiraphatdev/ViperHub-NextGen",
-  "artifactRevision": "af39a11236b66776d756b5362cdebcc7df3dfce4",
+  "artifactRevision": null,
   "artifacts": {
     "loader": {
       "path": "dist/loader.lua",
-      "sha256": "f2fb723496c37e72c73abd70755ffb251f9c7179373f6604e01747667fcfe1ac",
-      "bytes": 46324
+      "sha256": "cf52288eed846ed000413ed0d9aab8427c39efd03fe30b7513da5c9cb81651af",
+      "bytes": 54804
     },
     "ui": {
       "path": "dist/ui.lua",
       "sha256": "07bffde8cd7e897de1fc59b8cdaf49801f7d6d2905f891c19a06cc78b0c45188",
       "bytes": 1348987
     },
-    "AnimeVanguards": {
-      "path": "dist/games/AnimeVanguards.lua",
-      "sha256": "f4cf0eb91883b70b6db7556c7ba8decccf8684f308dde99bd30aab9931649c59",
-      "bytes": 1718
-    },
     "AnimeExpeditions": {
       "path": "dist/games/AnimeExpeditions.lua",
-      "sha256": "b7e57e7c3b602e9acbbaf8d051e3480832f905faec9cf71dc2d36191a77964e1",
-      "bytes": 1725
+      "sha256": "b41a550d8a942e09e4df234e04f652be7d8428e5837df8b88d5cc103f6206e8a",
+      "bytes": 2359
+    },
+    "AnimeVanguards": {
+      "path": "dist/games/AnimeVanguards.lua",
+      "sha256": "3640a31c0d2dca61f409cebe85fb8ef46548c6ec2a68f7197437b40519c86187",
+      "bytes": 2352
     }
   },
   "games": {
-    "AnimeVanguards": {
-      "version": "0.1.0",
-      "lastUpdated": "2026-09-22",
-      "name": "Anime Vanguards",
-      "placeIds": [
-        16146832113
-      ]
-    },
     "AnimeExpeditions": {
-      "version": "0.1.0",
-      "lastUpdated": "2026-09-22",
+      "version": "0.2.0",
+      "lastUpdated": "2026-09-24",
       "name": "Anime Expeditions",
       "placeIds": [
         84515722934860
+      ],
+      "gameIds": [
+        7613921865
+      ]
+    },
+    "AnimeVanguards": {
+      "version": "0.2.0",
+      "lastUpdated": "2026-09-24",
+      "name": "Anime Vanguards",
+      "placeIds": [
+        16146832113
+      ],
+      "gameIds": [
+        5578556129
       ]
     }
   },

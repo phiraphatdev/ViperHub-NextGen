@@ -8,10 +8,11 @@ Dependencies: None
 
 local Lifecycle = {}
 local ALLOWED: { [string]: { [string]: boolean } } = {
-    created = { loading = true, stopped = true },
+    created = { loading = true, unsupported = true, failed = true, stopped = true },
     loading = { ready = true, failed = true, stopped = true },
     ready = { stopped = true, failed = true },
     failed = { stopped = true },
+    unsupported = { stopped = true },
     stopped = {},
 }
 --- Returns whether a requested state transition is legal.

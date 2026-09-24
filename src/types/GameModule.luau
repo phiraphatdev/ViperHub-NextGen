@@ -6,8 +6,14 @@ Output: Types only
 Dependencies: None
 ]]
 
-export type Metadata =
-    { id: string, name: string, version: string, lastUpdated: string, placeIds: { number } }
+export type Metadata = {
+    id: string,
+    name: string,
+    version: string,
+    lastUpdated: string,
+    placeIds: { number },
+    gameIds: { number }?,
+}
 export type Context =
     { alive: boolean, state: string, log: (string) -> (), cleanup: { add: (() -> ()) -> () } }
 export type GameModule = { metadata: Metadata, start: (Context) -> (), stop: () -> () }

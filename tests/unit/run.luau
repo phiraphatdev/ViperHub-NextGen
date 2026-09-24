@@ -15,6 +15,9 @@ local HttpClient = require("../../src/network/HttpClient")
 local ManifestClient = require("../../src/network/ManifestClient")
 local ModuleLoader = require("../../src/network/ModuleLoader")
 local Settings = require("../../src/ui/pages/Settings")
+local DiagnosticsPage = require("../../src/ui/pages/Diagnostics")
+local VanguardsEntry = require("../../src/games/AnimeVanguards/Entry")
+local ExpeditionsEntry = require("../../src/games/AnimeExpeditions/Entry")
 local passed = 0
 local function test(name: string, callback: () -> ())
     local ok, message = pcall(callback)
@@ -46,6 +49,11 @@ test("registry exact match and isolation", function()
     assert(Detector.detect(16146832113) ~= nil)
     assert(Detector.detect(nil) == nil and Detector.detect("16146832113") == nil)
     assert(Detector.detect(0 / 0) == nil and Detector.detect(-1) == nil and Detector.detect(1.5) == nil)
+    assert(assert(Detector.detect(999, 5578556129)).id == "AnimeVanguards")
+    assert(assert(Detector.detect(999, 7613921865)).id == "AnimeExpeditions")
+    assert(Detector.detect(999, 999) == nil)
+    assert(Detector.detect(16146832113, 7613921865) == nil)
+    assert(Detector.detect(nil, "5578556129") == nil)
 end)
 test("cleanup reverse order, repeat and failed callback", function()
     local order: { number } = {}
@@ -72,11 +80,29 @@ test("cleanup reverse order, repeat and failed callback", function()
 end)
 test("context and state transitions", function()
     local c = Context.new(function() end)
+    assert(c.transition("loading"))
+    assert(c.transition("ready"))
+    assert(not c.transition("unsupported"))
     c.destroy()
     c.destroy()
     assert(not c.alive and c.state == "stopped")
     assert(Lifecycle.canTransition("created", "loading"))
+    assert(Lifecycle.canTransition("created", "unsupported"))
+    assert(Lifecycle.canTransition("created", "failed"))
     assert(not Lifecycle.canTransition("stopped", "ready"))
+    local unsupported = Context.new(function() end)
+    unsupported.destroy("unsupported")
+    assert(unsupported.state == "unsupported" and not unsupported.alive)
+    local failed = Context.new(function() end)
+    assert(failed.transition("loading"))
+    failed.destroy("failed")
+    assert(failed.state == "failed" and not failed.alive)
+    local callback = Context.new(function() end)
+    callback:destroy()
+    assert(callback.state == "stopped" and not callback.alive)
+    local signal = Context.new(function() end)
+    signal.destroy({ unexpected = "window" })
+    assert(signal.state == "stopped" and not signal.alive)
 end)
 test("diagnostics are bounded and copied", function()
     local d = Diagnostics.new(2)
@@ -95,6 +121,12 @@ test("config rejects future schema and sanitizes fields", function()
     local c = Schema.decode({ schemaVersion = 1, uiScale = 99, toggleKey = "../file", theme = false })
     assert(c.uiScale == 1.3 and c.toggleKey == "RightShift" and c.theme == "Dark")
     assert(Schema.decode(nil).uiScale == 1)
+    for _, key in
+        { "RightShift", "RightControl", "LeftControl", "Insert", "Delete", "Home", "End", "F1", "F4", "F12" }
+    do
+        assert(Schema.decode({ schemaVersion = 1, toggleKey = key }).toggleKey == key)
+    end
+    assert(Schema.decode({ schemaVersion = 1, toggleKey = "LeftAlt" }).toggleKey == "RightShift")
 end)
 test("filesystem capability requires the complete API set", function()
     assert(not Capabilities.detect({ writefile = function() end }).persistence)
@@ -200,6 +232,22 @@ test("HTTP failures, limits and logical timeout", function()
     local _, timeout = request(200, "ok").get(url, 3, 0.1)
     assert(timeout == "HTTP_TIMEOUT")
     assert(delayed)()
+    local _, noScheduler = HttpClient.new(function()
+        return 200, "ok"
+    end, {} :: any).get(url, 3, 1)
+    assert(noScheduler == "HTTP_SCHEDULER")
+    local _, brokenSpawn = HttpClient.new(function()
+        return 200, "ok"
+    end, {
+        spawn = function()
+            error("broken")
+        end,
+        wait = function() end,
+        clock = function()
+            return 0
+        end,
+    }).get(url, 3, 1)
+    assert(brokenSpawn == "HTTP_SCHEDULER")
 end)
 local function validManifest(): any
     local artifacts = {}
@@ -232,22 +280,50 @@ local function validManifest(): any
         },
     }
 end
-test("manifest rejects traversal, missing entries and invalid trust metadata", function()
-    assert(ManifestClient.validate(validManifest(), "owner/repo") ~= nil)
-    assert(ManifestClient.validate(nil, "owner/repo") == nil)
+test("manifest validates only the selected game and bounded artifact paths", function()
+    assert(ManifestClient.validate(validManifest(), "owner/repo", "AnimeVanguards") ~= nil)
+    assert(ManifestClient.validate(nil, "owner/repo", "AnimeVanguards") == nil)
     local m = validManifest()
     m.artifacts.ui.path = "dist/../secret.lua"
-    assert(ManifestClient.validate(m, "owner/repo") == nil)
+    assert(ManifestClient.validate(m, "owner/repo", "AnimeVanguards") == nil)
     m = validManifest()
     m.artifacts.ui = nil
-    assert(ManifestClient.validate(m, "owner/repo") == nil)
+    assert(ManifestClient.validate(m, "owner/repo", "AnimeVanguards") == nil)
+    m = validManifest()
+    m.artifacts.AnimeVanguards = nil
+    assert(ManifestClient.validate(m, "owner/repo", "AnimeVanguards") == nil)
+    m = validManifest()
+    m.artifacts.AnimeExpeditions = nil
+    m.games.AnimeExpeditions = nil
+    assert(ManifestClient.validate(m, "owner/repo", "AnimeVanguards") ~= nil)
+    assert(ManifestClient.validate(m, "owner/repo", "AnimeExpeditions") == nil)
+    m = validManifest()
+    m.artifacts.AnimeExpeditions.path = "dist/../secret.lua"
+    m.games.AnimeExpeditions.version = "invalid"
+    assert(ManifestClient.validate(m, "owner/repo", "AnimeVanguards") ~= nil)
+    assert(ManifestClient.validate(m, "owner/repo", "AnimeExpeditions") == nil)
     m = validManifest()
     m.sourceCommit = "main"
-    assert(ManifestClient.validate(m, "owner/repo") == nil)
+    m.artifactRevision = nil
+    m.mode = "development"
+    assert(ManifestClient.validate(m, "owner/repo", "AnimeVanguards") ~= nil)
+    m.artifactRevision = "working-branch"
+    assert(ManifestClient.validate(m, "owner/repo", "AnimeVanguards") ~= nil)
     m = validManifest()
     m.artifacts.ui.bytes = 0 / 0
-    assert(ManifestClient.validate(m, "owner/repo") == nil)
-    assert(ManifestClient.validate(validManifest(), "other/repo") == nil)
+    assert(ManifestClient.validate(m, "owner/repo", "AnimeVanguards") == nil)
+    m = validManifest()
+    m.artifacts.ui.bytes = nil
+    m.artifacts.ui.sha256 = nil
+    assert(ManifestClient.validate(m, "owner/repo", "AnimeVanguards") ~= nil)
+    m.artifacts.ui.sha256 = "bad"
+    assert(ManifestClient.validate(m, "owner/repo", "AnimeVanguards") == nil)
+    m = validManifest()
+    m.games.AnimeVanguards.gameIds = { 5578556129 }
+    assert(ManifestClient.validate(m, "owner/repo", "AnimeVanguards") ~= nil)
+    m.games.AnimeVanguards.gameIds = { "bad" }
+    assert(ManifestClient.validate(m, "owner/repo", "AnimeVanguards") == nil)
+    assert(ManifestClient.validate(validManifest(), "other/repo", "AnimeVanguards") == nil)
 end)
 test("maintenance state does not default to ready", function()
     assert(ManifestClient.status({}, "AnimeVanguards") == nil)
@@ -261,19 +337,25 @@ end)
 test("module compiler errors and export mismatch", function()
     local _, code = ModuleLoader.load(function()
         return nil
-    end, "abc", 3, nil)
+    end, "abc", nil)
     assert(code == "MODULE_COMPILE")
-    local _, mismatch = ModuleLoader.load(function()
+    local accepted, mismatch = ModuleLoader.load(function()
         return function()
             return {}
         end
-    end, "abc", 4, nil)
-    assert(mismatch == "MODULE_INPUT")
+    end, "abc", nil)
+    assert(type(accepted) == "table" and mismatch == nil)
+    local _, empty = ModuleLoader.load(function()
+        return function()
+            return {}
+        end
+    end, "", nil)
+    assert(empty == "MODULE_INPUT")
     local _, failure = ModuleLoader.load(function()
         return function()
             error("secret")
         end
-    end, "abc", 3, nil)
+    end, "abc", nil)
     assert(failure == "MODULE_EXECUTION")
     assert(not ModuleLoader.isGame({}, "AnimeVanguards", "0.1.0"))
 end)
@@ -307,16 +389,64 @@ test("save captures keybind selection without a keypress callback", function()
         Keybind = element,
         Button = element,
     }
+    local activeKey = ""
     local window: any = {
         Tab = function()
             return tab
         end,
-        SetToggleKey = function() end,
+        SetToggleKey = function(_self: any, key: string)
+            activeKey = key
+        end,
     }
     Settings.mount(window, store, { Notify = function() end }, { RightShift = "RightShift", F4 = "F4" })
+    window.ViperControls.toggleKey.Callback("F4")
+    assert(store.get().toggleKey == "F4" and activeKey == "F4")
+    window.ViperControls.toggleKey.Callback("LeftAlt")
+    assert(store.get().toggleKey == "F4" and activeKey == "F4")
+    assert(window.ViperControls.toggleKey.Value == "F4")
+    window.ViperControls.toggleKey.Callback("RightShift")
     window.ViperControls.toggleKey:Set("F4")
     assert(store.get().toggleKey == "RightShift")
     window.ViperControls.save.Callback()
     assert(payload.toggleKey == "F4" and store.get().toggleKey == "F4")
+end)
+test("game configs are exported without duplicate stop registration", function()
+    for _, entry in { VanguardsEntry, ExpeditionsEntry } do
+        local game: any = entry
+        assert(type(entry.config) == "table" and type(entry.config.instancePaths) == "table")
+        local context = Context.new(function() end)
+        game.start(context)
+        assert(context.cleanup.count() == 0)
+        game.stop()
+    end
+end)
+test("diagnostics shows existing codes at mount", function()
+    local initial = ""
+    local options: any = nil
+    local tab = {
+        Paragraph = function(_self: any, value: any)
+            initial = value.Desc
+            return {
+                SetDesc = function(_s: any, text: string)
+                    initial = text
+                end,
+            }
+        end,
+        Button = function(_self: any, value: any)
+            options = value
+        end,
+    }
+    DiagnosticsPage.mount({
+        Tab = function()
+            return tab
+        end,
+    }, {
+        snapshot = function()
+            return { "FIRST" }
+        end,
+    })
+    assert(initial == "FIRST")
+    options.Callback()
+    assert(initial == "FIRST")
 end)
 print(string.format("PASS: %d unit scenarios", passed))

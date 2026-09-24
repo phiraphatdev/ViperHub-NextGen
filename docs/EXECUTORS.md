@@ -17,7 +17,7 @@
 | Capability | Detection/use | Fallback |
 | --- | --- | --- |
 | loadstring | Callable check, protected compile and invoke | Stop with a clear unsupported-environment message |
-| request / http_request | Callable check; status/body validation | Protected game:HttpGet, may still be unsupported |
+| request / http_request | Callable check; status/body validation | If `request` throws or returns a non-table, try callable `http_request`; otherwise use protected game:HttpGet when neither exists |
 | readfile/writefile/isfile/isfolder/makefolder | All callable, operations protected | Session-only config |
 | shared, task, game | Required Roblox context | Stop before constructing UI |
 | gethui | Optional upstream UI parent selection | Upstream default parent; actual permission must be tested |

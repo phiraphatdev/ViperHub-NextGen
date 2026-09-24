@@ -10,18 +10,18 @@ local Validation = require("../utils/Validation")
 local Version = require("../utils/Version")
 local Types = require("../types/Manifest")
 local ManifestClient = {}
---- Returns a validated published manifest or nil; repository must match trusted config.
-function ManifestClient.validate(value: unknown, repository: string): Types.Manifest?
+--- Returns a validated manifest for the selected game, or nil; repository must match trusted config.
+function ManifestClient.validate(value: unknown, repository: string, targetGameId: string?): Types.Manifest?
     if type(value) ~= "table" then
         return nil
     end
     local data = value :: { [string]: any }
     if
         data.schemaVersion ~= 1
-        or data.mode ~= "release"
+        or (data.mode ~= "release" and data.mode ~= "development")
         or data.repository ~= repository
-        or not Validation.sha(data.sourceCommit)
-        or not Validation.sha(data.artifactRevision)
+        or (data.sourceCommit ~= nil and (type(data.sourceCommit) ~= "string" or #data.sourceCommit > 128))
+        or (data.artifactRevision ~= nil and (type(data.artifactRevision) ~= "string" or #data.artifactRevision > 128))
         or not Version.parse(data.version)
         or not Version.parse(data.loaderVersion)
         or not Version.parse(data.minLoaderVersion)
@@ -30,38 +30,40 @@ function ManifestClient.validate(value: unknown, repository: string): Types.Mani
     then
         return nil
     end
-    local count = 0
     local artifacts: { [string]: any } = data.artifacts :: any
     local games: { [string]: any } = data.games :: any
-    for key, rawArtifact in artifacts do
+    if targetGameId ~= nil and not Validation.identifier(targetGameId) then
+        return nil
+    end
+    local selected = if targetGameId then { "ui", targetGameId } else { "ui" }
+    for _, key in selected do
+        local rawArtifact = artifacts[key]
         if type(rawArtifact) ~= "table" then
             return nil
         end
         local artifact: { [string]: any } = rawArtifact :: any
-        count += 1
+        local sha: any = artifact.sha256
         if
-            count > 16
-            or not Validation.identifier(key)
-            or type(artifact) ~= "table"
-            or not Validation.artifactPath(artifact.path)
-            or type(artifact.sha256) ~= "string"
-            or #artifact.sha256 ~= 64
-            or not artifact.sha256:match("^[a-f0-9]+$")
-            or not Validation.isFinite(artifact.bytes)
-            or artifact.bytes % 1 ~= 0
-            or artifact.bytes <= 0
-            or artifact.bytes > 4000000
+            not Validation.artifactPath(artifact.path)
+            or (sha ~= nil and (type(sha) ~= "string" or #sha ~= 64 or not string.match(
+                sha :: string,
+                "^[a-f0-9]+$"
+            )))
+            or (
+                artifact.bytes ~= nil
+                and (
+                    not Validation.isFinite(artifact.bytes)
+                    or artifact.bytes % 1 ~= 0
+                    or artifact.bytes <= 0
+                    or artifact.bytes > 4000000
+                )
+            )
         then
             return nil
         end
     end
-    for _, key in { "ui", "loader", "AnimeVanguards", "AnimeExpeditions" } do
-        if not artifacts[key] then
-            return nil
-        end
-    end
-    for _, key in { "AnimeVanguards", "AnimeExpeditions" } do
-        local entry: any = games[key]
+    if targetGameId then
+        local entry: any = games[targetGameId]
         if
             type(entry) ~= "table"
             or not Version.parse(entry.version)
@@ -71,12 +73,20 @@ function ManifestClient.validate(value: unknown, repository: string): Types.Mani
             or #entry.name == 0
             or type(entry.placeIds) ~= "table"
             or #entry.placeIds == 0
+            or (entry.gameIds ~= nil and (type(entry.gameIds) ~= "table" or #entry.gameIds == 0))
         then
             return nil
         end
         for _, placeId in entry.placeIds do
             if not Validation.isFinite(placeId) or placeId % 1 ~= 0 or placeId <= 0 then
                 return nil
+            end
+        end
+        if entry.gameIds then
+            for _, gameId in entry.gameIds do
+                if not Validation.isFinite(gameId) or gameId % 1 ~= 0 or gameId <= 0 then
+                    return nil
+                end
             end
         end
     end

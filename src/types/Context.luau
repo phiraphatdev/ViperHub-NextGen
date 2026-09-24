@@ -12,6 +12,7 @@ export type Context = {
     gameId: string?,
     cleanup: { add: (() -> ()) -> (), destroy: () -> (), count: () -> number },
     log: (string) -> (),
-    destroy: () -> (),
+    destroy: (unknown?) -> (),
+    transition: (string) -> boolean,
 }
 return {}

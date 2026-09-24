@@ -16,7 +16,27 @@ export type Config = {
     theme: string,
     toggleKey: string,
 }
-local KEYS = { RightShift = true, LeftAlt = true, F4 = true }
+local KEYS = {
+    RightShift = true,
+    RightControl = true,
+    LeftControl = true,
+    Insert = true,
+    Delete = true,
+    Home = true,
+    End = true,
+    F1 = true,
+    F2 = true,
+    F3 = true,
+    F4 = true,
+    F5 = true,
+    F6 = true,
+    F7 = true,
+    F8 = true,
+    F9 = true,
+    F10 = true,
+    F11 = true,
+    F12 = true,
+}
 --- Sanitizes input; rejects unknown schema versions and returns fresh defaults plus false.
 function Schema.decode(value: unknown): (Config, boolean)
     local output: Config = {

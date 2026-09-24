@@ -3,15 +3,15 @@
 ## Approved decisions
 
 Public source; no obfuscation. WindUI via a pinned, locally adapted vendor bundle.
-Two independent placeholder games. PlaceId allowlist; no automatic support for all places in a universe.
-sourceCommit tracks source provenance; artifactRevision identifies the commit holding shipped dist files.
-Release policy has Dev, Beta and Stable tiers. Beta evidence is scoped to selected games; unpublished or unselected games stay disabled.
+Two independent placeholder games. Verified lobby PlaceIds and Universe GameIds identify a game; a matching universe does not certify gameplay compatibility for every sub-place.
+Single-commit builds regenerate dist and manifest together; optional commit fields are not release gates.
+Runtime observations remain documented but do not block a local build. Operational status controls availability per game.
 No gameplay features or anti-cheat evasion.
 
 ## Boundaries
 
 bootstrap/Main -> core + games/Detector + platform + network + config + ui/App
-games/Detector -> Registry -> Metadata (never imports game behavior)
+games/Detector -> Registry -> Metadata (never imports game behavior); exact PlaceId first, verified GameId fallback.
 ui/App -> WindUIAdapter + pages; individual games never call WindUI directly.
 Game exports are fetched independently and validated against id/version/start/stop.
 
@@ -41,11 +41,12 @@ Upstream animation/task/connection lifetime still requires real-client verificat
 
 ## Runtime paths
 
-Production: use the configured phiraphatdev/ViperHub-NextGen repository (or validate VIPER_REPOSITORY override) -> exact place detection -> mutable main/manifest.json and status.json -> immutable artifactRevision URL -> compile validated selected modules -> config -> UI -> placeholder start.
+Production: use the configured phiraphatdev/ViperHub-NextGen repository (or validate VIPER_REPOSITORY override) -> exact PlaceId or verified Universe GameId detection -> config -> main/manifest.json and status.json -> selected game and UI artifacts from a valid artifactRevision SHA or main fallback -> compile -> UI -> placeholder start.
+The production branch requires `manifest.mode = "release"`; development manifests are accepted only by the explicit local harness. An available `http_request` is selected when `request` exists but is not callable.
 Development: generated work/runtime-smoke.lua supplies locally built artifact strings using a temporary VIPER_DEV_ARTIFACTS override and restores the previous value afterward.
 The dev override is local user-controlled input, not fetched metadata. It deliberately does not certify production readiness.
 
-status.json is disabled initially. Maintenance is shown only for explicit maintenance status.
+status.json is an operational switch. Maintenance is shown only for explicit maintenance status.
 Malformed/unavailable status blocks loading rather than claiming maintenance or ready.
 Version comparison distinguishes loader minimum version, game module version and operational availability.
 A newer module version is not proof that the latest game patch is compatible.
@@ -60,13 +61,14 @@ Diagnostics retain at most 64 sanitized codes; no network payloads, file content
 
 ## Build
 
-scripts/pipeline.mjs is an implementation helper for the three approved PowerShell entry points.
+scripts/pipeline.mjs is an implementation helper for the PowerShell build/check/verify entry points.
 scripts/setup-tools.ps1 bootstraps pinned development executables under ignored .tools/.
 darklua bundles relative Luau imports and removes type syntax; UI is copied from verified vendor source.
 Each artifact is syntax-compiled; a second build must match hashes exactly.
-Build metadata avoids wall-clock timestamps, random seeds and self-referential commit hashes.
-`Metadata.luau` เป็น source of truth ของข้อมูลเกม; build สร้าง `manifest.games` จาก source และ check ตรวจ drift แบบ read-only.
-`finalize-local-release.ps1 -Commit` รวมขั้น build และ local A/B commits หลังมี clean source S กับ runtime evidence แล้ว; ไม่ push/tag/เปิด status.
+Build metadata avoids wall-clock timestamps, random seeds and stale commit hashes.
+The pipeline's `PROJECT_VERSION` generates the local candidate manifest version, loader version and minimum loader version. Game Metadata versions and the loader constant must match; local release-guard tests reject drift. This candidate is not a published tag.
+`Metadata.luau` เป็น source of truth ของข้อมูลเกม; pipeline สแกนโฟลเดอร์เกมเพื่อสร้าง entries, artifacts และ `manifest.games`. Registry ยังเป็น allowlist สำหรับ Place ID และ Universe GameId ที่ตรวจสอบแล้ว.
+`check.ps1` สร้าง dist/manifest ใหม่ก่อน tests; build, check และ verify ไม่อ่าน Git history หรือ `work/runtime-verification.json`.
 
 ## Evidence behind decisions
 

@@ -43,7 +43,7 @@ end
 function WindUIAdapter.create(library: any, context: Types.Context, config: any): any
     local window = (library.CreateWindow :: any)(library, {
         Title = "ViperHub NextGen",
-        Author = "Foundation 0.1.0",
+        Author = "Foundation 0.2.0",
         Theme = "Dark",
         NewElements = true,
         Acrylic = false,

@@ -1,15 +1,15 @@
 --!strict
 --[[
 Purpose: Compile only fetched artifacts selected by validated manifest
-Input: Compiler; source; artifact size; optional argument
+Input: Compiler; nonempty source; optional argument
 Output: Module export or error code
 Dependencies: None
 ]]
 
 local ModuleLoader = {}
---- Checks size, compiles and invokes source; returns export or a sanitized failure code.
-function ModuleLoader.load(compile: any, source: unknown, bytes: number, argument: any): (any, string?)
-    if type(compile) ~= "function" or type(source) ~= "string" or #source ~= bytes then
+--- Compiles and invokes a nonempty source; returns a sanitized failure code.
+function ModuleLoader.load(compile: any, source: unknown, argument: any): (any, string?)
+    if type(compile) ~= "function" or type(source) ~= "string" or #source == 0 then
         return nil, "MODULE_INPUT"
     end
     local compiled, chunk = pcall(compile, source, "ViperHubModule")

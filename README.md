@@ -5,12 +5,12 @@
 
 Multi-game Luau foundation พร้อม WindUI และโครงสร้างแยก game module
 สถานะปัจจุบัน: beta foundation; ตรวจสถานะเปิดใช้งานล่าสุดที่ `status.json` ก่อนโหลด; **ยังไม่มีฟีเจอร์ gameplay**
-มีหลักฐาน runtime foundation บน Potassium/Windows ในทั้งสองเกม แต่ไม่ได้รับรองทุก executor หรือ physical/touch input; ดู `work/runtime-verification.json` สำหรับ release gate ในเครื่อง และ `tests/runtime/` สำหรับบันทึกที่ติดตามใน repo
+มีหลักฐาน runtime foundation บน Potassium/Windows ในทั้งสองเกม แต่ไม่ได้รับรองทุก executor หรือ physical/touch input; ดู `tests/runtime/` สำหรับบันทึกที่ติดตามใน repo โดย local build ไม่บังคับ JSON evidence gate
 
 | เกม | Place ID ที่ตรวจสอบแล้ว | Module | Runtime |
 | --- | --- | --- | --- |
-| Anime Vanguards | 16146832113 | Placeholder 0.1.0 | Potassium/Windows: beta foundation; production loader readback |
-| Anime Expeditions | 84515722934860 | Placeholder 0.1.0 | Potassium/Windows: beta foundation; production loader readback |
+| Anime Vanguards | 16146832113 | Local candidate 0.2.0; published foundation 0.1.0 | Potassium/Windows: older beta foundation evidence |
+| Anime Expeditions | 84515722934860 | Local candidate 0.2.0; published foundation 0.1.0 | Potassium/Windows: older beta foundation evidence |
 
 การรองรับนี้คือการตรวจตัวเกมและโครง module เท่านั้น ไม่ครอบคลุมทุกแมพใน Universe
 
@@ -26,12 +26,13 @@ Set-Location 'C:\Users\phiraphat.pk\Documents\projects\_github\viper-hub-nextgen
 ./scripts/check.ps1
 ~~~
 
-check ตรวจ format, strict type analysis, unit tests, bundled bootstrap ด้วย mock runtime, compile artifact และ rebuild เทียบ hash
+check สร้าง dist/manifest ใหม่ แล้วตรวจ format, strict type analysis, unit tests, bundled bootstrap ด้วย mock runtime, compile artifact และ rebuild เทียบ hash
 ผลลัพธ์ build อยู่ใน dist/; local smoke harness อยู่ใน work/runtime-smoke.lua ซึ่งไม่ commit
 
 ~~~powershell
-./scripts/build.ps1
-./scripts/verify-release.ps1 -Development
+./scripts/build.ps1 -Release
+./scripts/check.ps1
+./scripts/verify-release.ps1
 ~~~
 
 ## ทดสอบ runtime
@@ -40,9 +41,11 @@ check ตรวจ format, strict type analysis, unit tests, bundled bootstrap �
 ตามด้วย get_data_by_code ที่อ่าน tests/runtime/Readback.luau และตรวจ UI ที่สร้างจริง
 ดูขั้นตอนปิด–เปิดใหม่และตรวจ config ใน [TESTING](docs/TESTING.md)
 
-Loader URL สำหรับ release ที่เปิดแล้วดูจาก `manifest.json.artifactRevision` ของ commit ที่ประกาศเท่านั้น
-รูปแบบคือ `https://raw.githubusercontent.com/phiraphatdev/ViperHub-NextGen/<artifactRevision>/dist/loader.lua`
+Loader URL ของ release ที่ tag แล้วใช้ artifact commit ที่ประกาศ; module ภายในจะอิง `manifest.json.artifactRevision` ถ้ามี SHA หรือ `main/dist/` หากเป็น `null`
+รูปแบบ loader แบบ pin คือ `https://raw.githubusercontent.com/phiraphatdev/ViperHub-NextGen/<artifactRevision>/dist/loader.lua`
 Beta 0.1.0: [loader.lua](https://raw.githubusercontent.com/phiraphatdev/ViperHub-NextGen/af39a11236b66776d756b5362cdebcc7df3dfce4/dist/loader.lua)
+สำหรับอัปเดตถัดไป build/check สามารถใช้ `artifactRevision: null` และโหลด game/UI module จาก `main/dist/` ได้; อย่านำ build ในเครื่องไปอ้างว่าเผยแพร่แล้วจนกว่าจะ commit/push และตรวจ Raw จริง
+**ข้อควรระวังการย้ายเวอร์ชัน:** loader v0.1.0 เดิมไม่รองรับ manifest ที่ไม่มี SHA; เมื่อจะเผยแพร่ระบบ build ใหม่ ต้องประกาศ loader URL ใหม่และตรวจ runtime ก่อน เพราะลิงก์ v0.1.0 ด้านบนจะไม่เข้ากันกับ manifest ใหม่บน main
 อย่าใช้ SHA เก่าหรือเดา revision เอง; `VIPER_REPOSITORY` ใช้ override สำหรับ deployment/test
 
 ## เอกสาร

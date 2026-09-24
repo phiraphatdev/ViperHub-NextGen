@@ -6,7 +6,7 @@ Output: Types only
 Dependencies: None
 ]]
 
-export type Artifact = { path: string, sha256: string, bytes: number }
+export type Artifact = { path: string, sha256: string?, bytes: number? }
 export type Manifest = {
     schemaVersion: number,
     version: string,
@@ -17,6 +17,14 @@ export type Manifest = {
     repository: string?,
     artifactRevision: string?,
     artifacts: { [string]: Artifact },
-    games: { [string]: { version: string, lastUpdated: string, name: string, placeIds: { number } } },
+    games: {
+        [string]: {
+            version: string,
+            lastUpdated: string,
+            name: string,
+            placeIds: { number },
+            gameIds: { number }?,
+        },
+    },
 }
 return {}

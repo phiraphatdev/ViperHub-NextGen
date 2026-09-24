@@ -15,10 +15,17 @@ function HttpClient.new(transport: (string) -> (number, unknown), scheduler: Sch
             if not url:match("^https://raw%.githubusercontent%.com/") then
                 return nil, "URL_REJECTED"
             end
+            if
+                type(scheduler.spawn) ~= "function"
+                or type(scheduler.wait) ~= "function"
+                or type(scheduler.clock) ~= "function"
+            then
+                return nil, "HTTP_SCHEDULER"
+            end
             local finished, expired = false, false
             local response: string? = nil
             local failure: string? = nil
-            scheduler.spawn(function()
+            local scheduled = pcall(scheduler.spawn, function()
                 local ok, status, body = pcall(transport, url)
                 if expired then
                     return
@@ -34,9 +41,16 @@ function HttpClient.new(transport: (string) -> (number, unknown), scheduler: Sch
                 end
                 finished = true
             end)
+            if not scheduled then
+                return nil, "HTTP_SCHEDULER"
+            end
             local started = scheduler.clock()
             while not finished and scheduler.clock() - started < timeout do
-                scheduler.wait(0.05)
+                local waited = pcall(scheduler.wait, 0.05)
+                if not waited then
+                    expired = true
+                    return nil, "HTTP_SCHEDULER"
+                end
             end
             if not finished then
                 expired = true

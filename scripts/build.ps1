@@ -1,9 +1,11 @@
-param([switch]$Release, [string]$Repository = '', [ValidateSet('Beta', 'Stable')][string]$Tier = 'Stable', [string[]]$Games = @())
+param([switch]$Release, [string]$Repository = '', [ValidateSet('Beta', 'Stable')][string]$Tier, [string[]]$Games = @())
 $ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'setup-tools.ps1')
 $arguments = @((Join-Path $PSScriptRoot 'pipeline.mjs'), 'build')
 if ($Release) {
-    $arguments += @('--release', '--repository', $Repository, '--tier', $Tier.ToLowerInvariant())
+    $arguments += '--release'
+    if ($Tier) { $arguments += @('--tier', $Tier.ToLowerInvariant()) }
+    if ($Repository) { $arguments += @('--repository', $Repository) }
     if ($Games.Count -gt 0) { $arguments += @('--games', ($Games -join ',')) }
 }
 & node @arguments

@@ -7,6 +7,7 @@ Dependencies: Cleanup; types/Context
 ]]
 
 local Cleanup = require("./Cleanup")
+local Lifecycle = require("./Lifecycle")
 local Types = require("../types/Context")
 local Context = {}
 --- Creates a context; log accepts sanitized codes, return value owns all resources.
@@ -19,13 +20,29 @@ function Context.new(log: (string) -> ()): Types.Context
         cleanup = scope,
         log = log,
         destroy = function() end,
+        transition = function()
+            return false
+        end,
     }
-    context.destroy = function()
+    context.transition = function(nextState: string): boolean
+        if not Lifecycle.canTransition(context.state, nextState) then
+            return false
+        end
+        context.state = nextState
+        return true
+    end
+    context.destroy = function(finalState: unknown?)
         if not context.alive then
             return
         end
         context.alive = false
-        context.state = "stopped"
+        if finalState == "failed" or finalState == "unsupported" then
+            if not context.transition(finalState) then
+                context.transition("stopped")
+            end
+        else
+            context.transition("stopped")
+        end
         scope.destroy()
     end
     return context

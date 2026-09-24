@@ -1,14 +1,28 @@
 --!strict
 --[[
 Purpose: Bind configuration controls through the config store
-Input: Window; store; library; key lookup
+Input: Window; store; library; key lookup; context
 Output: Settings tab
-Dependencies: None
+Dependencies: ConfigStore; WindUI keybind; runtime task scheduler
 ]]
 
 local Settings = {}
+local runtimeTask: any = getfenv().task
+local function applyToggleKey(window: any, store: any, keyCodes: any, value: any, control: any?)
+    local previous = store.get().toggleKey
+    store.update("toggleKey", value)
+    local selected = store.get().toggleKey
+    if selected ~= value then
+        store.update("toggleKey", previous)
+        selected = previous
+        if type(control) == "table" and type(control.Set) == "function" then
+            (control.Set :: any)(control, previous)
+        end
+    end
+    window:SetToggleKey(keyCodes[selected])
+end
 --- Mounts controls; save changes persist only when the storage backend is available.
-function Settings.mount(window: any, store: any, library: any, keyCodes: any)
+function Settings.mount(window: any, store: any, library: any, keyCodes: any, context: any?)
     local config = store.get()
     local tab = window:Tab({ Title = "Settings", Icon = "settings" })
     local controls: { [string]: any } = {}
@@ -47,20 +61,42 @@ function Settings.mount(window: any, store: any, library: any, keyCodes: any)
     })
     window:SetToggleKey(keyCodes[config.toggleKey])
     controls.toggleKey = tab:Keybind({
-        Title = "Toggle UI (RightShift / LeftAlt / F4)",
+        Title = "Toggle UI key",
         Value = config.toggleKey,
         Callback = function(value: string)
-            store.update("toggleKey", value)
-            window:SetToggleKey(keyCodes[store.get().toggleKey])
+            applyToggleKey(window, store, keyCodes, value, controls.toggleKey)
         end,
     })
+    -- The pinned WindUI picker changes Value after its label Text, without firing Callback.
+    local keyUi = controls.toggleKey
+        and controls.toggleKey.UIElements
+        and controls.toggleKey.UIElements.Keybind
+    local keyFrame = keyUi and keyUi.Frame and keyUi.Frame.Frame
+    local keyLabel = keyFrame and keyFrame.TextLabel
+    if
+        context
+        and keyLabel
+        and type(keyLabel.GetPropertyChangedSignal) == "function"
+        and type(runtimeTask) == "table"
+        and type(runtimeTask.defer) == "function"
+    then
+        local connection = keyLabel:GetPropertyChangedSignal("Text"):Connect(function()
+            runtimeTask.defer(function()
+                if context.alive and controls.toggleKey.Value ~= store.get().toggleKey then
+                    applyToggleKey(window, store, keyCodes, controls.toggleKey.Value, controls.toggleKey)
+                end
+            end)
+        end)
+        context.cleanup.add(function()
+            connection:Disconnect()
+        end)
+    end
     controls.save = tab:Button({
         Title = "Save settings",
         Callback = function()
             -- WindUI's picker updates Value; Callback fires on key press, not selection.
-            store.update("toggleKey", controls.toggleKey.Value)
+            applyToggleKey(window, store, keyCodes, controls.toggleKey.Value, controls.toggleKey)
             controls.toggleKey:Set(store.get().toggleKey)
-            window:SetToggleKey(keyCodes[store.get().toggleKey])
             local saved = store.save()
             if saved and not store.get().notifications then
                 return

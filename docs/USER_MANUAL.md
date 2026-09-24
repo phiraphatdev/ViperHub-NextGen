@@ -1,6 +1,6 @@
 # คู่มือผู้ใช้ ViperHub NextGen
 
-> **สถานะ 0.1.0: beta foundation** — ตรวจ `status.json` ล่าสุดก่อนใช้งาน
+> **สถานะ source ในเครื่อง 0.2.0 candidate; release ที่ประกาศเดิม 0.1.0** — ตรวจ `status.json` ล่าสุดก่อนใช้งาน
 > และยังไม่มีฟีเจอร์ช่วยเล่นหรือควบคุมเกม เอกสารนี้อธิบาย UI และการทดสอบ foundation เท่านั้น
 
 ## 1. ViperHub NextGen คืออะไร
@@ -14,14 +14,14 @@ ViperHub NextGen เป็นโครงพื้นฐาน Luau สำหร
 | Anime Vanguards | `16146832113` | ดู `status.json` | มีหลักฐาน foundation บน Potassium/Windows |
 | Anime Expeditions | `84515722934860` | ดู `status.json` | มีหลักฐาน foundation บน Potassium/Windows |
 
-ข้อมูล Place ID ใน registry เป็น **exact match**: place อื่นใน universe เดียวกันไม่ถูกนับว่ารองรับโดยอัตโนมัติ
+ระบบตรวจ Place ID ที่ลงทะเบียนก่อน แล้วใช้ Universe GameId ที่ตรวจสอบกับ Roblox API เป็น fallback สำหรับ sub-place; นี่เป็นการระบุชื่อเกม ไม่ใช่หลักฐานว่าทุกด่านผ่านการทดสอบ runtime แล้ว
 ผล Potassium ข้างต้นบันทึกไว้ใน `tests/runtime/verification.json`, `tests/runtime/AnimeVanguards-2026-09-24.json` และ `tests/runtime/AnimeExpeditions-2026-09-24.json`; ยังไม่ยืนยันการ rejoin
 หรือความเข้ากันได้ของ executor อื่น ๆ; โครงการไม่กำหนดรายชื่อ executor ที่รับรองล่วงหน้า
 
 ## 2. ก่อนเริ่มใช้งาน
 
 - ใช้เฉพาะ Roblox client/สภาพแวดล้อมที่คุณได้รับอนุญาตให้ทดสอบ
-- ใช้ release loader เฉพาะ revision ที่ผู้ดูแลประกาศและเมื่อเกมใน `status.json` เป็น `ready`; นักพัฒนาใช้ local smoke harness ได้
+- ใช้ loader URL ที่ผู้ดูแลประกาศและเมื่อเกมใน `status.json` เป็น `ready`; นักพัฒนาใช้ local smoke harness ได้
 - ต้องมี `loadstring` และ Roblox runtime; การดาวน์โหลด release ในอนาคตต้องมี HTTP ที่ใช้งานได้
 - การบันทึกข้าม session ต้องมี `readfile`, `writefile`, `isfile`, `isfolder` และ `makefolder` ครบ
   ถ้าไม่มี UI ยังใช้ได้ แต่ Settings จะแสดง `Session only: filesystem APIs unavailable`
@@ -43,8 +43,7 @@ Set-Location 'C:\Users\phiraphat.pk\Documents\projects\_github\viper-hub-nextgen
 แล้วอ่านสถานะด้วย `tests/runtime/Readback.luau` ตาม [คู่มือทดสอบ](TESTING.md)
 การรันคำสั่งในเครื่องผ่าน ไม่ได้ยืนยันว่า UI ทำงานจริงใน Roblox
 
-**อย่าคัดลอก loader URL แบบเดาเอง:** อ่าน `manifest.json.artifactRevision` จาก release commit ที่ประกาศ
-แล้วใช้ `https://raw.githubusercontent.com/phiraphatdev/ViperHub-NextGen/<artifactRevision>/dist/loader.lua`
+**อย่าคัดลอก loader URL แบบเดาเอง:** ใช้ URL ที่ประกาศใน GitHub Release. ถ้า `manifest.json.artifactRevision` เป็น SHA จะ pin module ที่ revision นั้น; ถ้าเป็น `null` จะโหลดจาก `main/dist/`
 ตรวจ `status.json` ว่าเกมที่เข้าอยู่เป็น `ready`; foundation นี้ยังไม่มีฟีเจอร์ gameplay
 
 ## 4. เมื่อเปิด UI ได้แล้ว
@@ -58,15 +57,16 @@ Set-Location 'C:\Users\phiraphat.pk\Documents\projects\_github\viper-hub-nextgen
 
 | รายการ | วิธีใช้ | ค่าเริ่มต้น/ขอบเขต |
 | --- | --- | --- |
-| Notifications | เปิดหรือปิด notification ของการตั้งค่า | เปิด |
+| Notifications | เปิดหรือปิด notification ทั่วไป; ข้อผิดพลาดสำคัญยังแสดง | เปิด |
 | UI scale | ปรับขนาดหน้าต่าง | `1.0`; ช่วง `0.8–1.3`, step `0.05` |
 | Theme | เลือกธีม | `Dark` เท่านั้นในเวอร์ชันนี้ |
-| Toggle UI | เลือกปุ่มซ่อน/แสดง UI | `RightShift`; รองรับ `LeftAlt`, `F4` |
+| Toggle UI | เลือกปุ่มซ่อน/แสดง UI | `RightShift`; รองรับ Control, Insert/Delete, Home/End และ F1–F12; ไม่รองรับ `LeftAlt` |
 | Save settings | บันทึกและอ่านกลับเพื่อตรวจผล | ต้องมี filesystem APIs ครบ |
 
-หลังเลือก keybind ให้กด **Save settings** เพื่อให้ค่าที่ picker แสดงถูกนำไปบันทึก
+หลังเลือก keybind ปุ่มใหม่ควรมีผลทันทีเมื่อ WindUI ส่งสัญญาณเปลี่ยนค่า; กด **Save settings** เพื่อบันทึกข้าม session และเป็น fallback หาก WindUI รุ่นที่ใช้ไม่มีสัญญาณดังกล่าว
 ถ้าเปิด Notifications จะเห็น `Saved and read back` เมื่อเขียนและอ่านกลับสำเร็จ
 ถ้าปิด Notifications อาจไม่มีข้อความสำเร็จ ให้ตรวจค่าภายหลังแทน
+ข้อผิดพลาดที่ทำให้เริ่มระบบไม่ได้ยังแสดงแม้ปิด Notifications เพื่อไม่ให้หน้า UI หายโดยไม่มีคำอธิบาย
 ข้อความ `Not saved; inspect Diagnostics` หมายถึงการบันทึกไม่สำเร็จ ไม่ควรถือว่าค่าคงอยู่หลัง rejoin
 
 ไฟล์ config ใช้ path คงที่ `ViperHubNextGen/<GameId>.json` ในพื้นที่ไฟล์ของ executor
@@ -76,7 +76,7 @@ Set-Location 'C:\Users\phiraphat.pk\Documents\projects\_github\viper-hub-nextgen
 
 ### Diagnostics
 
-กด **Refresh** เพื่อดู status code ของ session ปัจจุบัน ข้อมูลนี้เป็น code แบบจำกัดจำนวน
+แท็บแสดง status code ของ session ปัจจุบันหลัง startup; กด **Refresh** เพื่อดูเหตุการณ์ใหม่ ข้อมูลนี้เป็น code แบบจำกัดจำนวน
 ไม่แสดง payload เครือข่าย, token หรือ stack trace หากต้องแจ้งปัญหา ให้ส่ง code และบริบทเกม/executor
 โดยไม่ส่งไฟล์ส่วนตัวหรือข้อมูลบัญชี
 
@@ -93,7 +93,7 @@ Set-Location 'C:\Users\phiraphat.pk\Documents\projects\_github\viper-hub-nextgen
 | `Game module version or interface mismatch.` | module ไม่ตรงกับ manifest; หยุดใช้ artifact ชุดนั้นและแจ้งผู้ดูแล |
 | `Session only: filesystem APIs unavailable` | ปรับค่าได้ใน session แต่บันทึกข้าม session ไม่ได้ |
 
-**อย่าแก้ `status.json` เป็น `ready` เพื่อแก้ข้อความ error** เพราะเป็นการข้าม runtime gate ไม่ได้แก้สาเหตุ
+**อย่าแก้ `status.json` เป็น `ready` เพื่อแก้ข้อความ error** เพราะการเปิดเกมไม่แก้สาเหตุของ module ที่โหลดผิดหรือทำงานไม่สำเร็จ
 
 ## 6. แจ้งปัญหาอย่างไร
 

@@ -16,10 +16,13 @@ local HttpClient = require("../network/HttpClient")
 local ManifestClient = require("../network/ManifestClient")
 local ModuleLoader = require("../network/ModuleLoader")
 local Version = require("../utils/Version")
+local Validation = require("../utils/Validation")
 local App = require("../ui/App")
 local UIAdapter = require("../ui/WindUIAdapter")
-local LOADER_VERSION = "0.1.0"
+local LOADER_VERSION = "0.2.0"
 local TIMEOUT_SECONDS = 15
+local NOTIFY_RETRY_SECONDS = 0.2
+local NOTIFY_MAX_ATTEMPTS = 5
 local MAX_METADATA_BYTES = 65536
 local MAX_MODULE_BYTES = 4000000
 local ENV: { [string]: any } = getfenv()
@@ -35,10 +38,36 @@ local sharedState = ENV.shared
 if type(sharedState) ~= "table" or type(runtimeTask) ~= "table" then
     return { state = "unavailable", code = "RUNTIME_REQUIRED" }
 end
-local function notify(message: string)
-    pcall(function()
-        starterGui:SetCore("SendNotification", { Title = "ViperHub NextGen", Text = message, Duration = 8 })
-    end)
+local session: { [string]: any } = {}
+local function notify(message: string, critical: boolean?)
+    if critical ~= true then
+        local config: any = session.config
+        if config ~= nil and config.get().notifications == false then
+            return
+        end
+    end
+    local function send(): boolean
+        local ok = pcall(function()
+            starterGui:SetCore(
+                "SendNotification",
+                { Title = "ViperHub NextGen", Text = message, Duration = 8 }
+            )
+        end)
+        return ok
+    end
+    if send() or critical ~= true then
+        return
+    end
+    if type(runtimeTask.spawn) == "function" and type(runtimeTask.wait) == "function" then
+        pcall(runtimeTask.spawn, function()
+            for _ = 2, NOTIFY_MAX_ATTEMPTS do
+                runtimeTask.wait(NOTIFY_RETRY_SECONDS)
+                if sharedState.ViperHubNextGen ~= session or send() then
+                    return
+                end
+            end
+        end)
+    end
 end
 local old = sharedState.ViperHubNextGen
 if type(old) == "table" and type(old.destroy) == "function" then
@@ -46,20 +75,17 @@ if type(old) == "table" and type(old.destroy) == "function" then
 end
 local buffer = Diagnostics.new(64)
 local context = Context.new(buffer.push)
-local session: { [string]: any } =
-    { context = context, diagnostics = buffer.snapshot, destroy = context.destroy }
+session = { context = context, diagnostics = buffer.snapshot, destroy = context.destroy }
 sharedState.ViperHubNextGen = session
 local function fail(code: string, message: string)
     buffer.push(code)
-    context.destroy()
-    context.state = "failed"
-    notify(message)
+    context.destroy("failed")
+    notify(message, true)
 end
-local metadata = Detector.detect(gameObject.PlaceId)
+local metadata = Detector.detect(gameObject.PlaceId, gameObject.GameId)
 if not metadata then
-    context.destroy()
-    context.state = "unsupported"
-    notify("Unsupported game (name unavailable). Place: " .. tostring(gameObject.PlaceId))
+    context.destroy("unsupported")
+    notify("Unsupported game (name unavailable). Place: " .. tostring(gameObject.PlaceId), true)
     -- A slow metadata request must not delay stopping an unsupported session.
     if type(runtimeTask.spawn) == "function" then
         local requestedAt = os.clock()
@@ -75,17 +101,24 @@ if not metadata then
                 and os.clock() - requestedAt < TIMEOUT_SECONDS
                 and sharedState.ViperHubNextGen == session
             then
-                notify("Unsupported: " .. string.sub(info.Name, 1, 100))
+                notify("Unsupported: " .. string.sub(info.Name, 1, 100), true)
             end
         end)
     end
     return session
 end
 context.gameId = metadata.id
-context.state = "loading"
+assert(context.transition("loading"))
 local caps = Capabilities.detect(ENV)
 session.capabilities = caps
+local function decode(text: string): any
+    return httpService:JSONDecode(text)
+end
 local function run()
+    local store = ConfigStore.new(FileStorage.new(ENV, metadata.id), decode, function(value: any): string
+        return httpService:JSONEncode(value)
+    end, buffer.push)
+    session.config = store
     if not caps.compile then
         fail("COMPILE_UNAVAILABLE", "This environment cannot load modules.")
         return
@@ -93,9 +126,6 @@ local function run()
     local localArtifacts = ENV.VIPER_DEV_ARTIFACTS
     local exports: { [string]: any } = {}
     local manifest: any
-    local function decode(text: string): any
-        return httpService:JSONDecode(text)
-    end
     if type(localArtifacts) == "table" then
         -- Explicit local test harness only; production loader never fetches these overrides.
         manifest = localArtifacts.manifest
@@ -108,12 +138,7 @@ local function run()
                 return
             end
             local source = localArtifacts[id]
-            local value, code = ModuleLoader.load(
-                ENV.loadstring,
-                source,
-                if type(source) == "string" then #source else 0,
-                buffer.push
-            )
+            local value, code = ModuleLoader.load(ENV.loadstring, source, buffer.push)
             if not value then
                 fail(code or "MODULE_FAILED", "Could not load development module.")
                 return
@@ -133,10 +158,21 @@ local function run()
             )
             return
         end
-        local requester = ENV.request or ENV.http_request
+        local requester = if type(ENV.request) == "function" then ENV.request else ENV.http_request
         local client = HttpClient.new(function(url: string): (number, unknown)
             if caps.request then
-                local result = requester({ Url = url, Method = "GET" })
+                local options = { Url = url, Method = "GET" }
+                local ok, result = pcall(requester, options)
+                if
+                    (not ok or type(result) ~= "table")
+                    and requester ~= ENV.http_request
+                    and type(ENV.http_request) == "function"
+                then
+                    ok, result = pcall(ENV.http_request :: any, options)
+                end
+                if not ok then
+                    return 0, nil
+                end
                 if type(result) ~= "table" then
                     return 0, nil
                 end
@@ -158,13 +194,24 @@ local function run()
             end
             return value
         end
-        manifest = ManifestClient.validate(json("manifest.json"), repository)
+        manifest = ManifestClient.validate(json("manifest.json"), repository, metadata.id)
         if not context.alive then
             return
         end
         if not manifest then
             fail("MANIFEST_INVALID", "Release metadata unavailable or invalid.")
             return
+        end
+        if manifest.mode ~= "release" then
+            fail("MANIFEST_INVALID", "Development metadata cannot be loaded as a release.")
+            return
+        end
+        if not table.find(metadata.placeIds, gameObject.PlaceId) then
+            local releaseUniverses = manifest.games[metadata.id].gameIds
+            if not releaseUniverses or not table.find(releaseUniverses, gameObject.GameId) then
+                fail("GAME_UNAVAILABLE", "This match place is not in the published game registry.")
+                return
+            end
         end
         if (Version.compare(LOADER_VERSION, manifest.minLoaderVersion) or -1) < 0 then
             fail("LOADER_OUTDATED", "Update the ViperHub loader.")
@@ -188,11 +235,11 @@ local function run()
         end
         for _, id in { metadata.id, "ui" } do
             local artifact = manifest.artifacts[id]
-            local body, code = client.get(
-                base .. manifest.artifactRevision .. "/" .. artifact.path,
-                MAX_MODULE_BYTES,
-                TIMEOUT_SECONDS
-            )
+            local revision = if Validation.sha(manifest.artifactRevision)
+                then manifest.artifactRevision
+                else "main"
+            local body, code =
+                client.get(base .. revision .. "/" .. artifact.path, MAX_MODULE_BYTES, TIMEOUT_SECONDS)
             if not context.alive then
                 return
             end
@@ -200,7 +247,7 @@ local function run()
                 fail(code or "HTTP_FAILED", "Module download failed.")
                 return
             end
-            local value, loadCode = ModuleLoader.load(ENV.loadstring, body, artifact.bytes, buffer.push)
+            local value, loadCode = ModuleLoader.load(ENV.loadstring, body, buffer.push)
             if not value then
                 fail(loadCode or "MODULE_FAILED", "Module could not start.")
                 return
@@ -222,21 +269,26 @@ local function run()
         fail("GAME_CONTRACT", "Game module version or interface mismatch.")
         return
     end
-    local store = ConfigStore.new(FileStorage.new(ENV, metadata.id), decode, function(value: any): string
-        return httpService:JSONEncode(value)
-    end, buffer.push)
-    session.config = store
-    session.window = App.mount(exports.ui, context, gameModule.metadata, store, buffer, ENV.Enum.KeyCode)
+    local window, refreshDiagnostics =
+        App.mount(exports.ui, context, gameModule.metadata, store, buffer, ENV.Enum.KeyCode)
+    session.window = window
     context.cleanup.add(gameModule.stop)
     gameModule.start(context)
     if not context.alive then
         return
     end
-    context.state = "ready"
+    assert(context.transition("ready"))
     buffer.push("FOUNDATION_READY")
+    refreshDiagnostics()
 end
-local ok = pcall(run)
+local ok, err = pcall(run)
 if not ok then
+    if type(err) == "string" then
+        -- Only known internal contract codes may enter diagnostics; error payloads remain private.
+        if string.find(err, "UI_CONTRACT", 1, true) then
+            buffer.push("UI_CONTRACT")
+        end
+    end
     fail("STARTUP_FAILED", "ViperHub startup failed. Inspect the private diagnostics buffer.")
 end
 return session

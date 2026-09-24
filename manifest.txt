@@ -1,10 +1,10 @@
-ViperHub NextGen 0.1.0
+ViperHub NextGen 0.2.0
 Mode: release
 Tier: beta
 Games: AnimeVanguards,AnimeExpeditions
-sourceCommit: f5de8312ee023fe7b0c82602684983764b44f2fa
-loader f2fb723496c37e72c73abd70755ffb251f9c7179373f6604e01747667fcfe1ac 46324 bytes
+sourceCommit: none (single-commit build)
+artifactRevision: main (mutable)
+loader cf52288eed846ed000413ed0d9aab8427c39efd03fe30b7513da5c9cb81651af 54804 bytes
 ui 07bffde8cd7e897de1fc59b8cdaf49801f7d6d2905f891c19a06cc78b0c45188 1348987 bytes
-AnimeVanguards f4cf0eb91883b70b6db7556c7ba8decccf8684f308dde99bd30aab9931649c59 1718 bytes
-AnimeExpeditions b7e57e7c3b602e9acbbaf8d051e3480832f905faec9cf71dc2d36191a77964e1 1725 bytes
-artifactRevision: af39a11236b66776d756b5362cdebcc7df3dfce4
+AnimeExpeditions b41a550d8a942e09e4df234e04f652be7d8428e5837df8b88d5cc103f6206e8a 2359 bytes
+AnimeVanguards 3640a31c0d2dca61f409cebe85fb8ef46548c6ec2a68f7197437b40519c86187 2352 bytes

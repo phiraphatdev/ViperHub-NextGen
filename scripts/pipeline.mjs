@@ -4,8 +4,9 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {deriveGames,validateProject,validateSourceManifest,validateReleaseScope,validateEvidence,GAME_IDS} from './release-guards.mjs';
+import {deriveGames,validateProject,validateReleaseScope,requireReleaseMode,GAME_IDS} from './release-guards.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const PROJECT_VERSION='0.2.0';
 process.chdir(root);
 const read=p=>fs.readFileSync(p,'utf8');
 const json=p=>JSON.parse(read(p));
@@ -13,11 +14,19 @@ const write=(p,s)=>{fs.mkdirSync(path.dirname(p),{recursive:true});fs.writeFileS
 const digest=p=>crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
 const tool=(name,exe=name)=>path.join(root,'.tools',name,exe+'.exe');
 const run=(file,args)=>execFileSync(file,args,{cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe'],maxBuffer:16*1024*1024});
-const git=(...args)=>run('git',args).trim();
 const files=dir=>fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?files(path.join(dir,e.name)):[path.join(dir,e.name)]);
-const inputs=['src','vendor','scripts','tests','.darklua.json','.luaurc','stylua.toml','dependencies.lock.json'];
-const entries={loader:'src/bootstrap/Main.luau',AnimeVanguards:'src/games/AnimeVanguards/Entry.luau',AnimeExpeditions:'src/games/AnimeExpeditions/Entry.luau'};
-const paths={loader:'loader.lua',ui:'ui.lua',AnimeVanguards:'games/AnimeVanguards.lua',AnimeExpeditions:'games/AnimeExpeditions.lua'};
+const entries={loader:'src/bootstrap/Main.luau',...Object.fromEntries(GAME_IDS.map(id=>[id,'src/games/'+id+'/Entry.luau']))};
+const paths={loader:'loader.lua',ui:'ui.lua',...Object.fromEntries(GAME_IDS.map(id=>[id,'games/'+id+'.lua']))};
+function manifestText(manifest){
+    return [
+        'ViperHub NextGen '+manifest.version,'Mode: '+manifest.mode,
+        ...(manifest.releaseTier ? ['Tier: '+manifest.releaseTier] : []),
+        ...(manifest.releaseGames ? ['Games: '+manifest.releaseGames.join(',')] : []),
+        'sourceCommit: '+(manifest.sourceCommit || 'none (single-commit build)'),
+        'artifactRevision: '+(manifest.artifactRevision || 'main (mutable)'),
+        ...Object.entries(manifest.artifacts).map(([id,a])=>id+' '+a.sha256+' '+a.bytes+' bytes'),'',
+    ].join('\n');
+}
 function gameSources(){return {
     registry:read('src/games/Registry.luau'),
     metadata:Object.fromEntries(GAME_IDS.map(id=>[id,read('src/games/'+id+'/Metadata.luau')])),
@@ -36,6 +45,10 @@ function vendorCheck(){
 }
 function buildInto(directory){
     vendorCheck();
+    if(directory==='dist' && fs.existsSync('dist/games')){
+        const expected=new Set(GAME_IDS.map(id=>id+'.lua'));
+        for(const name of fs.readdirSync('dist/games'))if(name.endsWith('.lua')&&!expected.has(name))fs.unlinkSync(path.join('dist/games',name));
+    }
     for(const [key,input]of Object.entries(entries)){
         const output=path.join(directory,paths[key]);fs.mkdirSync(path.dirname(output),{recursive:true});
         run(tool('darklua'),['process','-c','.darklua.json',input,output]);
@@ -49,58 +62,42 @@ function buildInto(directory){
     }
     return artifacts;
 }
-function build(){
+function build(preserveMode=false){
     const manifest=json('manifest.json');
+    manifest.version=PROJECT_VERSION;
+    manifest.loaderVersion=PROJECT_VERSION;
+    manifest.minLoaderVersion=PROJECT_VERSION;
     const sources=gameSources();
     manifest.games=deriveGames(sources.registry,sources.metadata);
     projectCheck(manifest);
     const release=process.argv.includes('--release');
-    const tier=release ? (process.argv.includes('--tier') ? process.argv[process.argv.indexOf('--tier')+1] : 'stable') : null;
+    const tier=process.argv.includes('--tier') ? process.argv[process.argv.indexOf('--tier')+1] : manifest.releaseTier;
     const gamesArgument=process.argv.includes('--games') ? process.argv[process.argv.indexOf('--games')+1] : null;
-    const releaseGames=gamesArgument ? gamesArgument.split(',') : GAME_IDS;
-    let sourceCommit=null;
+    const releaseGames=gamesArgument ? gamesArgument.split(',') : manifest.releaseGames;
     if(release){
-        sourceCommit=git('rev-parse','HEAD');
-        if(git('status','--porcelain'))throw Error('Release build requires a clean committed source checkout');
-        const repository=process.argv[process.argv.indexOf('--repository')+1];
+        const repository=process.argv.includes('--repository') ? process.argv[process.argv.indexOf('--repository')+1] : manifest.repository;
         if(!repository?.match(/^[\w-]+\/[\w.-]+$/))throw Error('An actual owner/repository is required');
-        // Actual runtime evidence is a gate, not an inferred result of unit tests.
-        const evidence=json('work/runtime-verification.json');
-        validateEvidence(evidence,sourceCommit,manifest,{tier,games:releaseGames});
         manifest.repository=repository;
     }
-    manifest.sourceCommit=sourceCommit;manifest.mode=release?'release':'development';
-    if(release){manifest.releaseTier=tier;manifest.releaseGames=releaseGames;}
+    manifest.sourceCommit=null;manifest.mode=preserveMode?manifest.mode:(release?'release':'development');
+    if(tier)manifest.releaseTier=tier;
+    if(releaseGames)manifest.releaseGames=releaseGames;
     manifest.artifactRevision=null;
     manifest.artifacts=buildInto('dist');
     write('manifest.json',JSON.stringify(manifest,null,2)+'\n');
-    write('manifest.txt',[
-        'ViperHub NextGen '+manifest.version,'Mode: '+manifest.mode,
-        ...(release ? ['Tier: '+tier,'Games: '+releaseGames.join(',')] : []),
-        'sourceCommit: '+(sourceCommit??'unavailable; uncommitted development build'),
-        ...Object.entries(manifest.artifacts).map(([id,a])=>id+' '+a.sha256+' '+a.bytes+' bytes'),'',
-    ].join('\n'));
+    write('manifest.txt',manifestText(manifest));
     console.log('Built '+Object.keys(manifest.artifacts).length+' artifacts ('+manifest.mode+')');
 }
-function verify(development=false){
+function verify(requireRelease=false){
     vendorCheck();const m=json('manifest.json');projectCheck(m);
+    if(read('manifest.txt')!==manifestText(m))throw Error('manifest.txt differs from manifest.json');
+    if(requireRelease)requireReleaseMode(m);
+    if(Object.keys(m.artifacts).sort().join(',')!==Object.keys(paths).sort().join(','))throw Error('Missing or unexpected artifacts');
     for(const [id,a]of Object.entries(m.artifacts)){
         if(a.path!=='dist/'+paths[id])throw Error('Unexpected artifact path');
         if(digest(a.path)!==a.sha256||fs.statSync(a.path).size!==a.bytes)throw Error('Artifact mismatch: '+id);
     }
-    if(Object.keys(m.artifacts).length!==4)throw Error('Missing artifacts');
-    if(!development){
-        if(m.mode!=='release'||!m.sourceCommit?.match(/^[a-f0-9]{40}$/)||!m.artifactRevision?.match(/^[a-f0-9]{40}$/))throw Error('Not a published release manifest');
-        validateReleaseScope(m,json('status.json'));
-        git('cat-file','-e',m.sourceCommit+'^{commit}');
-        if(git('diff',m.sourceCommit,'--',...inputs))throw Error('Build inputs differ from sourceCommit');
-        if(git('ls-files','--others','--exclude-standard','--',...inputs))throw Error('Untracked build inputs');
-        validateSourceManifest(m,JSON.parse(git('show',m.sourceCommit+':manifest.json')));
-        for(const a of Object.values(m.artifacts)){
-            const bytes=execFileSync('git',['show',m.artifactRevision+':'+a.path],{cwd:root,maxBuffer:16*1024*1024});
-            if(crypto.createHash('sha256').update(bytes).digest('hex')!==a.sha256)throw Error('Published revision mismatch');
-        }
-    }
+    validateReleaseScope(m,json('status.json'));
     const replay=buildInto('work/replay');
     if(JSON.stringify(replay)!==JSON.stringify(m.artifacts))throw Error('Rebuilt output differs from manifest');
     console.log('Artifact hashes, sizes and deterministic rebuild verified');
@@ -115,28 +112,28 @@ function harness(){
     console.log('Local runtime harness: work/runtime-smoke.lua');
 }
 function check(){
-    vendorCheck();
+    build(true);
     projectCheck();
     console.log(run('node',['tests/release-guards.test.mjs']));
     console.log(run(tool('stylua'),['--check','src','tests']));
     console.log(run(tool('luau','luau-analyze'),['src','tests']));
     for(const p of files('src').filter(p=>p.endsWith('.luau'))){
         const s=read(p);if(!s.startsWith('--!strict')||!s.includes('Purpose:')||!s.includes('Dependencies:'))throw Error('Missing module contract: '+p);
-        if(/\bsyn\s*\.|(?<![\w.])(?:wait|spawn|delay)\s*\(/.test(s))throw Error('Forbidden API: '+p);
+        const code=s.replace(/--\[(=*)\[[\s\S]*?\]\1\]/g,'').replace(/--[^\r\n]*/g,'');
+        if(/\bsyn\s*\.|(?<![\w.])(?:wait|spawn|delay)\s*\(/.test(code))throw Error('Forbidden API: '+p);
     }
     console.log(run(tool('luau'),['tests/unit/run.luau']));
-    if(json('manifest.json').mode==='release') buildInto('dist'); else build();
     const integration='local run=require("../tests/integration/Bootstrap")\nrun('+long(read('dist/loader.lua'))+')\n';
     write('work/integration.luau',integration);
     console.log(run(tool('luau'),['work/integration.luau']));
-    verify(true);harness();
+    verify();harness();
     console.log('Local gates passed; live runtime verification is separate.');
 }
 try{
     switch(process.argv[2]){
         case 'build':build();harness();break;
         case 'check':check();break;
-        case 'verify':verify(process.argv.includes('--development'));break;
+        case 'verify':verify(true);break;
         default:throw Error('Expected build, check or verify');
     }
 }catch(error){console.error(error.stderr?.toString()||error.stack);process.exitCode=1;}

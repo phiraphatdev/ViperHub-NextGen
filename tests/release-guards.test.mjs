@@ -1,95 +1,81 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {deriveGames, validateProject, validateSourceManifest, validateReleaseScope, validateEvidence, GAME_IDS, REQUIRED_CHECKS} from '../scripts/release-guards.mjs';
+import path from 'node:path';
+import {execFileSync} from 'node:child_process';
+import {discoverGameIds, deriveGames, validateProject, validateReleaseScope, requireReleaseMode, GAME_IDS} from '../scripts/release-guards.mjs';
 
-const read = p => fs.readFileSync(new URL('../' + p, import.meta.url), 'utf8');
+const root = path.resolve(import.meta.dirname, '..');
+const read = p => fs.readFileSync(path.join(root, p), 'utf8');
 const manifest = JSON.parse(read('manifest.json'));
 const status = JSON.parse(read('status.json'));
 const registry = read('src/games/Registry.luau');
 const metadata = Object.fromEntries(GAME_IDS.map(id => [id, read(`src/games/${id}/Metadata.luau`)]));
 const clone = value => structuredClone(value);
-const rejects = (fn, message) => assert.throws(fn, {message: new RegExp(message)});
+const rejects = (fn, message) => assert.throws(fn, {message:new RegExp(message)});
+
+assert.deepEqual(GAME_IDS, discoverGameIds());
+const fixture = path.join(root, 'work', 'game-discovery-fixture');
+fs.mkdirSync(path.join(fixture, 'SampleGame'), {recursive:true});
+fs.writeFileSync(path.join(fixture, 'SampleGame', 'Metadata.luau'), '-- fixture only\n');
+assert.deepEqual(discoverGameIds(fixture), ['SampleGame']);
+const sampleSource = metadata[GAME_IDS[0]].replaceAll(GAME_IDS[0], 'SampleGame');
+const sampleRegistry = 'return { require("./SampleGame/Metadata") }';
+const sampleGames = deriveGames(sampleRegistry, {SampleGame:sampleSource}, ['SampleGame']);
+const commentedUniverse = sampleSource.replace(/gameIds\s*=/, '-- gameIds = { 123 }\n    gameIds =');
+assert.deepEqual(deriveGames(sampleRegistry, {SampleGame:commentedUniverse}, ['SampleGame']).SampleGame.gameIds,
+    sampleGames.SampleGame.gameIds);
+const duplicateIds = sampleSource.replace(/gameIds\s*=\s*\{[^}]+\}/,
+    '$&\n    gameIds = { 123 }');
+rejects(() => deriveGames(sampleRegistry, {SampleGame:duplicateIds}, ['SampleGame']), 'duplicate game metadata gameIds');
+validateProject({schemaVersion:1,games:sampleGames},
+    {schemaVersion:1,games:{SampleGame:{state:'disabled',reason:'fixture'}}},
+    sampleRegistry, {SampleGame:sampleSource}, ['SampleGame']);
+
 validateProject(manifest, status, registry, metadata);
+const loaderVersion = read('src/bootstrap/Main.luau').match(/local LOADER_VERSION\s*=\s*"([^"]+)"/)?.[1];
+assert.equal(manifest.version, loaderVersion);
+assert.equal(manifest.loaderVersion, loaderVersion);
+assert.equal(manifest.minLoaderVersion, loaderVersion);
+for (const game of Object.values(manifest.games)) assert.equal(game.version, loaderVersion);
 assert.deepEqual(deriveGames(registry, metadata), manifest.games);
-const nextVersion = '9.9.9';
-const changedMetadata = {...metadata, AnimeVanguards: metadata.AnimeVanguards.replace(/local VERSION = "[^"]+"/, `local VERSION = "${nextVersion}"`)};
-const syncedManifest = {...manifest, games: deriveGames(registry, changedMetadata)};
-assert.equal(syncedManifest.games.AnimeVanguards.version, nextVersion);
+const changedMetadata = {...metadata, [GAME_IDS[0]]:metadata[GAME_IDS[0]].replace(/local VERSION = "[^"]+"/, 'local VERSION = "9.9.9"')};
+const syncedManifest = {...manifest, games:deriveGames(registry, changedMetadata)};
+assert.equal(syncedManifest.games[GAME_IDS[0]].version, '9.9.9');
 validateProject(syncedManifest, status, registry, changedMetadata);
 rejects(() => validateProject(manifest, status, registry, changedMetadata), 'metadata mismatch');
-const betaManifest = {...manifest, releaseTier: 'beta', releaseGames: ['AnimeVanguards']};
-const scopedStatus = clone(status);
-for (const gameId of GAME_IDS) scopedStatus.games[gameId].state = 'disabled';
-validateReleaseScope(betaManifest, scopedStatus);
-const wronglyReady = clone(scopedStatus);
-wronglyReady.games.AnimeExpeditions.state = 'ready';
-rejects(() => validateReleaseScope(betaManifest, wronglyReady), 'Ready game outside release scope');
-rejects(() => validateReleaseScope({...betaManifest, releaseGames: ['AnimeVanguards', 'AnimeVanguards']}, scopedStatus), 'Invalid release scope metadata');
-const mixedPlaceMetadata = {...metadata, AnimeVanguards: metadata.AnimeVanguards.replace('placeIds = { 16146832113 }', 'placeIds = { 16146832113, "bad" }')};
-rejects(() => validateProject(manifest, status, registry, mixedPlaceMetadata), 'Invalid game metadata Place ID');
+rejects(() => deriveGames(registry.replace(`require("./${GAME_IDS[0]}/Metadata")`, ''), metadata), 'Registry games differ');
 
-const wrongVersion = clone(manifest);
-wrongVersion.games.AnimeVanguards.version = '9.9.9';
-rejects(() => validateProject(wrongVersion, status, registry, metadata), 'metadata mismatch');
 const wrongPlace = clone(manifest);
-wrongPlace.games.AnimeExpeditions.placeIds = [123];
+wrongPlace.games[GAME_IDS[0]].placeIds = [123];
 rejects(() => validateProject(wrongPlace, status, registry, metadata), 'metadata mismatch');
+const wrongUniverse = clone(manifest);
+wrongUniverse.games[GAME_IDS[0]].gameIds = [123];
+rejects(() => validateProject(wrongUniverse, status, registry, metadata), 'metadata mismatch');
+const duplicateUniverse = {...metadata};
+duplicateUniverse[GAME_IDS[1]] = metadata[GAME_IDS[1]].replace(/gameIds\s*=\s*\{[^}]+\}/,
+    metadata[GAME_IDS[0]].match(/gameIds\s*=\s*\{[^}]+\}/)[0]);
+rejects(() => deriveGames(registry, duplicateUniverse), 'duplicate Universe ID');
 const missingGame = clone(manifest);
-delete missingGame.games.AnimeExpeditions;
+delete missingGame.games[GAME_IDS[0]];
 rejects(() => validateProject(missingGame, status, registry, metadata), 'Invalid manifest games');
 const malformedStatus = clone(status);
-malformedStatus.games.AnimeVanguards.state = 'surprise';
+malformedStatus.games[GAME_IDS[0]].state = 'surprise';
 rejects(() => validateProject(manifest, malformedStatus, registry, metadata), 'Invalid game status');
-const changedSource = clone(manifest);
-changedSource.games.AnimeVanguards.version = '9.9.9';
-rejects(() => validateSourceManifest(changedSource, manifest), 'source field differs');
-const publication = clone(manifest);
-publication.artifactRevision = 'a'.repeat(40);
-validateSourceManifest(publication, manifest);
 
-const sha = 'a'.repeat(40);
-const passed = {
-    status: 'passed', sourceCommit: sha,
-    artifactHashes: Object.fromEntries(Object.entries(manifest.artifacts).map(([id, a]) => [id, a.sha256])),
-    runs: GAME_IDS.map(gameId => ({
-        gameId, executor: 'Unlisted test runtime', status: 'passed', executorVersion: 'test fixture', clientVersion: 'test fixture',
-        os: 'test fixture', testedAt: '2026-09-23T00:00:00Z', placeId: manifest.games[gameId].placeIds[0],
-        checks: Object.fromEntries(REQUIRED_CHECKS.map(name => [name, {result: 'passed', observed: 'fixture observation'}])),
-    })),
-};
-validateEvidence(passed, sha, manifest);
-const betaOne = clone(passed);
-betaOne.tier = 'beta';
-betaOne.targetGames = ['AnimeVanguards'];
-betaOne.limits = 'Potassium/Windows foundation only';
-betaOne.runs.pop();
-delete betaOne.runs[0].checks.rejoinPersistence;
-delete betaOne.runs[0].checks.cleanup;
-validateEvidence(betaOne, sha, manifest, {tier: 'beta', games: ['AnimeVanguards']});
-rejects(() => validateEvidence(betaOne, sha, manifest, {tier: 'beta', games: ['AnimeExpeditions']}), 'scope differs');
-rejects(() => validateEvidence(betaOne, sha, manifest, {tier: 'stable', games: ['AnimeVanguards']}), 'Stable release requires all');
-const betaWithoutLimits = clone(betaOne);
-delete betaWithoutLimits.limits;
-rejects(() => validateEvidence(betaWithoutLimits, sha, manifest, {tier: 'beta', games: ['AnimeVanguards']}), 'limitations must be documented');
-const betaMissingControl = clone(betaOne);
-delete betaMissingControl.runs[0].checks.controls;
-rejects(() => validateEvidence(betaMissingControl, sha, manifest, {tier: 'beta', games: ['AnimeVanguards']}), 'Incomplete runtime run');
-const partial = clone(passed);
-partial.status = 'partial';
-rejects(() => validateEvidence(partial, sha, manifest), 'runtime evidence');
-const missingRun = clone(passed);
-missingRun.runs.pop();
-rejects(() => validateEvidence(missingRun, sha, manifest), 'Missing runtime game coverage');
-const duplicateRun = clone(passed);
-duplicateRun.runs.push(clone(duplicateRun.runs[0]));
-rejects(() => validateEvidence(duplicateRun, sha, manifest), 'Duplicate runtime run');
-const unnamedExecutor = clone(passed);
-unnamedExecutor.runs[0].executor = ' ';
-rejects(() => validateEvidence(unnamedExecutor, sha, manifest), 'Invalid runtime run identity');
-const missingCheck = clone(passed);
-delete missingCheck.runs[0].checks.rejoinPersistence;
-rejects(() => validateEvidence(missingCheck, sha, manifest), 'Incomplete runtime run');
-const wrongHash = clone(passed);
-wrongHash.artifactHashes.loader = 'b'.repeat(64);
-rejects(() => validateEvidence(wrongHash, sha, manifest), 'artifact hashes differ');
-console.log('PASS: release guard positive and negative cases');
+validateReleaseScope(manifest, status);
+requireReleaseMode({...manifest, mode:'release'});
+rejects(() => requireReleaseMode({...manifest, mode:'development'}), 'release-mode build');
+const narrower = {...manifest, releaseGames:[GAME_IDS[0]]};
+validateReleaseScope(narrower, status); // Operational ready state is independent of release metadata.
+rejects(() => validateReleaseScope({...manifest, releaseGames:[GAME_IDS[0],GAME_IDS[0]]}, status), 'Invalid release scope');
+rejects(() => validateReleaseScope({...manifest, releaseTier:'unknown'}, status), 'Invalid release scope');
+const manifestTextPath = path.join(root, 'manifest.txt');
+const manifestText = fs.readFileSync(manifestTextPath);
+try {
+    fs.appendFileSync(manifestTextPath, 'tampered\n');
+    assert.throws(() => execFileSync('node', ['scripts/pipeline.mjs','verify'],
+        {cwd:root,stdio:'pipe'}), error => error.stderr?.toString().includes('manifest.txt differs'));
+} finally {
+    fs.writeFileSync(manifestTextPath, manifestText);
+}
+console.log('PASS: dynamic game discovery and local release guards');

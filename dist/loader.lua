@@ -22,17 +22,19 @@ do
     do
         local function __modImpl()
             local Types = __DARKLUA_BUNDLE_MODULES.a()
-            local VERSION = '0.1.0'
-            local LAST_UPDATED = '2026-09-22'
+            local VERSION = '0.2.0'
+            local LAST_UPDATED = '2026-09-24'
             local metadata = {
                 id = 'AnimeVanguards',
                 name = 'Anime Vanguards',
                 version = VERSION,
                 lastUpdated = LAST_UPDATED,
                 placeIds = {16146832113},
+                gameIds = {5578556129},
             }
 
             table.freeze(metadata.placeIds)
+            table.freeze(metadata.gameIds)
 
             return table.freeze(metadata)
         end
@@ -53,17 +55,19 @@ do
     do
         local function __modImpl()
             local Types = __DARKLUA_BUNDLE_MODULES.a()
-            local VERSION = '0.1.0'
-            local LAST_UPDATED = '2026-09-22'
+            local VERSION = '0.2.0'
+            local LAST_UPDATED = '2026-09-24'
             local metadata = {
                 id = 'AnimeExpeditions',
                 name = 'Anime Expeditions',
                 version = VERSION,
                 lastUpdated = LAST_UPDATED,
                 placeIds = {84515722934860},
+                gameIds = {7613921865},
             }
 
             table.freeze(metadata.placeIds)
+            table.freeze(metadata.gameIds)
 
             return table.freeze(metadata)
         end
@@ -149,27 +153,42 @@ do
             local Types = __DARKLUA_BUNDLE_MODULES.a()
             local Detector = {}
 
-            function Detector.detect(placeId)
-                if not Validation.isFinite(placeId) then
-                    return nil
+            function Detector.detect(placeId, gameId)
+                local function valid(value)
+                    return Validation.isFinite(value) and (value) > 0 and (value) % 1 == 0
+                end
+                local function copy(metadata)
+                    return {
+                        id = metadata.id,
+                        name = metadata.name,
+                        version = metadata.version,
+                        lastUpdated = metadata.lastUpdated,
+                        placeIds = table.clone(metadata.placeIds),
+                        gameIds = if metadata.gameIds then table.clone(metadata.gameIds)else nil,
+                    }
                 end
 
-                local id = placeId
+                if valid(placeId) then
+                    for _, metadata in Registry do
+                        for _, supported in metadata.placeIds do
+                            if placeId == supported then
+                                if valid(gameId) and metadata.gameIds and not table.find(metadata.gameIds, gameId) then
+                                    return nil
+                                end
 
-                if id <= 0 or id % 1 ~= 0 then
+                                return copy(metadata)
+                            end
+                        end
+                    end
+                end
+                if not valid(gameId) then
                     return nil
                 end
 
                 for _, metadata in Registry do
-                    for _, supported in metadata.placeIds do
-                        if id == supported then
-                            return {
-                                id = metadata.id,
-                                name = metadata.name,
-                                version = metadata.version,
-                                lastUpdated = metadata.lastUpdated,
-                                placeIds = table.clone(metadata.placeIds),
-                            }
+                    for _, supported in metadata.gameIds or {}do
+                        if gameId == supported then
+                            return copy(metadata)
                         end
                     end
                 end
@@ -254,7 +273,35 @@ do
     end
     do
         local function __modImpl()
-            return {}
+            local Lifecycle = {}
+            local ALLOWED = {
+                created = {
+                    loading = true,
+                    unsupported = true,
+                    failed = true,
+                    stopped = true,
+                },
+                loading = {
+                    ready = true,
+                    failed = true,
+                    stopped = true,
+                },
+                ready = {
+                    stopped = true,
+                    failed = true,
+                },
+                failed = {stopped = true},
+                unsupported = {stopped = true},
+                stopped = {},
+            }
+
+            function Lifecycle.canTransition(current, nextState)
+                local transitions = ALLOWED[current]
+
+                return transitions ~= nil and transitions[nextState] == true
+            end
+
+            return Lifecycle
         end
 
         function __DARKLUA_BUNDLE_MODULES.h()
@@ -272,8 +319,27 @@ do
     end
     do
         local function __modImpl()
+            return {}
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.i()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.i
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.i = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
             local Cleanup = __DARKLUA_BUNDLE_MODULES.g()
-            local Types = __DARKLUA_BUNDLE_MODULES.h()
+            local Lifecycle = __DARKLUA_BUNDLE_MODULES.h()
+            local Types = __DARKLUA_BUNDLE_MODULES.i()
             local Context = {}
 
             function Context.new(log)
@@ -285,15 +351,34 @@ do
                     cleanup = scope,
                     log = log,
                     destroy = function() end,
+                    transition = function()
+                        return false
+                    end,
                 }
 
-                context.destroy = function()
+                context.transition = function(nextState)
+                    if not Lifecycle.canTransition(context.state, nextState) then
+                        return false
+                    end
+
+                    context.state = nextState
+
+                    return true
+                end
+                context.destroy = function(finalState)
                     if not context.alive then
                         return
                     end
 
                     context.alive = false
-                    context.state = 'stopped'
+
+                    if finalState == 'failed' or finalState == 'unsupported' then
+                        if not context.transition(finalState) then
+                            context.transition('stopped')
+                        end
+                    else
+                        context.transition('stopped')
+                    end
 
                     scope.destroy()
                 end
@@ -304,14 +389,14 @@ do
             return Context
         end
 
-        function __DARKLUA_BUNDLE_MODULES.i()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.i
+        function __DARKLUA_BUNDLE_MODULES.j()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.j
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.i = v
+                __DARKLUA_BUNDLE_MODULES.cache.j = v
             end
 
             return v.c
@@ -345,14 +430,14 @@ do
             return Diagnostics
         end
 
-        function __DARKLUA_BUNDLE_MODULES.j()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.j
+        function __DARKLUA_BUNDLE_MODULES.k()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.k
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.j = v
+                __DARKLUA_BUNDLE_MODULES.cache.k = v
             end
 
             return v.c
@@ -377,14 +462,14 @@ do
             return Capabilities
         end
 
-        function __DARKLUA_BUNDLE_MODULES.k()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.k
+        function __DARKLUA_BUNDLE_MODULES.l()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.l
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.k = v
+                __DARKLUA_BUNDLE_MODULES.cache.l = v
             end
 
             return v.c
@@ -392,7 +477,7 @@ do
     end
     do
         local function __modImpl()
-            local Capabilities = __DARKLUA_BUNDLE_MODULES.k()
+            local Capabilities = __DARKLUA_BUNDLE_MODULES.l()
             local Validation = __DARKLUA_BUNDLE_MODULES.e()
             local FileStorage = {}
             local ROOT = 'ViperHubNextGen'
@@ -452,14 +537,14 @@ do
             return FileStorage
         end
 
-        function __DARKLUA_BUNDLE_MODULES.l()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.l
+        function __DARKLUA_BUNDLE_MODULES.m()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.m
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.l = v
+                __DARKLUA_BUNDLE_MODULES.cache.m = v
             end
 
             return v.c
@@ -476,14 +561,14 @@ do
             })
         end
 
-        function __DARKLUA_BUNDLE_MODULES.m()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.m
+        function __DARKLUA_BUNDLE_MODULES.n()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.n
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.m = v
+                __DARKLUA_BUNDLE_MODULES.cache.n = v
             end
 
             return v.c
@@ -491,13 +576,29 @@ do
     end
     do
         local function __modImpl()
-            local Defaults = __DARKLUA_BUNDLE_MODULES.m()
+            local Defaults = __DARKLUA_BUNDLE_MODULES.n()
             local Validation = __DARKLUA_BUNDLE_MODULES.e()
             local Schema = {}
             local KEYS = {
                 RightShift = true,
-                LeftAlt = true,
+                RightControl = true,
+                LeftControl = true,
+                Insert = true,
+                Delete = true,
+                Home = true,
+                End = true,
+                F1 = true,
+                F2 = true,
+                F3 = true,
                 F4 = true,
+                F5 = true,
+                F6 = true,
+                F7 = true,
+                F8 = true,
+                F9 = true,
+                F10 = true,
+                F11 = true,
+                F12 = true,
             }
 
             function Schema.decode(value)
@@ -537,14 +638,14 @@ do
             return Schema
         end
 
-        function __DARKLUA_BUNDLE_MODULES.n()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.n
+        function __DARKLUA_BUNDLE_MODULES.o()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.o
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.n = v
+                __DARKLUA_BUNDLE_MODULES.cache.o = v
             end
 
             return v.c
@@ -552,7 +653,7 @@ do
     end
     do
         local function __modImpl()
-            local Schema = __DARKLUA_BUNDLE_MODULES.n()
+            local Schema = __DARKLUA_BUNDLE_MODULES.o()
             local ConfigStore = {}
 
             function ConfigStore.new(storage, decode, encode, log)
@@ -616,14 +717,14 @@ do
             return ConfigStore
         end
 
-        function __DARKLUA_BUNDLE_MODULES.o()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.o
+        function __DARKLUA_BUNDLE_MODULES.p()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.p
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.o = v
+                __DARKLUA_BUNDLE_MODULES.cache.p = v
             end
 
             return v.c
@@ -639,12 +740,14 @@ do
                         if not url:match('^https://raw%.githubusercontent%.com/') then
                             return nil, 'URL_REJECTED'
                         end
+                        if type(scheduler.spawn) ~= 'function' or type(scheduler.wait) ~= 'function' or type(scheduler.clock) ~= 'function' then
+                            return nil, 'HTTP_SCHEDULER'
+                        end
 
                         local finished, expired = false, false
                         local response = nil
                         local failure = nil
-
-                        scheduler.spawn(function()
+                        local scheduled = pcall(scheduler.spawn, function()
                             local ok, status, body = pcall(transport, url)
 
                             if expired then
@@ -663,10 +766,20 @@ do
                             finished = true
                         end)
 
+                        if not scheduled then
+                            return nil, 'HTTP_SCHEDULER'
+                        end
+
                         local started = scheduler.clock()
 
                         while not finished and scheduler.clock() - started < timeout do
-                            scheduler.wait(0.05)
+                            local waited = pcall(scheduler.wait, 0.05)
+
+                            if not waited then
+                                expired = true
+
+                                return nil, 'HTTP_SCHEDULER'
+                            end
                         end
 
                         if not finished then
@@ -683,14 +796,14 @@ do
             return HttpClient
         end
 
-        function __DARKLUA_BUNDLE_MODULES.p()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.p
+        function __DARKLUA_BUNDLE_MODULES.q()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.q
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.p = v
+                __DARKLUA_BUNDLE_MODULES.cache.q = v
             end
 
             return v.c
@@ -739,24 +852,6 @@ do
             return Version
         end
 
-        function __DARKLUA_BUNDLE_MODULES.q()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.q
-
-            if not v then
-                v = {
-                    c = __modImpl(),
-                }
-                __DARKLUA_BUNDLE_MODULES.cache.q = v
-            end
-
-            return v.c
-        end
-    end
-    do
-        local function __modImpl()
-            return {}
-        end
-
         function __DARKLUA_BUNDLE_MODULES.r()
             local v = __DARKLUA_BUNDLE_MODULES.cache.r
 
@@ -772,62 +867,87 @@ do
     end
     do
         local function __modImpl()
+            return {}
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.s()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.s
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.s = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
             local Validation = __DARKLUA_BUNDLE_MODULES.e()
-            local Version = __DARKLUA_BUNDLE_MODULES.q()
-            local Types = __DARKLUA_BUNDLE_MODULES.r()
+            local Version = __DARKLUA_BUNDLE_MODULES.r()
+            local Types = __DARKLUA_BUNDLE_MODULES.s()
             local ManifestClient = {}
 
-            function ManifestClient.validate(value, repository)
+            function ManifestClient.validate(value, repository, targetGameId)
                 if type(value) ~= 'table' then
                     return nil
                 end
 
                 local data = value
 
-                if data.schemaVersion ~= 1 or data.mode ~= 'release' or data.repository ~= repository or not Validation.sha(data.sourceCommit) or not Validation.sha(data.artifactRevision) or not Version.parse(data.version) or not Version.parse(data.loaderVersion) or not Version.parse(data.minLoaderVersion) or type(data.artifacts) ~= 'table' or type(data.games) ~= 'table' then
+                if data.schemaVersion ~= 1 or (data.mode ~= 'release' and data.mode ~= 'development') or data.repository ~= repository or (data.sourceCommit ~= nil and (type(data.sourceCommit) ~= 'string' or #data.sourceCommit > 128)) or (data.artifactRevision ~= nil and (type(data.artifactRevision) ~= 'string' or #data.artifactRevision > 128)) or not Version.parse(data.version) or not Version.parse(data.loaderVersion) or not Version.parse(data.minLoaderVersion) or type(data.artifacts) ~= 'table' or type(data.games) ~= 'table' then
                     return nil
                 end
 
-                local count = 0
                 local artifacts = data.artifacts
                 local games = data.games
 
-                for key, rawArtifact in artifacts do
+                if targetGameId ~= nil and not Validation.identifier(targetGameId) then
+                    return nil
+                end
+
+                local selected = if targetGameId then{
+                    'ui',
+                    targetGameId,
+                }else{
+                    'ui',
+                }
+
+                for _, key in selected do
+                    local rawArtifact = artifacts[key]
+
                     if type(rawArtifact) ~= 'table' then
                         return nil
                     end
 
                     local artifact = rawArtifact
+                    local sha = artifact.sha256
 
-                    count += 1
-
-                    if count > 16 or not Validation.identifier(key) or type(artifact) ~= 'table' or not Validation.artifactPath(artifact.path) or type(artifact.sha256) ~= 'string' or #artifact.sha256 ~= 64 or not artifact.sha256:match('^[a-f0-9]+$') or not Validation.isFinite(artifact.bytes) or artifact.bytes % 1 ~= 0 or artifact.bytes <= 0 or artifact.bytes > 4000000 then
+                    if not Validation.artifactPath(artifact.path) or (sha ~= nil and (type(sha) ~= 'string' or #sha ~= 64 or not string.match(sha, '^[a-f0-9]+$'))) or (artifact.bytes ~= nil and (not Validation.isFinite(artifact.bytes) or artifact.bytes % 1 ~= 0 or artifact.bytes <= 0 or artifact.bytes > 4000000)) then
                         return nil
                     end
                 end
-                for _, key in {
-                    'ui',
-                    'loader',
-                    'AnimeVanguards',
-                    'AnimeExpeditions',
-                }do
-                    if not artifacts[key] then
-                        return nil
-                    end
-                end
-                for _, key in {
-                    'AnimeVanguards',
-                    'AnimeExpeditions',
-                }do
-                    local entry = games[key]
 
-                    if type(entry) ~= 'table' or not Version.parse(entry.version) or type(entry.lastUpdated) ~= 'string' or not string.match(entry.lastUpdated, '^%d%d%d%d%-%d%d%-%d%d$') or type(entry.name) ~= 'string' or #entry.name == 0 or type(entry.placeIds) ~= 'table' or #entry.placeIds == 0 then
+                if targetGameId then
+                    local entry = games[targetGameId]
+
+                    if type(entry) ~= 'table' or not Version.parse(entry.version) or type(entry.lastUpdated) ~= 'string' or not string.match(entry.lastUpdated, '^%d%d%d%d%-%d%d%-%d%d$') or type(entry.name) ~= 'string' or #entry.name == 0 or type(entry.placeIds) ~= 'table' or #entry.placeIds == 0 or (entry.gameIds ~= nil and (type(entry.gameIds) ~= 'table' or #entry.gameIds == 0)) then
                         return nil
                     end
 
                     for _, placeId in entry.placeIds do
                         if not Validation.isFinite(placeId) or placeId % 1 ~= 0 or placeId <= 0 then
                             return nil
+                        end
+                    end
+
+                    if entry.gameIds then
+                        for _, gameId in entry.gameIds do
+                            if not Validation.isFinite(gameId) or gameId % 1 ~= 0 or gameId <= 0 then
+                                return nil
+                            end
                         end
                     end
                 end
@@ -864,14 +984,14 @@ do
             return ManifestClient
         end
 
-        function __DARKLUA_BUNDLE_MODULES.s()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.s
+        function __DARKLUA_BUNDLE_MODULES.t()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.t
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.s = v
+                __DARKLUA_BUNDLE_MODULES.cache.t = v
             end
 
             return v.c
@@ -881,8 +1001,8 @@ do
         local function __modImpl()
             local ModuleLoader = {}
 
-            function ModuleLoader.load(compile, source, bytes, argument)
-                if type(compile) ~= 'function' or type(source) ~= 'string' or #source ~= bytes then
+            function ModuleLoader.load(compile, source, argument)
+                if type(compile) ~= 'function' or type(source) ~= 'string' or #source == 0 then
                     return nil, 'MODULE_INPUT'
                 end
 
@@ -907,14 +1027,14 @@ do
             return ModuleLoader
         end
 
-        function __DARKLUA_BUNDLE_MODULES.t()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.t
+        function __DARKLUA_BUNDLE_MODULES.u()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.u
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.t = v
+                __DARKLUA_BUNDLE_MODULES.cache.u = v
             end
 
             return v.c
@@ -922,7 +1042,7 @@ do
     end
     do
         local function __modImpl()
-            local Types = __DARKLUA_BUNDLE_MODULES.h()
+            local Types = __DARKLUA_BUNDLE_MODULES.i()
             local ENV = getfenv()
             local WINDOW_WIDTH = 600
             local WINDOW_HEIGHT = 400
@@ -966,7 +1086,7 @@ do
             function WindUIAdapter.create(library, context, config)
                 local window = (library.CreateWindow)(library, {
                     Title = 'ViperHub NextGen',
-                    Author = 'Foundation 0.1.0',
+                    Author = 'Foundation 0.2.0',
                     Theme = 'Dark',
                     NewElements = true,
                     Acrylic = false,
@@ -992,14 +1112,14 @@ do
             return WindUIAdapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.u()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.u
+        function __DARKLUA_BUNDLE_MODULES.v()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.v
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.u = v
+                __DARKLUA_BUNDLE_MODULES.cache.v = v
             end
 
             return v.c
@@ -1028,14 +1148,14 @@ do
             return Overview
         end
 
-        function __DARKLUA_BUNDLE_MODULES.v()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.v
+        function __DARKLUA_BUNDLE_MODULES.w()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.w
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.v = v
+                __DARKLUA_BUNDLE_MODULES.cache.w = v
             end
 
             return v.c
@@ -1044,8 +1164,35 @@ do
     do
         local function __modImpl()
             local Settings = {}
+            local runtimeTask = getfenv().task
 
-            function Settings.mount(window, store, library, keyCodes)
+            local function applyToggleKey(
+                window,
+                store,
+                keyCodes,
+                value,
+                control
+            )
+                local previous = store.get().toggleKey
+
+                store.update('toggleKey', value)
+
+                local selected = store.get().toggleKey
+
+                if selected ~= value then
+                    store.update('toggleKey', previous)
+
+                    selected = previous
+
+                    if type(control) == 'table' and type(control.Set) == 'function' then
+                        (control.Set)(control, previous)
+                    end
+                end
+
+                window:SetToggleKey(keyCodes[selected])
+            end
+
+            function Settings.mount(window, store, library, keyCodes, context)
                 local config = store.get()
                 local tab = window:Tab({
                     Title = 'Settings',
@@ -1097,19 +1244,37 @@ do
                 window:SetToggleKey(keyCodes[config.toggleKey])
 
                 controls.toggleKey = tab:Keybind({
-                    Title = 'Toggle UI (RightShift / LeftAlt / F4)',
+                    Title = 'Toggle UI key',
                     Value = config.toggleKey,
                     Callback = function(value)
-                        store.update('toggleKey', value)
-                        window:SetToggleKey(keyCodes[store.get().toggleKey])
+                        applyToggleKey(window, store, keyCodes, value, controls.toggleKey)
                     end,
                 })
+
+                local keyUi = controls.toggleKey and controls.toggleKey.UIElements and controls.toggleKey.UIElements.Keybind
+                local keyFrame = keyUi and keyUi.Frame and keyUi.Frame.Frame
+                local keyLabel = keyFrame and keyFrame.TextLabel
+
+                if context and keyLabel and type(keyLabel.GetPropertyChangedSignal) == 'function' and type(runtimeTask) == 'table' and type(runtimeTask.defer) == 'function' then
+                    local connection = keyLabel:GetPropertyChangedSignal('Text'):Connect(function(
+                    )
+                        runtimeTask.defer(function()
+                            if context.alive and controls.toggleKey.Value ~= store.get().toggleKey then
+                                applyToggleKey(window, store, keyCodes, controls.toggleKey.Value, controls.toggleKey)
+                            end
+                        end)
+                    end)
+
+                    context.cleanup.add(function()
+                        connection:Disconnect()
+                    end)
+                end
+
                 controls.save = tab:Button({
                     Title = 'Save settings',
                     Callback = function()
-                        store.update('toggleKey', controls.toggleKey.Value)
+                        applyToggleKey(window, store, keyCodes, controls.toggleKey.Value, controls.toggleKey)
                         controls.toggleKey:Set(store.get().toggleKey)
-                        window:SetToggleKey(keyCodes[store.get().toggleKey])
 
                         local saved = store.save()
 
@@ -1129,14 +1294,14 @@ do
             return Settings
         end
 
-        function __DARKLUA_BUNDLE_MODULES.w()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.w
+        function __DARKLUA_BUNDLE_MODULES.x()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.x
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.w = v
+                __DARKLUA_BUNDLE_MODULES.cache.x = v
             end
 
             return v.c
@@ -1153,60 +1318,22 @@ do
                 })
                 local paragraph = tab:Paragraph({
                     Title = 'Status codes',
-                    Desc = 'Press Refresh to inspect this session.',
+                    Desc = table.concat(buffer.snapshot(), '\n'),
                 })
+
+                local function refresh()
+                    paragraph:SetDesc(table.concat(buffer.snapshot(), '\n'))
+                end
 
                 tab:Button({
                     Title = 'Refresh',
-                    Callback = function()
-                        paragraph:SetDesc(table.concat(buffer.snapshot(), '\n'))
-                    end,
+                    Callback = refresh,
                 })
+
+                return refresh
             end
 
             return Diagnostics
-        end
-
-        function __DARKLUA_BUNDLE_MODULES.x()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.x
-
-            if not v then
-                v = {
-                    c = __modImpl(),
-                }
-                __DARKLUA_BUNDLE_MODULES.cache.x = v
-            end
-
-            return v.c
-        end
-    end
-    do
-        local function __modImpl()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.u()
-            local Overview = __DARKLUA_BUNDLE_MODULES.v()
-            local Settings = __DARKLUA_BUNDLE_MODULES.w()
-            local Diagnostics = __DARKLUA_BUNDLE_MODULES.x()
-            local App = {}
-
-            function App.mount(
-                library,
-                context,
-                metadata,
-                store,
-                buffer,
-                keyCodes
-            )
-                local window = Adapter.create(library, context, store.get())
-
-                Overview.mount(window, metadata)
-                Settings.mount(window, store, library, keyCodes)
-                Diagnostics.mount(window, buffer)
-                window:SelectTab(1)
-
-                return window
-            end
-
-            return App
         end
 
         function __DARKLUA_BUNDLE_MODULES.y()
@@ -1222,22 +1349,69 @@ do
             return v.c
         end
     end
+    do
+        local function __modImpl()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.v()
+            local Overview = __DARKLUA_BUNDLE_MODULES.w()
+            local Settings = __DARKLUA_BUNDLE_MODULES.x()
+            local Diagnostics = __DARKLUA_BUNDLE_MODULES.y()
+            local App = {}
+
+            function App.mount(
+                library,
+                context,
+                metadata,
+                store,
+                buffer,
+                keyCodes
+            )
+                local window = Adapter.create(library, context, store.get())
+
+                Overview.mount(window, metadata)
+                Settings.mount(window, store, library, keyCodes, context)
+
+                local refreshDiagnostics = Diagnostics.mount(window, buffer)
+
+                window:SelectTab(1)
+
+                return window, refreshDiagnostics
+            end
+
+            return App
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.z()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.z
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.z = v
+            end
+
+            return v.c
+        end
+    end
 end
 
 local Detector = __DARKLUA_BUNDLE_MODULES.f()
-local Context = __DARKLUA_BUNDLE_MODULES.i()
-local Diagnostics = __DARKLUA_BUNDLE_MODULES.j()
-local Capabilities = __DARKLUA_BUNDLE_MODULES.k()
-local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
-local ConfigStore = __DARKLUA_BUNDLE_MODULES.o()
-local HttpClient = __DARKLUA_BUNDLE_MODULES.p()
-local ManifestClient = __DARKLUA_BUNDLE_MODULES.s()
-local ModuleLoader = __DARKLUA_BUNDLE_MODULES.t()
-local Version = __DARKLUA_BUNDLE_MODULES.q()
-local App = __DARKLUA_BUNDLE_MODULES.y()
-local UIAdapter = __DARKLUA_BUNDLE_MODULES.u()
-local LOADER_VERSION = '0.1.0'
+local Context = __DARKLUA_BUNDLE_MODULES.j()
+local Diagnostics = __DARKLUA_BUNDLE_MODULES.k()
+local Capabilities = __DARKLUA_BUNDLE_MODULES.l()
+local FileStorage = __DARKLUA_BUNDLE_MODULES.m()
+local ConfigStore = __DARKLUA_BUNDLE_MODULES.p()
+local HttpClient = __DARKLUA_BUNDLE_MODULES.q()
+local ManifestClient = __DARKLUA_BUNDLE_MODULES.t()
+local ModuleLoader = __DARKLUA_BUNDLE_MODULES.u()
+local Version = __DARKLUA_BUNDLE_MODULES.r()
+local Validation = __DARKLUA_BUNDLE_MODULES.e()
+local App = __DARKLUA_BUNDLE_MODULES.z()
+local UIAdapter = __DARKLUA_BUNDLE_MODULES.v()
+local LOADER_VERSION = '0.2.0'
 local TIMEOUT_SECONDS = 15
+local NOTIFY_RETRY_SECONDS = 0.2
+local NOTIFY_MAX_ATTEMPTS = 5
 local MAX_METADATA_BYTES = 65536
 local MAX_MODULE_BYTES = 4000000
 local ENV = getfenv()
@@ -1263,14 +1437,43 @@ if type(sharedState) ~= 'table' or type(runtimeTask) ~= 'table' then
     }
 end
 
-local function notify(message)
-    pcall(function()
-        starterGui:SetCore('SendNotification', {
-            Title = 'ViperHub NextGen',
-            Text = message,
-            Duration = 8,
-        })
-    end)
+local session = {}
+
+local function notify(message, critical)
+    if critical ~= true then
+        local config = session.config
+
+        if config ~= nil and config.get().notifications == false then
+            return
+        end
+    end
+
+    local function send()
+        local ok = pcall(function()
+            starterGui:SetCore('SendNotification', {
+                Title = 'ViperHub NextGen',
+                Text = message,
+                Duration = 8,
+            })
+        end)
+
+        return ok
+    end
+
+    if send() or critical ~= true then
+        return
+    end
+    if type(runtimeTask.spawn) == 'function' and type(runtimeTask.wait) == 'function' then
+        pcall(runtimeTask.spawn, function()
+            for _ = 2, NOTIFY_MAX_ATTEMPTS do
+                runtimeTask.wait(NOTIFY_RETRY_SECONDS)
+
+                if sharedState.ViperHubNextGen ~= session or send() then
+                    return
+                end
+            end
+        end)
+    end
 end
 
 local old = sharedState.ViperHubNextGen
@@ -1281,31 +1484,25 @@ end
 
 local buffer = Diagnostics.new(64)
 local context = Context.new(buffer.push)
-local session = {
+
+session = {
     context = context,
     diagnostics = buffer.snapshot,
     destroy = context.destroy,
 }
-
 sharedState.ViperHubNextGen = session
 
 local function fail(code, message)
     buffer.push(code)
-    context.destroy()
-
-    context.state = 'failed'
-
-    notify(message)
+    context.destroy('failed')
+    notify(message, true)
 end
 
-local metadata = Detector.detect(gameObject.PlaceId)
+local metadata = Detector.detect(gameObject.PlaceId, gameObject.GameId)
 
 if not metadata then
-    context.destroy()
-
-    context.state = 'unsupported'
-
-    notify('Unsupported game (name unavailable). Place: ' .. tostring(gameObject.PlaceId))
+    context.destroy('unsupported')
+    notify('Unsupported game (name unavailable). Place: ' .. tostring(gameObject.PlaceId), true)
 
     if type(runtimeTask.spawn) == 'function' then
         local requestedAt = os.clock()
@@ -1317,7 +1514,7 @@ if not metadata then
             end)
 
             if ok and type(info) == 'table' and type(info.Name) == 'string' and os.clock() - requestedAt < TIMEOUT_SECONDS and sharedState.ViperHubNextGen == session then
-                notify('Unsupported: ' .. string.sub(info.Name, 1, 100))
+                notify('Unsupported: ' .. string.sub(info.Name, 1, 100), true)
             end
         end)
     end
@@ -1326,13 +1523,25 @@ if not metadata then
 end
 
 context.gameId = metadata.id
-context.state = 'loading'
+
+assert(context.transition('loading'))
 
 local caps = Capabilities.detect(ENV)
 
 session.capabilities = caps
 
+local function decode(text)
+    return httpService:JSONDecode(text)
+end
 local function run()
+    local store = ConfigStore.new(FileStorage.new(ENV, metadata.id), decode, function(
+        value
+    )
+        return httpService:JSONEncode(value)
+    end, buffer.push)
+
+    session.config = store
+
     if not caps.compile then
         fail('COMPILE_UNAVAILABLE', 'This environment cannot load modules.')
 
@@ -1342,10 +1551,6 @@ local function run()
     local localArtifacts = ENV.VIPER_DEV_ARTIFACTS
     local exports = {}
     local manifest
-
-    local function decode(text)
-        return httpService:JSONDecode(text)
-    end
 
     if type(localArtifacts) == 'table' then
         manifest = localArtifacts.manifest
@@ -1365,7 +1570,7 @@ local function run()
             end
 
             local source = localArtifacts[id]
-            local value, code = ModuleLoader.load(ENV.loadstring, source, if type(source) == 'string'then#source else 0, buffer.push)
+            local value, code = ModuleLoader.load(ENV.loadstring, source, buffer.push)
 
             if not value then
                 fail(code or 'MODULE_FAILED', 'Could not load development module.')
@@ -1389,14 +1594,21 @@ local function run()
             return
         end
 
-        local requester = ENV.request or ENV.http_request
+        local requester = if type(ENV.request) == 'function'then ENV.request else ENV.http_request
         local client = HttpClient.new(function(url)
             if caps.request then
-                local result = requester({
+                local options = {
                     Url = url,
                     Method = 'GET',
-                })
+                }
+                local ok, result = pcall(requester, options)
 
+                if (not ok or type(result) ~= 'table') and requester ~= ENV.http_request and type(ENV.http_request) == 'function' then
+                    ok, result = pcall(ENV.http_request, options)
+                end
+                if not ok then
+                    return 0, nil
+                end
                 if type(result) ~= 'table' then
                     return 0, nil
                 end
@@ -1432,7 +1644,7 @@ local function run()
             return value
         end
 
-        manifest = ManifestClient.validate(json('manifest.json'), repository)
+        manifest = ManifestClient.validate(json('manifest.json'), repository, metadata.id)
 
         if not context.alive then
             return
@@ -1441,6 +1653,20 @@ local function run()
             fail('MANIFEST_INVALID', 'Release metadata unavailable or invalid.')
 
             return
+        end
+        if manifest.mode ~= 'release' then
+            fail('MANIFEST_INVALID', 'Development metadata cannot be loaded as a release.')
+
+            return
+        end
+        if not table.find(metadata.placeIds, gameObject.PlaceId) then
+            local releaseUniverses = manifest.games[metadata.id].gameIds
+
+            if not releaseUniverses or not table.find(releaseUniverses, gameObject.GameId) then
+                fail('GAME_UNAVAILABLE', 'This match place is not in the published game registry.')
+
+                return
+            end
         end
         if (Version.compare(LOADER_VERSION, manifest.minLoaderVersion) or -1) < 0 then
             fail('LOADER_OUTDATED', 'Update the ViperHub loader.')
@@ -1468,7 +1694,8 @@ local function run()
             'ui',
         }do
             local artifact = manifest.artifacts[id]
-            local body, code = client.get(base .. manifest.artifactRevision .. '/' .. artifact.path, MAX_MODULE_BYTES, TIMEOUT_SECONDS)
+            local revision = if Validation.sha(manifest.artifactRevision)then manifest.artifactRevision else'main'
+            local body, code = client.get(base .. revision .. '/' .. artifact.path, MAX_MODULE_BYTES, TIMEOUT_SECONDS)
 
             if not context.alive then
                 return
@@ -1479,7 +1706,7 @@ local function run()
                 return
             end
 
-            local value, loadCode = ModuleLoader.load(ENV.loadstring, body, artifact.bytes, buffer.push)
+            local value, loadCode = ModuleLoader.load(ENV.loadstring, body, buffer.push)
 
             if not value then
                 fail(loadCode or 'MODULE_FAILED', 'Module could not start.')
@@ -1507,14 +1734,9 @@ local function run()
         return
     end
 
-    local store = ConfigStore.new(FileStorage.new(ENV, metadata.id), decode, function(
-        value
-    )
-        return httpService:JSONEncode(value)
-    end, buffer.push)
+    local window, refreshDiagnostics = App.mount(exports.ui, context, gameModule.metadata, store, buffer, ENV.Enum.KeyCode)
 
-    session.config = store
-    session.window = App.mount(exports.ui, context, gameModule.metadata, store, buffer, ENV.Enum.KeyCode)
+    session.window = window
 
     context.cleanup.add(gameModule.stop)
     gameModule.start(context)
@@ -1523,14 +1745,20 @@ local function run()
         return
     end
 
-    context.state = 'ready'
-
+    assert(context.transition('ready'))
     buffer.push('FOUNDATION_READY')
+    refreshDiagnostics()
 end
 
-local ok = pcall(run)
+local ok, err = pcall(run)
 
 if not ok then
+    if type(err) == 'string' then
+        if string.find(err, 'UI_CONTRACT', 1, true) then
+            buffer.push('UI_CONTRACT')
+        end
+    end
+
     fail('STARTUP_FAILED', 
 [[ViperHub startup failed. Inspect the private diagnostics buffer.]])
 end

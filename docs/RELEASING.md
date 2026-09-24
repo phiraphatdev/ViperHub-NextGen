@@ -1,62 +1,22 @@
-# Releasing
+# Releasing (single-commit workflow)
 
-ดู source commit S จาก `manifest.json.sourceCommit` และดู metadata commit ปัจจุบันด้วย `git rev-parse HEAD`; ยังไม่ tag, push หรือเผยแพร่
+อัปเดต source และ tests ที่เกี่ยวข้อง แล้วรันคำสั่งใน PowerShell:
 
-## ระดับการปล่อย
+```powershell
+./scripts/build.ps1 -Release
+./scripts/check.ps1
+./scripts/verify-release.ps1
+```
 
-| ระดับ | เกณฑ์ | ขอบเขต |
-| --- | --- | --- |
-| Dev | Local unit/mock/build ผ่าน | ใช้ local harness; ไม่เปิด production |
-| Beta | หลักฐานจริงของ startup, UI, controls และ config readback อย่างน้อยหนึ่ง environment **ต่อเกมที่จะเปิด** พร้อมระบุข้อจำกัด | เกมอื่นคง `disabled`; ไม่อ้างรองรับ executor อื่น |
-| Stable | เพิ่ม rejoin persistence และ cleanup สำหรับเกมที่ลงทะเบียนทั้งหมด | ตรวจเส้นทาง published loader ก่อนประกาศ |
+`build.ps1 -Release` สแกน `src/games/*/Metadata.luau`, สร้าง bundle ใน `dist/`, sync `manifest.games` และ `manifest.artifacts` พร้อม hashes และเขียน `manifest.txt` ในครั้งเดียว `check.ps1` เรียก build ซ้ำโดยคง release mode ก่อนทดสอบ; `verify-release.ps1` จะปฏิเสธ development mode. ถ้ารัน `build.ps1` โดยไม่ใส่ `-Release` จะกลับเป็น development และ production loader จะไม่โหลด manifest นั้น. การเพิ่มเกมยังต้องเพิ่ม module ใน `src/games/Registry.luau` และสถานะใน `status.json` เพื่อให้ loader ตรวจ Place ID หรือ GameId ได้จริง
 
-Beta ไม่บังคับรายชื่อ executor หรือให้ทุกเกมใน registry ผ่านพร้อมกัน แต่ไม่ผ่อน hash, sourceCommit,
-artifactRevision, การตรวจรูปแบบข้อมูล หรือการหยุดโหลดอย่างปลอดภัย การทดสอบผ่านด้วย control-object methods
-ต้องอธิบายว่าไม่ได้รับรอง physical/touch input; ห้ามเขียนเป็นผลอุปกรณ์จริง
+เมื่อผล local ผ่านและได้รับอนุญาตให้เผยแพร่ ให้ review diff แล้ว commit source, tests, docs, `dist/`, `manifest.json` และ `manifest.txt` **ใน commit เดียว** จากนั้น push และตรวจ GitHub Raw; tag/version ใช้เมื่อมีการตัดสินใจปล่อยเวอร์ชัน ไม่ต้องสร้าง source/artifact/metadata commits แยกกัน
 
-## Three revisions avoid self-referential hashes
+`sourceCommit` และ `artifactRevision` เป็นข้อมูลเสริม ไม่ใช่ gate. Build ปัจจุบันตั้งทั้งคู่เป็น `null` เพื่อไม่อ้าง SHA เก่าหลังแก้ source. เมื่อ `artifactRevision` ไม่มีค่า loader อ่าน `main/dist/...`; ถ้าเป็น SHA 40 ตัวอักษรจะอ่าน revision นั้นแทน การใช้ `main` ช่วยให้อัปเดตเร็ว แต่ manifest, status และ dist อาจถูก CDN cache คนละเวลา จึงต้องตรวจ loader จริงหลัง push และปิดเกมเป็น `disabled` ใน `status.json` หากมีปัญหา
 
-S = clean source commit ที่รวม src, vendor, tests, scripts และ lock files
-A = artifact commit ที่เก็บ dist ซึ่ง build จาก S; manifest.sourceCommit=S
-B = publication metadata commit ที่ตั้ง manifest.artifactRevision=A และอัปเดต manifest.txt/status ตามหลักฐาน
+**Migration warning:** loader ที่เคยเผยแพร่ใน tag `v0.1.0` เป็นไฟล์ immutable และยังบังคับ SHA ทั้งสองฟิลด์; ถ้า push manifest แบบ `null` ไป main loader เก่าจะปฏิเสธ manifest ใหม่ ต้องแจ้ง URL loader รุ่นใหม่จาก `main/dist/loader.lua` และทดสอบเส้นทางใหม่นั้นก่อน push/ประกาศอัปเดตนี้ ห้ามอ้างว่า loader เก่ายังใช้ได้
 
-Loader อ่าน metadata จาก main และอ่าน code จาก GitHub Raw /A/dist/...
-S ไม่จำเป็นต้องเท่ากับ A หรือ B และไม่เขียน SHA ของ commit ที่บรรจุไฟล์ตัวเอง
+Runtime test ผ่าน Roblox client และบันทึก observation ตาม `TESTING.md` ยัง **แนะนำอย่างยิ่ง** ก่อนเปิด `ready` แต่ไม่ใช่ JSON evidence gate ของ build/check. อย่าอ้างว่า executor, device, rejoin หรือ gameplay ทำงานจริงจาก mock tests หรือผล local เพียงอย่างเดียว
 
-## Release gate
-
-1. ตกลง owner/repo และ release version กับผู้ใช้; ไม่กำหนดรายชื่อ executor ที่ต้องใช้
-2. แก้ source/config และ test ของเกมนั้น; แก้ `Metadata.luau` เฉพาะเมื่อ version, date หรือ Place ID เปลี่ยน แล้วรัน `build.ps1` เพื่อ sync `manifest.games` อัตโนมัติ ไม่แก้ metadata เกมซ้ำใน manifest ด้วยมือ
-3. รัน check.ps1 และ commit source เป็น S หลังได้รับอนุมัติ
-4. ทดสอบ artifact จาก S ใน Roblox จริงตาม TESTING.md
-5. บันทึกหลักฐานใน work/runtime-verification.json โดย sourceCommit=S; ไม่แก้ tracked source ระหว่างทดสอบ
-6. หลังอนุมัติ commit A/B ให้รัน `./scripts/finalize-local-release.ps1 -Repository 'OWNER/REPO' -Tier Beta -Games AnimeVanguards,AnimeExpeditions -Commit` จาก clean source checkout; คำสั่งเดียวจะ build และทำ A/B ในเครื่อง
-7. คำสั่งนี้ไม่ push, tag หรือแก้ `status.json`; การเปิดเกมเป็น `ready` เป็นการตัดสินใจแยกต่างหาก
-8. ถ้าไม่ส่ง `-Commit` จะตรวจ release ที่มีอยู่เท่านั้น ไม่สร้าง commit
-9. รัน verify-release.ps1 เพื่อตรวจ artifact hashes, revision A, source inputs เทียบ S และ rebuild
-10. Tag B ด้วย semantic version vX.Y.Z และเผยแพร่เมื่อผู้ใช้อนุมัติ
-
-Build release ปฏิเสธ source ที่ไม่ clean, repository ที่ไม่ถูกต้อง หรือ runtime evidence ที่ไม่ตรง source commit/artifact hashes
-Stable gate ต้องมีผล `passed` อย่างน้อยหนึ่ง runtime run ต่อทุกเกมที่ลงทะเบียน
-Beta gate ต้องมีผล `passed` อย่างน้อยหนึ่ง runtime run ต่อเกมที่ระบุใน `-Games` เท่านั้น
-หลักฐานแต่ละ run ต้องระบุชื่อ executor ที่ใช้จริง และการผ่านบนตัวหนึ่งไม่ใช่คำรับรองว่าใช้ได้กับตัวอื่น
-ทุก run ต้องมี executor/client version, OS, เวลา, Place ID และ observation; Beta บังคับ startup, UI, controls, config readback ส่วน Stable เพิ่ม rejoin persistence และ cleanup
-ตัวอย่าง Beta: `./scripts/build.ps1 -Release -Tier Beta -Games AnimeVanguards,AnimeExpeditions -Repository 'phiraphatdev/ViperHub-NextGen'`
-ไม่มี MCP หรือหลักฐานไม่ครบให้คง status เป็น partial/disabled และห้ามอ้างว่า release พร้อม
-`verify-release` ตรวจ immutable source fields ใน manifest เทียบ S; อนุญาตเฉพาะ build/publication fields ที่ต้องเปลี่ยนใน A/B
-`status.json` เป็น operational metadata ที่อาจเปลี่ยนใน B จึงตรวจ schema/game keys/state แต่ไม่ได้อ้างว่า sourceCommit ผูก reason/status แบบ byte-for-byte
-
-## Development
-
-build.ps1 ปกติสร้าง mode=development และ sourceCommit=null เพื่อไม่อ้าง provenance ที่ยังไม่มี
-`Metadata.luau` เป็นแหล่งเดียวของ version/date/name/Place ID รายเกม; build เขียนค่าที่ได้ลง `manifest.json` ส่วน `check.ps1` เป็น gate อ่านอย่างเดียวและจะปฏิเสธ manifest ที่ยังไม่ sync
-อัปเดต `docs/games/<Game>/UPDATES.md` เมื่อพฤติกรรมหรือ compatibility เปลี่ยนจริง ไม่ต้องแตะทุกครั้งที่ refactor ภายใน; `status.json` ใช้สำหรับเปิด/ปิด/maintenance เท่านั้น
-verify-release.ps1 -Development ตรวจ hashes และ rebuild ได้ แต่ไม่รับรอง release
-check.ps1 ไม่เปลี่ยน release metadata กลับเป็น development หากกำลังตรวจ release checkout
-ไม่อัปเดต dist ด้วยมือ และไม่แก้ไฟล์ source ระหว่างสร้าง artifact commit กับ metadata commit
-
-## Recovery
-
-หาก build ล้มเหลว อย่า commit artifact ที่ได้บางส่วน แก้ source แล้วรัน build และ verify ใหม่
-หาก release ผิด ให้ชี้ publication metadata ไปยัง artifact revision เดิมที่ตรวจแล้วและอัปเดต changelog
-status.json สามารถ disable เฉพาะเกมโดยไม่ rebuild game code
+`verify-release.ps1` ตรวจ manifest/artifact hashes, path, size ในเครื่อง และ deterministic rebuild; ไม่ตรวจ Git history หรือยืนยันว่า GitHub Raw เผยแพร่แล้ว การทดสอบ production URL จึงเป็นขั้นแยก
+คำสั่งนี้ตรวจ `manifest.txt` ให้ตรงกับ manifest ที่สร้างด้วย และ local candidate `0.2.0` ยังไม่ใช่ release ที่เผยแพร่จนกว่าจะผ่านขั้น commit/push/runtime ตามข้างต้น

@@ -2,8 +2,9 @@
 
 ## Local gates
 
-รัน ./scripts/check.ps1 เพื่อตรวจ source format, --!strict analysis, edge cases, bundle compilation,
+รัน ./scripts/check.ps1 เพื่อ rebuild dist/manifest แล้วตรวจ source format, --!strict analysis, edge cases, bundle compilation,
 bootstrap integration ใน mock environment และ deterministic rebuild
+การตรวจ release เพิ่มเติมให้รัน `./scripts/build.ps1 -Release`, `./scripts/check.ps1`, แล้ว `./scripts/verify-release.ps1`; verify-release จะปฏิเสธ manifest แบบ development
 Tests ใช้ native Luau CLI ไม่มีการเชื่อมต่อเกมหรือส่ง RemoteEvent
 
 Unit scenarios ครอบคลุม nil/wrong types/NaN/infinity, bounds, version ordering, exact place detection,
@@ -26,16 +27,10 @@ rerun teardown และ startup failure cleanup แต่ไม่จำลอ�
 9. ปิดและเปิดใหม่ และ rejoin แล้วทดสอบ load config ค่าต้องอยู่ตามที่บันทึก
 10. destroy context แล้วตรวจ root GUI ของ session ถูกลบ และไม่เกิด callback ที่ยังเปลี่ยน state
 
-ชื่อ/เวอร์ชัน executor, OS, PlaceId, source commit, artifact hash และผลแต่ละข้อเป็นหลักฐานที่ต้องบันทึก
-tests/runtime/verification.json บันทึกผลจริงแบบ partial พร้อม artifact hashes
-สำหรับ release ให้สร้าง work/runtime-verification.json ซึ่งอยู่นอก Git commit ที่กำลังทดสอบ
-รูปแบบ release: status=`passed`, sourceCommit, artifactHashes, tier (`beta` หรือ `stable`), targetGames และ runs อย่างน้อยหนึ่งรายการต่อเกมใน scope โดยไม่กำหนด executor ล่วงหน้า
-แต่ละคู่ gameId/executor ต้องไม่ซ้ำกัน และทุก run ที่ส่งมาต้องผ่านครบ
-แต่ละ run ต้องมี gameId, executor, executorVersion, clientVersion, os, testedAt (ISO timestamp), placeId, status=`passed`
-และ checks object: Beta บังคับ startup/ui/controls/configReadback; Stable บังคับเพิ่ม rejoinPersistence/cleanup แต่ละอันมี result=`passed` และ observed ที่เป็นผลอ่านกลับจริง
-Beta ต้องมี `limits` บอกสิ่งที่ยังไม่ผ่านหรือไม่ได้ทดสอบอย่างชัดเจน ผลของเกมที่ไม่ได้เลือกไม่ขวาง beta แต่เกมนั้นต้องคง `disabled`
-`tests/release-guards.test.mjs` ใช้ข้อมูล fixture จำลองเพื่อทดสอบ validator เท่านั้น ไม่ใช่หลักฐาน runtime
-ห้ามเติม passed ถ้าไม่มี client หรืออาศัย mock tests อย่างเดียว
+จดชื่อ/เวอร์ชัน executor, OS, PlaceId, artifact hash และผลที่สังเกตได้จริงเพื่อใช้ประเมิน compatibility
+การบันทึก runtime evidence เป็นคำแนะนำ ไม่ใช่ไฟล์ JSON ที่ `build.ps1` หรือ `check.ps1` บังคับอ่าน
+`tests/release-guards.test.mjs` ทดสอบ discovery และ local metadata guards เท่านั้น ไม่ใช่หลักฐาน runtime
+ห้ามบันทึกว่า runtime ผ่านจาก mock tests หรือเมื่อไม่มี client
 
 ## Current result
 
