@@ -22,7 +22,7 @@ do
     do
         local function __modImpl()
             local Types = __DARKLUA_BUNDLE_MODULES.a()
-            local VERSION = '0.2.0'
+            local VERSION = '0.2.2'
             local LAST_UPDATED = '2026-09-24'
             local metadata = {
                 id = 'AnimeVanguards',
@@ -55,7 +55,7 @@ do
     do
         local function __modImpl()
             local Types = __DARKLUA_BUNDLE_MODULES.a()
-            local VERSION = '0.2.0'
+            local VERSION = '0.2.2'
             local LAST_UPDATED = '2026-09-24'
             local metadata = {
                 id = 'AnimeExpeditions',
@@ -686,7 +686,14 @@ do
                         local candidate = (table.clone(current))
 
                         candidate[key] = value
-                        current = Schema.decode(candidate)
+
+                        local sanitized = Schema.decode(candidate)
+
+                        if key == 'toggleKey' and sanitized.toggleKey ~= value then
+                            return
+                        end
+
+                        current = sanitized
                     end,
                     save = function()
                         if not storage then
@@ -925,7 +932,7 @@ do
                     local artifact = rawArtifact
                     local sha = artifact.sha256
 
-                    if not Validation.artifactPath(artifact.path) or (sha ~= nil and (type(sha) ~= 'string' or #sha ~= 64 or not string.match(sha, '^[a-f0-9]+$'))) or (artifact.bytes ~= nil and (not Validation.isFinite(artifact.bytes) or artifact.bytes % 1 ~= 0 or artifact.bytes <= 0 or artifact.bytes > 4000000)) then
+                    if not Validation.artifactPath(artifact.path) or (data.mode == 'release' and (sha == nil or artifact.bytes == nil)) or (sha ~= nil and (type(sha) ~= 'string' or #sha ~= 64 or not string.match(sha, '^[a-f0-9]+$'))) or (artifact.bytes ~= nil and (not Validation.isFinite(artifact.bytes) or artifact.bytes % 1 ~= 0 or artifact.bytes <= 0 or artifact.bytes > 4000000)) then
                         return nil
                     end
                 end
@@ -1086,7 +1093,7 @@ do
             function WindUIAdapter.create(library, context, config)
                 local window = (library.CreateWindow)(library, {
                     Title = 'ViperHub NextGen',
-                    Author = 'Foundation 0.2.0',
+                    Author = 'Foundation 0.2.2',
                     Theme = 'Dark',
                     NewElements = true,
                     Acrylic = false,
@@ -1179,14 +1186,8 @@ do
 
                 local selected = store.get().toggleKey
 
-                if selected ~= value then
-                    store.update('toggleKey', previous)
-
-                    selected = previous
-
-                    if type(control) == 'table' and type(control.Set) == 'function' then
-                        (control.Set)(control, previous)
-                    end
+                if selected ~= value and type(control) == 'table' and type(control.Set) == 'function' then
+                    (control.Set)(control, previous)
                 end
 
                 window:SetToggleKey(keyCodes[selected])
@@ -1408,7 +1409,7 @@ local Version = __DARKLUA_BUNDLE_MODULES.r()
 local Validation = __DARKLUA_BUNDLE_MODULES.e()
 local App = __DARKLUA_BUNDLE_MODULES.z()
 local UIAdapter = __DARKLUA_BUNDLE_MODULES.v()
-local LOADER_VERSION = '0.2.0'
+local LOADER_VERSION = '0.2.2'
 local TIMEOUT_SECONDS = 15
 local NOTIFY_RETRY_SECONDS = 0.2
 local NOTIFY_MAX_ATTEMPTS = 5
@@ -1426,7 +1427,6 @@ end
 
 local starterGui = gameObject:GetService('StarterGui')
 local httpService = gameObject:GetService('HttpService')
-local marketplaceService = gameObject:GetService('MarketplaceService')
 local runtimeTask = ENV.task
 local sharedState = ENV.shared
 
@@ -1502,22 +1502,7 @@ local metadata = Detector.detect(gameObject.PlaceId, gameObject.GameId)
 
 if not metadata then
     context.destroy('unsupported')
-    notify('Unsupported game (name unavailable). Place: ' .. tostring(gameObject.PlaceId), true)
-
-    if type(runtimeTask.spawn) == 'function' then
-        local requestedAt = os.clock()
-        local spawnTask = runtimeTask.spawn
-
-        spawnTask(function()
-            local ok, info = pcall(function()
-                return marketplaceService:GetProductInfo(gameObject.PlaceId)
-            end)
-
-            if ok and type(info) == 'table' and type(info.Name) == 'string' and os.clock() - requestedAt < TIMEOUT_SECONDS and sharedState.ViperHubNextGen == session then
-                notify('Unsupported: ' .. string.sub(info.Name, 1, 100), true)
-            end
-        end)
-    end
+    notify('Unsupported game. Place: ' .. tostring(gameObject.PlaceId), true)
 
     return session
 end
@@ -1659,8 +1644,18 @@ local function run()
 
             return
         end
-        if not table.find(metadata.placeIds, gameObject.PlaceId) then
-            local releaseUniverses = manifest.games[metadata.id].gameIds
+
+        local publishedGame = manifest.games[metadata.id]
+        local localPlace = table.find(metadata.placeIds, gameObject.PlaceId) ~= nil
+        local publishedPlace = table.find(publishedGame.placeIds, gameObject.PlaceId) ~= nil
+
+        if localPlace ~= publishedPlace then
+            fail('REGISTRY_MISMATCH', 'Published game registry differs from this loader.')
+
+            return
+        end
+        if not localPlace then
+            local releaseUniverses = publishedGame.gameIds
 
             if not releaseUniverses or not table.find(releaseUniverses, gameObject.GameId) then
                 fail('GAME_UNAVAILABLE', 'This match place is not in the published game registry.')
@@ -1702,6 +1697,27 @@ local function run()
             end
             if not body then
                 fail(code or 'HTTP_FAILED', 'Module download failed.')
+
+                return
+            end
+            if type(artifact.bytes) ~= 'number' or #body ~= artifact.bytes then
+                fail('ARTIFACT_SIZE_MISMATCH', 'Downloaded module size does not match release metadata.')
+
+                return
+            end
+
+            local crypto = ENV.crypt
+
+            if type(crypto) ~= 'table' or type(crypto.hash) ~= 'function' then
+                fail('HASH_UNAVAILABLE', 'This environment cannot verify release modules.')
+
+                return
+            end
+
+            local hashOk, digest = pcall(crypto.hash, body, 'sha256')
+
+            if not hashOk or type(digest) ~= 'string' or string.lower(digest) ~= artifact.sha256 then
+                fail('ARTIFACT_HASH_MISMATCH', 'Downloaded module failed integrity verification.')
 
                 return
             end

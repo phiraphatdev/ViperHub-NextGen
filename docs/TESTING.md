@@ -34,6 +34,10 @@ rerun teardown และ startup failure cleanup แต่ไม่จำลอ�
 
 ## Current result
 
+Local 0.2.2 candidate integrity gates cover wrong SHA, missing hash capability and byte-size mismatch; live client verification is pending. The adapter relies on immediate owned-GUI/connection cleanup rather than invoking WindUI's asynchronous `window:Destroy()` in parallel.
+
+Local 0.2.1 candidate: startup readback passed in both connected games. Anime Vanguards confirmed invalid LeftAlt keeps the chosen F4 key; at that point the adapter called WindUI `Destroy()` as well as deleting the owned GUI. The immutable 0.1.0 loader was observed to fail with `MANIFEST_INVALID` against current main, then the main loader was restored to `ready`. See ../tests/runtime/0.2.1-audit.json. This is historical evidence only; it does not verify the 0.2.2 change.
+
 2026-09-24: Anime Vanguards current-source foundation partially verified on Potassium v2.5.0 / Windows using the local harness. Startup, visible UI, settings file readback, loader rerun and restoration were observed. Rejoin and physical input remain pending. See ../tests/runtime/AnimeVanguards-2026-09-24.json.
 
 2026-09-24: Anime Expeditions foundation partially verified on Potassium v2.5.0 / Windows using the local harness. Startup, visible UI, settings file readback, loader rerun and restoration were observed. Rejoin and physical input remain pending. See ../tests/runtime/AnimeExpeditions-2026-09-24.json.

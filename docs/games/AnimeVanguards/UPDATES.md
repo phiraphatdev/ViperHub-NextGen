@@ -1,5 +1,9 @@
 # Updates
 
+## 0.2.2 candidate — no tagged release
+
+Shared foundation fixes for keybind validation, UI window cleanup, unsupported-game notification and registry consistency. No gameplay feature or game patch fix.
+
 ## Local 0.2.0 candidate — not published
 
 Version metadata now distinguishes the local Universe GameId foundation from published 0.1.0. No new gameplay feature or live match verification is claimed.

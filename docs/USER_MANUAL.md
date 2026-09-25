@@ -1,6 +1,6 @@
 # คู่มือผู้ใช้ ViperHub NextGen
 
-> **สถานะ source ในเครื่อง 0.2.0 candidate; release ที่ประกาศเดิม 0.1.0** — ตรวจ `status.json` ล่าสุดก่อนใช้งาน
+> **สถานะ 0.2.2 candidate; ตรวจ `manifest.json` บน main เพื่อยืนยันรุ่นที่เผยแพร่** — ตรวจ `status.json` ล่าสุดก่อนใช้งาน
 > และยังไม่มีฟีเจอร์ช่วยเล่นหรือควบคุมเกม เอกสารนี้อธิบาย UI และการทดสอบ foundation เท่านั้น
 
 ## 1. ViperHub NextGen คืออะไร

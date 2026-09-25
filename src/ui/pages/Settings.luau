@@ -12,12 +12,8 @@ local function applyToggleKey(window: any, store: any, keyCodes: any, value: any
     local previous = store.get().toggleKey
     store.update("toggleKey", value)
     local selected = store.get().toggleKey
-    if selected ~= value then
-        store.update("toggleKey", previous)
-        selected = previous
-        if type(control) == "table" and type(control.Set) == "function" then
-            (control.Set :: any)(control, previous)
-        end
+    if selected ~= value and type(control) == "table" and type(control.Set) == "function" then
+        (control.Set :: any)(control, previous)
     end
     window:SetToggleKey(keyCodes[selected])
 end

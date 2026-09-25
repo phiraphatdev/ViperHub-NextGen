@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased 0.2.2 candidate
+
+- Preserve the previous valid toggle key when the picker supplies an unsupported key.
+- Keep teardown on the adapter's immediate GUI/connection cleanup path; avoid invoking WindUI's asynchronous window destroy as a second competing cleanup.
+- Send one unsupported-game notification and reject a published Place ID that conflicts with the loader registry.
+- Verify downloaded module byte length and SHA-256 before compilation; require a callable `crypt.hash` capability.
+- Keep development as the default build mode intentionally; use `build.ps1 -Release` before a release commit.
+- No gameplay features. Publishing this candidate to `main` still requires GitHub Raw and live loader verification before announcing a release.
+
+## Unreleased 0.2.1 candidate (superseded)
+
+- Preserved the previous valid toggle key when the picker supplies an unsupported key.
+- That candidate was superseded before publication; its local runtime observations are in `tests/runtime/0.2.1-audit.json`.
+
+## v0.2.0 main beta foundation
+
+- Published the single-commit foundation build to `main` and verified GitHub Raw artifact hashes.
+- Production loader returned `ready` in Anime Vanguards and Anime Expeditions; physical input and rejoin remain unverified.
+- The immutable v0.1.0 loader is incompatible with the current main manifest; users must switch to `main/dist/loader.lua`.
+
 ## v0.1.0 Beta — foundation
 
 - Added modular bootstrap, lifecycle/cleanup and bounded diagnostics.

@@ -39,7 +39,12 @@ function ConfigStore.new(
         update = function(key: string, value: unknown)
             local candidate: { [string]: any } = table.clone(current) :: any
             candidate[key] = value
-            current = Schema.decode(candidate)
+            local sanitized = Schema.decode(candidate)
+            -- An invalid picker value must not replace a previously valid shortcut with the default.
+            if key == "toggleKey" and sanitized.toggleKey ~= value then
+                return
+            end
+            current = sanitized
         end,
         save = function(): boolean
             if not storage then

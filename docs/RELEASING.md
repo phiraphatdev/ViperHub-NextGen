@@ -14,9 +14,9 @@
 
 `sourceCommit` และ `artifactRevision` เป็นข้อมูลเสริม ไม่ใช่ gate. Build ปัจจุบันตั้งทั้งคู่เป็น `null` เพื่อไม่อ้าง SHA เก่าหลังแก้ source. เมื่อ `artifactRevision` ไม่มีค่า loader อ่าน `main/dist/...`; ถ้าเป็น SHA 40 ตัวอักษรจะอ่าน revision นั้นแทน การใช้ `main` ช่วยให้อัปเดตเร็ว แต่ manifest, status และ dist อาจถูก CDN cache คนละเวลา จึงต้องตรวจ loader จริงหลัง push และปิดเกมเป็น `disabled` ใน `status.json` หากมีปัญหา
 
-**Migration warning:** loader ที่เคยเผยแพร่ใน tag `v0.1.0` เป็นไฟล์ immutable และยังบังคับ SHA ทั้งสองฟิลด์; ถ้า push manifest แบบ `null` ไป main loader เก่าจะปฏิเสธ manifest ใหม่ ต้องแจ้ง URL loader รุ่นใหม่จาก `main/dist/loader.lua` และทดสอบเส้นทางใหม่นั้นก่อน push/ประกาศอัปเดตนี้ ห้ามอ้างว่า loader เก่ายังใช้ได้
+**Migration warning:** loader ที่เคยเผยแพร่ใน tag `v0.1.0` เป็นไฟล์ immutable และยังบังคับ SHA ทั้งสองฟิลด์; ทดสอบกับ `main` ปัจจุบันแล้วได้ `MANIFEST_INVALID` จริง ต้องใช้ URL ใหม่จาก `main/dist/loader.lua` (ซึ่งอ่านกลับ `ready` ในสองเกม) ห้ามอ้างว่า loader เก่ายังใช้ได้
 
 Runtime test ผ่าน Roblox client และบันทึก observation ตาม `TESTING.md` ยัง **แนะนำอย่างยิ่ง** ก่อนเปิด `ready` แต่ไม่ใช่ JSON evidence gate ของ build/check. อย่าอ้างว่า executor, device, rejoin หรือ gameplay ทำงานจริงจาก mock tests หรือผล local เพียงอย่างเดียว
 
 `verify-release.ps1` ตรวจ manifest/artifact hashes, path, size ในเครื่อง และ deterministic rebuild; ไม่ตรวจ Git history หรือยืนยันว่า GitHub Raw เผยแพร่แล้ว การทดสอบ production URL จึงเป็นขั้นแยก
-คำสั่งนี้ตรวจ `manifest.txt` ให้ตรงกับ manifest ที่สร้างด้วย และ local candidate `0.2.0` ยังไม่ใช่ release ที่เผยแพร่จนกว่าจะผ่านขั้น commit/push/runtime ตามข้างต้น
+คำสั่งนี้ตรวจ `manifest.txt` ให้ตรงกับ manifest ที่สร้างด้วย แต่ candidate `0.2.2` ยังไม่ใช่ release ที่ประกาศจนกว่าจะยืนยัน GitHub Raw และ runtime หลัง push

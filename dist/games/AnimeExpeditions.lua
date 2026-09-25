@@ -22,7 +22,7 @@ do
     do
         local function __modImpl()
             local Types = __DARKLUA_BUNDLE_MODULES.a()
-            local VERSION = '0.2.0'
+            local VERSION = '0.2.2'
             local LAST_UPDATED = '2026-09-24'
             local metadata = {
                 id = 'AnimeExpeditions',

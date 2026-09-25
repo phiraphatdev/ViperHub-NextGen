@@ -45,6 +45,7 @@ function ManifestClient.validate(value: unknown, repository: string, targetGameI
         local sha: any = artifact.sha256
         if
             not Validation.artifactPath(artifact.path)
+            or (data.mode == "release" and (sha == nil or artifact.bytes == nil))
             or (sha ~= nil and (type(sha) ~= "string" or #sha ~= 64 or not string.match(
                 sha :: string,
                 "^[a-f0-9]+$"

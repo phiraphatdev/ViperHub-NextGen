@@ -36,7 +36,7 @@ A second run destroys the previous owned context before creating a new one.
 Context starts created -> loading -> ready. Unsupported places finish unsupported; failures finish failed.
 alive=false prevents late HTTP results from mounting UI after cancellation.
 Cleanup runs once in reverse acquisition order; one failing callback cannot skip remaining callbacks.
-The WindUI adapter owns the four root GUIs and calls the upstream connection cleanup.
+The WindUI adapter owns the window and four root GUIs, destroys its owned GUIs and disconnects upstream connections; it does not invoke the asynchronous window destroy method because that can race the immediate cleanup path.
 Upstream animation/task/connection lifetime still requires real-client verification; mock teardown is not proof of complete WindUI cleanup.
 
 ## Runtime paths

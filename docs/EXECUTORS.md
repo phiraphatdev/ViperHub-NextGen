@@ -18,6 +18,7 @@
 | --- | --- | --- |
 | loadstring | Callable check, protected compile and invoke | Stop with a clear unsupported-environment message |
 | request / http_request | Callable check; status/body validation | If `request` throws or returns a non-table, try callable `http_request`; otherwise use protected game:HttpGet when neither exists |
+| crypt.hash | Required for release artifact SHA-256 verification | Stop with `HASH_UNAVAILABLE`; do not compile unverified release modules |
 | readfile/writefile/isfile/isfolder/makefolder | All callable, operations protected | Session-only config |
 | shared, task, game | Required Roblox context | Stop before constructing UI |
 | gethui | Optional upstream UI parent selection | Upstream default parent; actual permission must be tested |
@@ -30,7 +31,9 @@ capability flags do not certify complete UI support. Touch behavior and keybind 
 Source references (documentation is not runtime evidence):
 
 - https://docs.voltbz.net/docs/scripts/loadstring
+- https://docs.voltbz.net/docs/crypt/hash
 - https://getwave.gg/documentation
+- https://projectreal.gg/en/docs/cryptography/crypt-hash/
 - https://github.com/Footagesus/WindUI/tree/7dd8a34a6bb59635c7b5f18ce9d46558a8cde138
 
 Record executor name, exact version, OS, device/input, source commit, artifact hashes, startup outcome,

@@ -113,7 +113,7 @@ return function(source: string)
         return {CreateWindow=function()return window end,Notify=function()end,Creator={DisconnectAll=function()shared.disconnected=(shared.disconnected or 0)+1 end},ScreenGui={Destroy=function()shared.destroyed=(shared.destroyed or 0)+1 end}}
     ]=]
     local gameSource =
-        [=[return {metadata={id="AnimeVanguards",name="Anime Vanguards",version="0.2.0",lastUpdated="2026-09-24"},start=function(context)context.log("PLACEHOLDER_STARTED") shared.started=(shared.started or 0)+1 end,stop=function()shared.stopped=(shared.stopped or 0)+1 end}]=]
+        [=[return {metadata={id="AnimeVanguards",name="Anime Vanguards",version="0.2.2",lastUpdated="2026-09-24"},start=function(context)context.log("PLACEHOLDER_STARTED") shared.started=(shared.started or 0)+1 end,stop=function()shared.stopped=(shared.stopped or 0)+1 end}]=]
     env = environment(16146832113)
     env.VIPER_DEV_ARTIFACTS =
         { manifest = { mode = "development" }, ui = uiSource, AnimeVanguards = gameSource }
@@ -283,6 +283,12 @@ return function(source: string)
     ): any
         local runtime = environment(placeId or 16146832113, gameId)
         runtime.VIPER_REPOSITORY = "owner/repo"
+        runtime.crypt = {
+            hash = function(_body: string, algorithm: string): string
+                assert(algorithm == "sha256")
+                return string.rep("a", 64)
+            end,
+        }
         runtime.task = {
             spawn = function(fn: () -> ())
                 fn()
@@ -301,20 +307,20 @@ return function(source: string)
             repository = "owner/repo",
             sourceCommit = string.rep("a", 40),
             artifactRevision = if mutable then nil else revision,
-            version = "0.2.0",
-            loaderVersion = "0.2.0",
-            minLoaderVersion = "0.2.0",
+            version = "0.2.2",
+            loaderVersion = "0.2.2",
+            minLoaderVersion = "0.2.2",
             artifacts = artifacts,
             games = {
                 AnimeVanguards = {
-                    version = "0.2.0",
+                    version = "0.2.2",
                     lastUpdated = "2026-09-24",
                     name = "Anime Vanguards",
                     placeIds = { 16146832113 },
                     gameIds = { 5578556129 },
                 },
                 AnimeExpeditions = {
-                    version = "0.2.0",
+                    version = "0.2.2",
                     lastUpdated = "2026-09-24",
                     name = "Anime Expeditions",
                     placeIds = { 84515722934860 },
@@ -326,7 +332,6 @@ return function(source: string)
             manifest.sourceCommit = nil
             manifest.artifacts.AnimeExpeditions = nil
             manifest.games.AnimeExpeditions = nil
-            manifest.artifacts.ui.bytes += 2 -- Size is advisory; nonempty source still compiles.
         end
         runtime.manifest = manifest
         local getService = runtime.game.GetService
@@ -373,6 +378,26 @@ return function(source: string)
     )
     released.destroy()
     passed += 1
+    env = production("ready", false)
+    env.crypt.hash = function()
+        return string.rep("b", 64)
+    end
+    local badHash = run(env)
+    assert(badHash.context.state == "failed" and #env.downloads == 3)
+    assert(table.concat(badHash.diagnostics(), ","):find("ARTIFACT_HASH_MISMATCH", 1, true) ~= nil)
+    passed += 1
+    env = production("ready", false)
+    env.crypt = nil
+    local noHash = run(env)
+    assert(noHash.context.state == "failed" and #env.downloads == 3)
+    assert(table.concat(noHash.diagnostics(), ","):find("HASH_UNAVAILABLE", 1, true) ~= nil)
+    passed += 1
+    env = production("ready", false)
+    env.manifest.artifacts.AnimeVanguards.bytes += 1
+    local badSize = run(env)
+    assert(badSize.context.state == "failed" and #env.downloads == 3)
+    assert(table.concat(badSize.diagnostics(), ","):find("ARTIFACT_SIZE_MISMATCH", 1, true) ~= nil)
+    passed += 1
     env = production("ready", false, false, 999, 5578556129)
     local publishedMatch = run(env)
     assert(publishedMatch.context.state == "ready" and #env.downloads == 4)
@@ -382,6 +407,12 @@ return function(source: string)
     env.manifest.games.AnimeVanguards.gameIds = nil
     local staleRegistry = run(env)
     assert(staleRegistry.context.state == "failed" and #env.downloads == 1)
+    passed += 1
+    env = production("ready", false)
+    env.manifest.games.AnimeVanguards.placeIds = { 99 }
+    local placeMismatch = run(env)
+    assert(placeMismatch.context.state == "failed" and #env.downloads == 1)
+    assert(table.concat(placeMismatch.diagnostics(), ","):find("REGISTRY_MISMATCH", 1, true) ~= nil)
     passed += 1
     env = production("ready", false, true)
     local mutableRelease = run(env)

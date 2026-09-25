@@ -6,7 +6,7 @@ import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {deriveGames,validateProject,validateReleaseScope,requireReleaseMode,GAME_IDS} from './release-guards.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const PROJECT_VERSION='0.2.0';
+const PROJECT_VERSION='0.2.2';
 process.chdir(root);
 const read=p=>fs.readFileSync(p,'utf8');
 const json=p=>JSON.parse(read(p));

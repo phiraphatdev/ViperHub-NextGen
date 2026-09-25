@@ -9,8 +9,8 @@ Multi-game Luau foundation พร้อม WindUI และโครงสร้
 
 | เกม | Place ID ที่ตรวจสอบแล้ว | Module | Runtime |
 | --- | --- | --- | --- |
-| Anime Vanguards | 16146832113 | Local candidate 0.2.0; published foundation 0.1.0 | Potassium/Windows: older beta foundation evidence |
-| Anime Expeditions | 84515722934860 | Local candidate 0.2.0; published foundation 0.1.0 | Potassium/Windows: older beta foundation evidence |
+| Anime Vanguards | 16146832113 | 0.2.2 candidate; confirm current `main/manifest.json` | Potassium/Windows: older beta foundation evidence |
+| Anime Expeditions | 84515722934860 | 0.2.2 candidate; confirm current `main/manifest.json` | Potassium/Windows: older beta foundation evidence |
 
 การรองรับนี้คือการตรวจตัวเกมและโครง module เท่านั้น ไม่ครอบคลุมทุกแมพใน Universe
 
@@ -43,9 +43,10 @@ check สร้าง dist/manifest ใหม่ แล้วตรวจ format
 
 Loader URL ของ release ที่ tag แล้วใช้ artifact commit ที่ประกาศ; module ภายในจะอิง `manifest.json.artifactRevision` ถ้ามี SHA หรือ `main/dist/` หากเป็น `null`
 รูปแบบ loader แบบ pin คือ `https://raw.githubusercontent.com/phiraphatdev/ViperHub-NextGen/<artifactRevision>/dist/loader.lua`
-Beta 0.1.0: [loader.lua](https://raw.githubusercontent.com/phiraphatdev/ViperHub-NextGen/af39a11236b66776d756b5362cdebcc7df3dfce4/dist/loader.lua)
-สำหรับอัปเดตถัดไป build/check สามารถใช้ `artifactRevision: null` และโหลด game/UI module จาก `main/dist/` ได้; อย่านำ build ในเครื่องไปอ้างว่าเผยแพร่แล้วจนกว่าจะ commit/push และตรวจ Raw จริง
-**ข้อควรระวังการย้ายเวอร์ชัน:** loader v0.1.0 เดิมไม่รองรับ manifest ที่ไม่มี SHA; เมื่อจะเผยแพร่ระบบ build ใหม่ ต้องประกาศ loader URL ใหม่และตรวจ runtime ก่อน เพราะลิงก์ v0.1.0 ด้านบนจะไม่เข้ากันกับ manifest ใหม่บน main
+Legacy beta 0.1.0 (incompatible with current main manifest): [loader.lua](https://raw.githubusercontent.com/phiraphatdev/ViperHub-NextGen/af39a11236b66776d756b5362cdebcc7df3dfce4/dist/loader.lua)
+Current main loader: https://raw.githubusercontent.com/phiraphatdev/ViperHub-NextGen/main/dist/loader.lua
+รุ่นบน `main` ใช้ `artifactRevision: null` และโหลด game/UI module จาก `main/dist/`; ตรวจ `main/manifest.json` และทดสอบ loader จริงก่อนอ้างว่า candidate 0.2.2 พร้อมใช้งาน
+**ข้อควรระวังการย้ายเวอร์ชัน:** loader v0.1.0 เดิมไม่รองรับ manifest ปัจจุบันที่ไม่มี SHA; ลิงก์เก่าด้านบนจึงใช้กับ `main` ปัจจุบันไม่ได้ ให้เปลี่ยนไปใช้ Current main loader
 อย่าใช้ SHA เก่าหรือเดา revision เอง; `VIPER_REPOSITORY` ใช้ override สำหรับ deployment/test
 
 ## เอกสาร

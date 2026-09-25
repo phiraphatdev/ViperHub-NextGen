@@ -19,7 +19,7 @@ local Version = require("../utils/Version")
 local Validation = require("../utils/Validation")
 local App = require("../ui/App")
 local UIAdapter = require("../ui/WindUIAdapter")
-local LOADER_VERSION = "0.2.0"
+local LOADER_VERSION = "0.2.2"
 local TIMEOUT_SECONDS = 15
 local NOTIFY_RETRY_SECONDS = 0.2
 local NOTIFY_MAX_ATTEMPTS = 5
@@ -32,7 +32,6 @@ if not gameObject then
 end
 local starterGui = gameObject:GetService("StarterGui")
 local httpService = gameObject:GetService("HttpService")
-local marketplaceService = gameObject:GetService("MarketplaceService")
 local runtimeTask = ENV.task
 local sharedState = ENV.shared
 if type(sharedState) ~= "table" or type(runtimeTask) ~= "table" then
@@ -85,26 +84,7 @@ end
 local metadata = Detector.detect(gameObject.PlaceId, gameObject.GameId)
 if not metadata then
     context.destroy("unsupported")
-    notify("Unsupported game (name unavailable). Place: " .. tostring(gameObject.PlaceId), true)
-    -- A slow metadata request must not delay stopping an unsupported session.
-    if type(runtimeTask.spawn) == "function" then
-        local requestedAt = os.clock()
-        local spawnTask: any = runtimeTask.spawn
-        spawnTask(function()
-            local ok, info = pcall(function()
-                return marketplaceService:GetProductInfo(gameObject.PlaceId)
-            end)
-            if
-                ok
-                and type(info) == "table"
-                and type(info.Name) == "string"
-                and os.clock() - requestedAt < TIMEOUT_SECONDS
-                and sharedState.ViperHubNextGen == session
-            then
-                notify("Unsupported: " .. string.sub(info.Name, 1, 100), true)
-            end
-        end)
-    end
+    notify("Unsupported game. Place: " .. tostring(gameObject.PlaceId), true)
     return session
 end
 context.gameId = metadata.id
@@ -206,8 +186,15 @@ local function run()
             fail("MANIFEST_INVALID", "Development metadata cannot be loaded as a release.")
             return
         end
-        if not table.find(metadata.placeIds, gameObject.PlaceId) then
-            local releaseUniverses = manifest.games[metadata.id].gameIds
+        local publishedGame = manifest.games[metadata.id]
+        local localPlace = table.find(metadata.placeIds, gameObject.PlaceId) ~= nil
+        local publishedPlace = table.find(publishedGame.placeIds, gameObject.PlaceId) ~= nil
+        if localPlace ~= publishedPlace then
+            fail("REGISTRY_MISMATCH", "Published game registry differs from this loader.")
+            return
+        end
+        if not localPlace then
+            local releaseUniverses = publishedGame.gameIds
             if not releaseUniverses or not table.find(releaseUniverses, gameObject.GameId) then
                 fail("GAME_UNAVAILABLE", "This match place is not in the published game registry.")
                 return
@@ -245,6 +232,20 @@ local function run()
             end
             if not body then
                 fail(code or "HTTP_FAILED", "Module download failed.")
+                return
+            end
+            if type(artifact.bytes) ~= "number" or #body ~= artifact.bytes then
+                fail("ARTIFACT_SIZE_MISMATCH", "Downloaded module size does not match release metadata.")
+                return
+            end
+            local crypto = ENV.crypt
+            if type(crypto) ~= "table" or type(crypto.hash) ~= "function" then
+                fail("HASH_UNAVAILABLE", "This environment cannot verify release modules.")
+                return
+            end
+            local hashOk, digest = pcall(crypto.hash, body, "sha256")
+            if not hashOk or type(digest) ~= "string" or string.lower(digest) ~= artifact.sha256 then
+                fail("ARTIFACT_HASH_MISMATCH", "Downloaded module failed integrity verification.")
                 return
             end
             local value, loadCode = ModuleLoader.load(ENV.loadstring, body, buffer.push)

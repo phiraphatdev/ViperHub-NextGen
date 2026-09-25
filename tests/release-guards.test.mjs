@@ -71,11 +71,20 @@ rejects(() => validateReleaseScope({...manifest, releaseGames:[GAME_IDS[0],GAME_
 rejects(() => validateReleaseScope({...manifest, releaseTier:'unknown'}, status), 'Invalid release scope');
 const manifestTextPath = path.join(root, 'manifest.txt');
 const manifestText = fs.readFileSync(manifestTextPath);
+const fileRetry = operation => {
+    for (let attempt = 0; attempt < 5; attempt++) {
+        try { return operation(); }
+        catch (error) {
+            if (!['EBUSY', 'EPERM', 'UNKNOWN'].includes(error.code) || attempt === 4) throw error;
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+        }
+    }
+};
 try {
-    fs.appendFileSync(manifestTextPath, 'tampered\n');
+    fileRetry(() => fs.appendFileSync(manifestTextPath, 'tampered\n'));
     assert.throws(() => execFileSync('node', ['scripts/pipeline.mjs','verify'],
         {cwd:root,stdio:'pipe'}), error => error.stderr?.toString().includes('manifest.txt differs'));
 } finally {
-    fs.writeFileSync(manifestTextPath, manifestText);
+    fileRetry(() => fs.writeFileSync(manifestTextPath, manifestText));
 }
 console.log('PASS: dynamic game discovery and local release guards');

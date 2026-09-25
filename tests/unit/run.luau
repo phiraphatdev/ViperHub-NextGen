@@ -185,6 +185,9 @@ test("config malformed JSON and reopened store", function()
     end
     local store = ConfigStore.new(storage, decode, encode, logger)
     store.update("uiScale", 0.9)
+    store.update("toggleKey", "F4")
+    store.update("toggleKey", "LeftAlt")
+    assert(store.get().toggleKey == "F4")
     assert(store.save())
     assert(ConfigStore.new(storage, decode, encode, logger).get().uiScale == 0.9)
     body = "bad"
@@ -315,6 +318,8 @@ test("manifest validates only the selected game and bounded artifact paths", fun
     m = validManifest()
     m.artifacts.ui.bytes = nil
     m.artifacts.ui.sha256 = nil
+    assert(ManifestClient.validate(m, "owner/repo", "AnimeVanguards") == nil)
+    m.mode = "development"
     assert(ManifestClient.validate(m, "owner/repo", "AnimeVanguards") ~= nil)
     m.artifacts.ui.sha256 = "bad"
     assert(ManifestClient.validate(m, "owner/repo", "AnimeVanguards") == nil)

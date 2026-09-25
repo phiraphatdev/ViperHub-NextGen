@@ -1,0 +1,15 @@
+{
+  "status": "partial",
+  "candidate": "0.2.1",
+  "mode": "local development harness",
+  "checks": [
+    {"name":"Legacy v0.1.0 loader against current main", "game":"AnimeVanguards", "result":"incompatible", "observed":"Live session state=failed, diagnostics=MANIFEST_INVALID; current main loader then restored ready"},
+    {"name":"WindUI cleanup before fix", "game":"AnimeVanguards", "result":"bug reproduced", "observed":"After session.destroy(), state=stopped, alive=false, old window.Destroyed=false"},
+    {"name":"WindUI cleanup with 0.2.1 candidate", "game":"AnimeVanguards", "result":"passed", "observed":"After session.destroy(), state=stopped, alive=false, old window.Destroyed=true; current main loader restored ready"},
+    {"name":"Invalid keybind with 0.2.1 candidate", "game":"AnimeVanguards", "result":"passed", "observed":"F4 then invalid LeftAlt left store=F4 and control=F4; RightShift restored in store, control and executor file"},
+    {"name":"Candidate startup", "game":"AnimeVanguards", "result":"passed", "observed":"MCP readback ready, alive=true, gameId=AnimeVanguards, windowPresent=true"},
+    {"name":"Candidate startup", "game":"AnimeExpeditions", "result":"passed", "observed":"MCP readback ready, alive=true, gameId=AnimeExpeditions, windowPresent=true"}
+  ],
+  "pending": ["0.2.1 production GitHub Raw path (not pushed)", "physical keyboard/touch input", "client close/rejoin persistence", "full WindUI resource leak profile"],
+  "limits": "Both clients were restored to the published main loader. The Anime Expeditions cleanup readback probe failed due to a missing temporary audit reference, so cleanup is not claimed for that game. No gameplay feature was tested."
+}
