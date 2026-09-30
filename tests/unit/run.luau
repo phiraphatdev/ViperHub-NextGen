@@ -3691,24 +3691,27 @@ local function presetHarness(rules: any): any
 end
 test("Stage Preset Rules model validates, prunes and labels presets", function()
     local rules = AutoPlayRules.normalize({
-        Story = { Stage1 = { id = "P6", name = "Raid" }, Bad = { id = 5, name = "x" } },
-        [""] = { Stage1 = { id = "P1", name = "y" } },
+        Story = { id = "P6", name = "Raid" },
+        Bad = { id = 5, name = "x" },
+        [""] = { id = "P1", name = "y" },
         Raid = "nope",
+        Legacy = { Stage1 = { id = "P1", name = "y" } },
     })
-    assert((AutoPlayRules.get(rules, "Story", "Stage1") :: any).id == "P6")
-    assert(AutoPlayRules.get(rules, "Story", "Bad") == nil)
-    assert(AutoPlayRules.get(rules, "Raid", "Stage1") == nil)
+    assert((AutoPlayRules.get(rules, "Story") :: any).id == "P6")
+    assert(AutoPlayRules.get(rules, "Bad") == nil)
+    assert(AutoPlayRules.get(rules, "Raid") == nil)
+    assert(AutoPlayRules.get(rules, "Legacy") == nil, "old per-stage rules are dropped")
     assert(next(AutoPlayRules.normalize(42)) == nil)
     local presets = presetsSnapshot("P1")
     assert(AutoPlayRules.resolve({ id = "P6", name = "Raid" }, presets) == "ok")
     assert(AutoPlayRules.resolve({ id = "P6", name = "Old name" }, presets) == "invalid")
     assert(AutoPlayRules.resolve({ id = "P9", name = "Raid" }, presets) == "invalid")
-    AutoPlayRules.set(rules, "Story", "Stage2", { id = "P9", name = "Gone" })
+    AutoPlayRules.set(rules, "Raid", { id = "P9", name = "Gone" })
     assert(AutoPlayRules.prune(rules, presets) == 1)
-    assert(AutoPlayRules.get(rules, "Story", "Stage2") == nil)
-    assert(AutoPlayRules.get(rules, "Story", "Stage1") ~= nil)
-    AutoPlayRules.set(rules, "Story", "Stage1", nil)
-    assert(rules.Story == nil)
+    assert(AutoPlayRules.get(rules, "Raid") == nil)
+    assert(AutoPlayRules.get(rules, "Story") ~= nil)
+    AutoPlayRules.set(rules, "Story", nil)
+    assert(next(rules) == nil)
     local options = AutoPlayRules.options(presets)
     assert(options[1].label == "None" and options[1].id == nil)
     assert(options[3].label == "Raid" and options[4].label == "Raid (2)" and options[4].id == "P7")
@@ -3719,7 +3722,7 @@ test("Stage Preset Rules model validates, prunes and labels presets", function()
     assert(read ~= nil and read.active == "P1" and read.names.P1 == "A")
 end)
 test("Stage Preset Rules switch once, confirm by readback, then enable native Auto Play", function()
-    local h = presetHarness({ Story = { Stage1 = { id = "P6", name = "Raid" } } })
+    local h = presetHarness({ Story = { id = "P6", name = "Raid" } })
     assert(h.runtime.setEnabled(true))
     assert(#h.switches == 1 and h.switches[1] == "P6")
     assert(h.toggles == 0)
@@ -3732,60 +3735,59 @@ test("Stage Preset Rules switch once, confirm by readback, then enable native Au
     assert(#h.switches == 1 and h.toggles == 1 and h.autoPlaying)
     h.runtime.step(103)
     assert(#h.switches == 1, "no select when the game already uses the wanted preset")
+    h.gameData = { mode = "Story", stage = "Stage7" }
+    h.runtime.step(104)
+    assert(#h.switches == 1, "the rule applies to every stage of the mode")
     h.runtime.stop()
 end)
-test(
-    "Stage Preset Rules pause native Auto Play before switching and skip None or unmatched stages",
-    function()
-        local h = presetHarness({ Story = { Stage1 = { id = "P6", name = "Raid" } } })
-        h.autoPlaying = true
-        h.runtime.enabled = true
-        h.runtime.step(100)
-        assert(h.toggles == 1 and not h.autoPlaying and #h.switches == 0)
-        h.runtime.step(101)
-        assert(#h.switches == 1)
-        h.runtime.stop()
+test("Stage Preset Rules pause native Auto Play before switching and skip None or unmatched modes", function()
+    local h = presetHarness({ Story = { id = "P6", name = "Raid" } })
+    h.autoPlaying = true
+    h.runtime.enabled = true
+    h.runtime.step(100)
+    assert(h.toggles == 1 and not h.autoPlaying and #h.switches == 0)
+    h.runtime.step(101)
+    assert(#h.switches == 1)
+    h.runtime.stop()
 
-        local none = presetHarness({ Story = { Stage2 = { id = "P6", name = "Raid" } } })
-        assert(none.runtime.setEnabled(true))
-        assert(#none.switches == 0 and none.toggles == 1)
-        none.runtime.stop()
+    local none = presetHarness({ Raid = { id = "P6", name = "Raid" } })
+    assert(none.runtime.setEnabled(true))
+    assert(#none.switches == 0 and none.toggles == 1)
+    none.runtime.stop()
 
-        local blank = presetHarness(nil)
-        blank.gameData = { mode = "Raid", stage = "Stage9" }
-        assert(blank.runtime.setEnabled(true))
-        assert(#blank.switches == 0 and blank.toggles == 1)
-        blank.runtime.stop()
-    end
-)
+    local blank = presetHarness(nil)
+    blank.gameData = { mode = "Raid", stage = "Stage9" }
+    assert(blank.runtime.setEnabled(true))
+    assert(#blank.switches == 0 and blank.toggles == 1)
+    blank.runtime.stop()
+end)
 test("Stage Preset Rules reset a deleted or renamed preset to None without guessing another", function()
-    local deleted = presetHarness({ Story = { Stage1 = { id = "P9", name = "Raid" } } })
+    local deleted = presetHarness({ Story = { id = "P9", name = "Raid" } })
     assert(deleted.runtime.setEnabled(true))
     assert(#deleted.switches == 0)
-    assert(deleted.runtime.getRule("Story", "Stage1") == nil)
-    assert(deleted.runtime.status:find("cleared") ~= nil or deleted.runtime.status:find("Auto Play") ~= nil)
+    assert(deleted.runtime.getRule("Story") == nil)
     assert(deleted.toggles == 1, "Auto Play proceeds with the game's current preset")
     deleted.runtime.stop()
 
-    local renamed = presetHarness({ Story = { Stage1 = { id = "P6", name = "Old name" } } })
+    local renamed = presetHarness({ Story = { id = "P6", name = "Old name" } })
     local notified = 0
     renamed.runtime.onRulesChange(function()
         notified += 1
     end)
     assert(renamed.runtime.setEnabled(true))
-    assert(#renamed.switches == 0 and renamed.runtime.getRule("Story", "Stage1") == nil)
+    assert(#renamed.switches == 0 and renamed.runtime.getRule("Story") == nil)
     assert(notified >= 1)
     renamed.runtime.stop()
 
-    local live = presetHarness({ Story = { Stage1 = { id = "P6", name = "Raid" } } })
+    local live = presetHarness({ Story = { id = "P6", name = "Raid" } })
     live.presets = presetsSnapshot("P1")
     live.presets.names.P6 = "Renamed"
     live.presetsCallback(live.presets)
-    assert(live.runtime.getRule("Story", "Stage1") == nil)
+    assert(live.runtime.getRule("Story") == nil)
     live.runtime.stop()
 end)
 test("Stage Preset Rules retry three times then continue with the current preset", function()
-    local h = presetHarness({ Story = { Stage1 = { id = "P6", name = "Raid" } } })
+    local h = presetHarness({ Story = { id = "P6", name = "Raid" } })
     h.runtime.enabled = true
     h.runtime.step(100)
     h.runtime.step(108)
@@ -3798,39 +3800,43 @@ test("Stage Preset Rules retry three times then continue with the current preset
 end)
 test("Stage Preset Rules cannot be edited while Auto Play is on or Play Macro is active", function()
     local h = presetHarness(nil)
-    local ok, err = h.runtime.setRule("Story", "Stage1", "P6")
+    local ok, err = h.runtime.setRule("Story", "P6")
     assert(ok and err == nil)
-    assert(h.runtime.getRule("Story", "Stage1").name == "Raid")
-    assert(select(2, h.runtime.setRule("Story", "Stage1", "P404")) == "PRESET_UNKNOWN")
-    assert(h.runtime.setRule("Story", "Stage1", nil) and h.runtime.getRule("Story", "Stage1") == nil)
-    h.runtime.setRule("Story", "Stage1", "P6")
+    assert(h.runtime.getRule("Story").name == "Raid")
+    assert(select(2, h.runtime.setRule("Story", "P404")) == "PRESET_UNKNOWN")
+    assert(h.runtime.setRule("Story", nil) and h.runtime.getRule("Story") == nil)
+    h.runtime.setRule("Story", "P6")
     assert(h.runtime.setEnabled(true))
     assert(h.runtime.isRulesLocked())
-    assert(select(2, h.runtime.setRule("Story", "Stage1", nil)) == "AUTOPLAY_ENABLED")
-    assert(h.runtime.getRule("Story", "Stage1") ~= nil)
+    assert(select(2, h.runtime.setRule("Story", nil)) == "AUTOPLAY_ENABLED")
+    assert(h.runtime.getRule("Story") ~= nil)
     h.runtime.setEnabled(false)
     h.runtime.setMacro({ mode = "play" })
     assert(h.runtime.isRulesLocked())
-    assert(select(2, h.runtime.setRule("Story", "Stage1", nil)) == "MACRO_ACTIVE")
+    assert(select(2, h.runtime.setRule("Story", nil)) == "MACRO_ACTIVE")
     h.runtime.stop()
 end)
-test("Stage Preset Rules persist as schema v2 and load v1 files without rules", function()
-    local written: { string } = {}
+test("Stage Preset Rules persist as schema v3 and load v1 and v2 files without stage rules", function()
     local body: string? = nil
+    local written: { string } = {}
     local http: any = {
         JSONEncode = function(_self: any, value: any): string
             return string.format(
                 "%d|%s|%s",
                 value.schemaVersion,
                 tostring(value.enabled),
-                tostring(value.rules.Story and value.rules.Story.Stage1.id or "")
+                tostring(value.rules.Story and value.rules.Story.id or "")
             )
         end,
         JSONDecode = function(_self: any, text: string): any
             local version, enabled, id = string.match(text, "^(%d+)|(%a+)|(.*)$")
             local rules: any = {}
             if id ~= "" then
-                rules.Story = { Stage1 = { id = id, name = "Raid" } }
+                if tonumber(version) == 2 then
+                    rules.Story = { Stage1 = { id = id, name = "Raid" } }
+                else
+                    rules.Story = { id = id, name = "Raid" }
+                end
             end
             return { schemaVersion = tonumber(version), enabled = enabled == "true", rules = rules }
         end,
@@ -3845,22 +3851,29 @@ test("Stage Preset Rules persist as schema v2 and load v1 files without rules", 
             return true
         end,
     }
+    local function fresh(): any
+        local runtime =
+            AutoPlayRuntime.new(nil, storage, { spawn = function() end, wait = function() end }, http)
+        runtime.start({ alive = true })
+        return runtime
+    end
     body = "1|true|"
-    local runtime = AutoPlayRuntime.new(nil, storage, { spawn = function() end, wait = function() end }, http)
-    runtime.start({ alive = true })
-    assert(runtime.isEnabled() == true and runtime.getRule("Story", "Stage1") == nil)
-    runtime.stop()
+    local v1 = fresh()
+    assert(v1.isEnabled() == true and v1.getRule("Story") == nil)
+    v1.stop()
     body = "2|false|P6"
-    local reloaded =
-        AutoPlayRuntime.new(nil, storage, { spawn = function() end, wait = function() end }, http)
-    reloaded.start({ alive = true })
-    local loadedRule = reloaded.getRule("Story", "Stage1")
-    assert(loadedRule ~= nil and loadedRule.id == "P6")
-    assert(reloaded.setEnabled(true) == true)
-    assert(written[#written]:sub(1, 2) == "2|" and written[#written]:find("P6") ~= nil)
-    reloaded.stop()
+    local v2 = fresh()
+    assert(v2.getRule("Story") == nil, "per-stage v2 rules are discarded")
+    v2.stop()
+    body = "3|false|P6"
+    local v3 = fresh()
+    local loaded = v3.getRule("Story")
+    assert(loaded ~= nil and loaded.id == "P6")
+    assert(v3.setEnabled(true) == true)
+    assert(written[#written]:sub(1, 2) == "3|" and written[#written]:find("P6") ~= nil)
+    v3.stop()
 end)
-test("AutoPlay adapter reads presets, switches by id and lists supported stages", function()
+test("AutoPlay adapter reads presets, switches by id and lists supported modes", function()
     local fired: { any } = {}
     local handler: any = nil
     local requested = 0
@@ -3894,7 +3907,7 @@ test("AutoPlay adapter reads presets, switches by id and lists supported stages"
         },
         stagesData = {
             GetAllStageTypeNames = function()
-                return { "Raid", "Story", "Story", "PVP", "LTM" }
+                return { "Raid", "Story", "Story", "PVP", "LTM", "Empty" }
             end,
             GetAllStageNameAndIndex = function(mode: string)
                 if mode == "Story" then
@@ -3903,6 +3916,8 @@ test("AutoPlay adapter reads presets, switches by id and lists supported stages"
                     return { ["Factory"] = "Stage4" }
                 elseif mode == "PVP" then
                     return { ["Arena"] = "Stage2" }
+                elseif mode == "Empty" then
+                    return {}
                 end
                 return { ["Pirate Dynasty"] = "Pirate Dynasty", ["Rts"] = "RTS" }
             end,
@@ -3928,32 +3943,18 @@ test("AutoPlay adapter reads presets, switches by id and lists supported stages"
     assert(not adapter.switchPreset(""))
     local data = adapter.getGameData()
     assert(data ~= nil and data.mode == "Story" and data.stage == "Stage1")
-    local catalog = adapter.getStageCatalog()
-    assert(catalog ~= nil and #catalog == 3)
-    assert(catalog[1].mode == "Story" and catalog[1].stages[1].stage == "Stage2")
-    assert(catalog[1].stages[2].stage == "Stage10" and catalog[2].mode == "LTM" and #catalog[2].stages == 1)
-    assert(catalog[3].mode == "Raid")
+    local modes = adapter.getModes()
+    assert(modes ~= nil and #modes == 3)
+    assert(modes[1] == "Story" and modes[2] == "LTM" and modes[3] == "Raid")
     adapter.untrackPresets()
     assert(adapter.getPresets() == nil and handler == nil)
 end)
-test("Stage Preset Rules page lists rows per stage and locks dropdowns with Auto Play", function()
-    local h = presetHarness({ Story = { Stage1 = { id = "P6", name = "Raid" } } })
-    h.runtime.adapter.getStageCatalog = function()
-        return {
-            {
-                mode = "Story",
-                stages = {
-                    { stage = "Stage1", name = "Planet Namak" },
-                    { stage = "Stage2", name = "Sand Village" },
-                },
-            },
-        }
+test("Stage Preset Rules page lists one dropdown per mode and locks it with Auto Play", function()
+    local fresh = presetHarness({ Story = { id = "P6", name = "Raid" } })
+    fresh.runtime.adapter.getModes = function()
+        return { "Story", "Raid" }
     end
-    h.runtime.stop()
-    local fresh = presetHarness({ Story = { Stage1 = { id = "P6", name = "Raid" } } })
-    fresh.runtime.adapter.getStageCatalog = h.runtime.adapter.getStageCatalog
     local dropdowns: any = {}
-    local sectionsOpened: { [string]: boolean } = {}
     local function control(): any
         return {
             Lock = function(self: any)
@@ -3970,7 +3971,7 @@ test("Stage Preset Rules page lists rows per stage and locks dropdowns with Auto
         Paragraph = function()
             return control()
         end,
-        Toggle = function(_s: any, opt: any)
+        Toggle = function(_s: any, _opt: any)
             return control()
         end,
         Dropdown = function(_s: any, opt: any)
@@ -3996,39 +3997,35 @@ test("Stage Preset Rules page lists rows per stage and locks dropdowns with Auto
         Paragraph = function()
             return control()
         end,
-        Section = function(_s: any, opt: any)
-            sectionsOpened[opt.Title] = opt.Opened
+        Section = function(_s: any, _opt: any)
             return sectionApi
         end,
         Button = function() end,
     }
     local setRuleCalls = 0
     local realSetRule = fresh.runtime.setRule
-    fresh.runtime.setRule = function(mode: string, stage: string, id: string?)
+    fresh.runtime.setRule = function(mode: string, id: string?)
         setRuleCalls += 1
         assert(setRuleCalls < 50, "dropdown echo must not loop")
-        return realSetRule(mode, stage, id)
+        return realSetRule(mode, id)
     end
     AutoPlayPage.mount(tab, fresh.runtime, nil)
     assert(setRuleCalls == 0, "refresh echoes are ignored")
-    assert(sectionsOpened.Story == true)
-    assert(dropdowns["Planet Namak"] ~= nil and dropdowns["Sand Village"] ~= nil)
-    assert(dropdowns["Planet Namak"].Selected == "Raid")
-    assert(dropdowns["Sand Village"].Selected == "None")
-    assert(dropdowns["Planet Namak"].Locked == false)
-    dropdowns["Sand Village"].Callback("Raid (2)")
-    assert(fresh.runtime.getRule("Story", "Stage2").id == "P7")
+    assert(dropdowns.Story ~= nil and dropdowns.Raid ~= nil)
+    assert(dropdowns.Story.Selected == "Raid")
+    assert(dropdowns.Raid.Selected == "None")
+    assert(dropdowns.Story.Locked == false)
+    dropdowns.Raid.Callback("Raid (2)")
+    assert(fresh.runtime.getRule("Raid").id == "P7")
     assert(fresh.runtime.setEnabled(true))
-    assert(dropdowns["Planet Namak"].Locked == true and dropdowns["Sand Village"].Locked == true)
-    dropdowns["Sand Village"].Callback("None")
-    assert(fresh.runtime.getRule("Story", "Stage2") ~= nil, "locked edits are refused")
-    assert(dropdowns["Sand Village"].Selected == "Raid (2)")
-    fresh.runtime.presetsCallback = nil
-    h.presetsCallback = nil
+    assert(dropdowns.Story.Locked == true and dropdowns.Raid.Locked == true)
+    dropdowns.Raid.Callback("None")
+    assert(fresh.runtime.getRule("Raid") ~= nil, "locked edits are refused")
+    assert(dropdowns.Raid.Selected == "Raid (2)")
     fresh.presetsCallback(fresh.presets)
     assert(setRuleCalls < 10, "preset updates while locked do not write rules")
     fresh.runtime.setEnabled(false)
-    assert(dropdowns["Planet Namak"].Locked == false)
+    assert(dropdowns.Story.Locked == false)
     fresh.runtime.stop()
 end)
 print(string.format("PASS: %d unit scenarios", passed))

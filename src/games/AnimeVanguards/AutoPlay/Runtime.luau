@@ -12,7 +12,7 @@ local Adapter = require("./Adapter")
 local Rules = require("./Rules")
 local Runtime = {}
 local STORAGE_KEY = "AnimeVanguardsAutoPlay"
-local SCHEMA_VERSION = 2
+local SCHEMA_VERSION = 3
 local POLL_SECONDS = 1
 local RETRY_SECONDS = 8
 local PRESET_ATTEMPTS: number = (config :: any).thresholds.presetSwitchAttempts
@@ -116,9 +116,9 @@ function Runtime.new(
         return self.enabled == true or (self.macro ~= nil and self.macro.mode == "play")
     end
 
-    --- Returns the stored rule entry ({id, name}) for a mode and stage, or nil for None.
-    function self.getRule(mode: string, stage: string): any
-        return Rules.get(self.rules, mode, stage)
+    --- Returns the stored rule entry ({id, name}) for a mode, or nil for None.
+    function self.getRule(mode: string): any
+        return Rules.get(self.rules, mode)
     end
 
     --- Returns the latest game presets snapshot, or nil when the game has not reported any yet.
@@ -132,12 +132,12 @@ function Runtime.new(
         return Rules.options(self.getPresets())
     end
 
-    --- Returns modes and stages Auto Play supports, cached after the first successful read; nil if unavailable.
+    --- Returns the modes Auto Play supports, cached after the first successful read; nil if unavailable.
     function self.getCatalog(): any
         if not self.catalog then
             local ad = getAdapter()
-            if ad and type(ad.getStageCatalog) == "function" then
-                local ok, result = pcall(ad.getStageCatalog)
+            if ad and type(ad.getModes) == "function" then
+                local ok, result = pcall(ad.getModes)
                 if ok and type(result) == "table" then
                     self.catalog = result
                 end
@@ -155,8 +155,8 @@ function Runtime.new(
         return ad ~= nil and type(ad.requestPresets) == "function" and (ad.requestPresets :: any)() == true
     end
 
-    --- Sets or clears (id nil = None) the preset for a mode and stage; returns ok and an error code.
-    function self.setRule(mode: string, stage: string, id: string?): (boolean, string?)
+    --- Sets or clears (id nil = None) the preset for a mode; returns ok and an error code.
+    function self.setRule(mode: string, id: string?): (boolean, string?)
         if self.enabled then
             return false, "AUTOPLAY_ENABLED"
         end
@@ -164,14 +164,14 @@ function Runtime.new(
             return false, "MACRO_ACTIVE"
         end
         if id == nil then
-            Rules.set(self.rules, mode, stage, nil)
+            Rules.set(self.rules, mode, nil)
         else
             local presets = self.getPresets()
             local name = presets and presets.names[id]
             if type(name) ~= "string" then
                 return false, "PRESET_UNKNOWN"
             end
-            if not Rules.set(self.rules, mode, stage, { id = id, name = name }) then
+            if not Rules.set(self.rules, mode, { id = id, name = name }) then
                 return false, "INVALID_RULE"
             end
         end
@@ -190,7 +190,7 @@ function Runtime.new(
         end
     end
 
-    -- Applies the Stage Preset Rule for the current mode and stage before Auto Play is engaged.
+    -- Applies the Stage Preset Rule for the current mode before Auto Play is engaged.
     -- Returns true when Auto Play handling may continue, false while a preset change is pending.
     local function ensurePreset(ad: any, current: number): boolean
         if type(ad.getGameData) ~= "function" or type(ad.getPresets) ~= "function" then
@@ -204,7 +204,7 @@ function Runtime.new(
             setStatus("Waiting for game data")
             return false
         end
-        local entry = Rules.get(self.rules, data.mode, data.stage)
+        local entry = Rules.get(self.rules, data.mode)
         if not entry then
             self.presetAttempt = nil
             return true
@@ -224,7 +224,7 @@ function Runtime.new(
             return false
         end
         if Rules.resolve(entry, presets) ~= "ok" then
-            Rules.set(self.rules, data.mode, data.stage, nil)
+            Rules.set(self.rules, data.mode, nil)
             self.presetAttempt = nil
             save()
             notifyRules()
@@ -235,7 +235,7 @@ function Runtime.new(
             self.presetAttempt = nil
             return true
         end
-        local key = data.mode .. "/" .. data.stage .. "/" .. entry.id
+        local key = data.mode .. "/" .. entry.id
         local attempt: any = self.presetAttempt
         if not attempt or attempt.key ~= key then
             attempt = { key = key, sent = 0, last = -math.huge, lastPause = -math.huge, gaveUp = false }
@@ -385,7 +385,11 @@ function Runtime.new(
                     if
                         ok
                         and type(data) == "table"
-                        and (data.schemaVersion == SCHEMA_VERSION or data.schemaVersion == 1)
+                        and (
+                            data.schemaVersion == SCHEMA_VERSION
+                            or data.schemaVersion == 2
+                            or data.schemaVersion == 1
+                        )
                     then
                         if type(data.enabled) == "boolean" then
                             self.enabled = data.enabled

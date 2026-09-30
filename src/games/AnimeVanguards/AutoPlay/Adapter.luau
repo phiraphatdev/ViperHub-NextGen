@@ -274,8 +274,8 @@ function Adapter.new(injectedDeps: any?): any
         return { mode = data.StageType, stage = data.Stage }
     end
 
-    --- Lists modes Auto Play supports (not blocklisted) with their stages from StagesData; nil if unavailable.
-    function self.getStageCatalog(): { { mode: string, stages: { { stage: string, name: string } } } }?
+    --- Lists modes Auto Play supports (some stage is not blocklisted) from StagesData; Story first, nil if unavailable.
+    function self.getModes(): { string }?
         local deps = getDeps()
         local data = deps and deps.stagesData
         if
@@ -292,10 +292,32 @@ function Adapter.new(injectedDeps: any?): any
         local blocklist = deps.blocklist
         local modes: { string } = {}
         local seen: { [string]: boolean } = {}
-        for _, name in typeNames do
-            if type(name) == "string" and not seen[name] then
-                seen[name] = true
-                table.insert(modes, name)
+        for _, mode in typeNames do
+            if type(mode) == "string" and not seen[mode] then
+                seen[mode] = true
+                local okStages, stageMap = pcall(data.GetAllStageNameAndIndex, mode)
+                local supported = false
+                if okStages and type(stageMap) == "table" then
+                    for _, stageId in stageMap do
+                        local blocked = false
+                        if
+                            type(stageId) == "string"
+                            and blocklist
+                            and type(blocklist.IsBlocked) == "function"
+                        then
+                            local okBlock, result =
+                                pcall(blocklist.IsBlocked, { StageType = mode, Stage = stageId })
+                            blocked = not okBlock or result == true
+                        end
+                        if type(stageId) == "string" and not blocked then
+                            supported = true
+                            break
+                        end
+                    end
+                end
+                if supported then
+                    table.insert(modes, mode)
+                end
             end
         end
         table.sort(modes, function(a: string, b: string)
@@ -304,38 +326,7 @@ function Adapter.new(injectedDeps: any?): any
             end
             return a < b
         end)
-        local catalog: { { mode: string, stages: { { stage: string, name: string } } } } = {}
-        for _, mode in modes do
-            local okStages, stageMap = pcall(data.GetAllStageNameAndIndex, mode)
-            local stages: { { stage: string, name: string } } = {}
-            if okStages and type(stageMap) == "table" then
-                for name, stageId in stageMap do
-                    if type(name) == "string" and type(stageId) == "string" then
-                        local blocked = false
-                        if blocklist and type(blocklist.IsBlocked) == "function" then
-                            local okBlock, result =
-                                pcall(blocklist.IsBlocked, { StageType = mode, Stage = stageId })
-                            blocked = not okBlock or result == true
-                        end
-                        if not blocked then
-                            table.insert(stages, { stage = stageId, name = name })
-                        end
-                    end
-                end
-            end
-            if #stages > 0 then
-                table.sort(stages, function(a, b)
-                    local na = tonumber(string.match(a.stage, "%d+$"))
-                    local nb = tonumber(string.match(b.stage, "%d+$"))
-                    if na and nb and na ~= nb then
-                        return na < nb
-                    end
-                    return a.stage < b.stage
-                end)
-                table.insert(catalog, { mode = mode, stages = stages })
-            end
-        end
-        return catalog
+        return modes
     end
 
     function self.observe(kind: string, callback: (any) -> ()): (() -> ())?

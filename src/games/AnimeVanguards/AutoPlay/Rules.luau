@@ -1,7 +1,7 @@
 --!strict
 --[[
-Purpose: Pure Stage Preset Rules model keyed by game mode and stage, validated against live presets
-Input: Raw persisted rules, mode/stage strings and a presets snapshot from the game
+Purpose: Pure Stage Preset Rules model keyed by game mode, validated against live presets
+Input: Raw persisted rules, mode strings and a presets snapshot from the game
 Output: Normalized rules, lookups, resolution results and dropdown option labels
 Dependencies: None
 ]]
@@ -15,7 +15,7 @@ local MAX_RULES = 400
 local NONE_LABEL = "None"
 
 export type Entry = { id: string, name: string }
-export type RuleSet = { [string]: { [string]: Entry } }
+export type RuleSet = { [string]: Entry }
 export type Presets = { active: string, max: number, order: { string }, names: { [string]: string } }
 export type Option = { id: string?, name: string?, label: string }
 
@@ -37,61 +37,39 @@ function Rules.normalize(raw: any): RuleSet
         return result
     end
     local count = 0
-    for mode, stages in raw do
-        if validText(mode, MAX_KEY_LENGTH) and type(stages) == "table" then
-            for stage, entry in stages do
-                if
-                    count < MAX_RULES
-                    and validText(stage, MAX_KEY_LENGTH)
-                    and type(entry) == "table"
-                    and validText(entry.id, MAX_ID_LENGTH)
-                    and validText(entry.name, MAX_NAME_LENGTH)
-                then
-                    local bucket = result[mode :: string]
-                    if not bucket then
-                        bucket = {}
-                        result[mode :: string] = bucket
-                    end
-                    (bucket :: any)[stage :: string] =
-                        { id = entry.id :: string, name = entry.name :: string }
-                    count += 1
-                end
-            end
+    for mode, entry in raw do
+        if
+            count < MAX_RULES
+            and validText(mode, MAX_KEY_LENGTH)
+            and type(entry) == "table"
+            and validText(entry.id, MAX_ID_LENGTH)
+            and validText(entry.name, MAX_NAME_LENGTH)
+        then
+            result[mode :: string] = { id = entry.id :: string, name = entry.name :: string }
+            count += 1
         end
     end
     return result
 end
 
---- Returns the stored entry for a mode and stage, or nil when the stage has no preset chosen (None).
-function Rules.get(rules: RuleSet, mode: string, stage: string): Entry?
-    local bucket = rules[mode]
-    return if bucket then bucket[stage] else nil
+--- Returns the stored entry for a mode, or nil when the mode has no preset chosen (None).
+function Rules.get(rules: RuleSet, mode: string): Entry?
+    return rules[mode]
 end
 
 --- Stores or clears (entry nil) a rule in place; returns false for invalid keys.
-function Rules.set(rules: RuleSet, mode: string, stage: string, entry: Entry?): boolean
-    if not validText(mode, MAX_KEY_LENGTH) or not validText(stage, MAX_KEY_LENGTH) then
+function Rules.set(rules: RuleSet, mode: string, entry: Entry?): boolean
+    if not validText(mode, MAX_KEY_LENGTH) then
         return false
     end
     if entry == nil then
-        local bucket = rules[mode]
-        if bucket then
-            bucket[stage] = nil
-            if next(bucket) == nil then
-                rules[mode] = nil
-            end
-        end
+        rules[mode] = nil
         return true
     end
     if not validText(entry.id, MAX_ID_LENGTH) or not validText(entry.name, MAX_NAME_LENGTH) then
         return false
     end
-    local bucket = rules[mode]
-    if not bucket then
-        bucket = {}
-        rules[mode] = bucket
-    end
-    bucket[stage] = { id = entry.id, name = entry.name }
+    rules[mode] = { id = entry.id, name = entry.name }
     return true
 end
 
@@ -106,16 +84,14 @@ end
 
 --- Clears every rule whose preset was deleted or renamed; returns the number of cleared rules.
 function Rules.prune(rules: RuleSet, presets: Presets): number
-    local doomed: { { string } } = {}
-    for mode, stages in rules do
-        for stage, entry in stages do
-            if Rules.resolve(entry, presets) ~= "ok" then
-                table.insert(doomed, { mode, stage })
-            end
+    local doomed: { string } = {}
+    for mode, entry in rules do
+        if Rules.resolve(entry, presets) ~= "ok" then
+            table.insert(doomed, mode)
         end
     end
-    for _, key in doomed do
-        Rules.set(rules, key[1], key[2], nil)
+    for _, mode in doomed do
+        rules[mode] = nil
     end
     return #doomed
 end

@@ -6025,18 +6025,18 @@ do
             }
 
             local function mountRules(tab, runtime, macro)
-                local catalog = runtime.getCatalog()
+                local modes = runtime.getCatalog()
 
                 tab:Paragraph({
                     Title = 'Stage Preset Rules',
                     Desc =
-[[Choose a saved Auto Play preset per mode and stage. None leaves the game's current preset untouched. Rules apply only while Auto play - ingame is on and can be edited only while it is off.]],
+[[Choose a saved Auto Play preset per game mode. None leaves the game's current preset untouched. Rules apply only while Auto play - ingame is on and can be edited only while it is off.]],
                 })
 
-                if not catalog then
+                if not modes then
                     tab:Paragraph({
-                        Title = 'Stage list unavailable',
-                        Desc = "The game's stage data could not be read yet.",
+                        Title = 'Mode list unavailable',
+                        Desc = "The game's mode data could not be read yet.",
                     })
 
                     return
@@ -6046,7 +6046,7 @@ do
                 local syncing = false
 
                 local function labelFor(row, options)
-                    local entry = runtime.getRule(row.mode, row.stage)
+                    local entry = runtime.getRule(row.mode)
 
                     if not entry then
                         return 'None'
@@ -6120,49 +6120,46 @@ do
                     applyLock()
                 end
 
-                for _, modeEntry in catalog do
-                    local section = tab:Section({
-                        Title = modeEntry.mode,
-                        Opened = modeEntry.mode == 'Story',
+                local section = tab:Section({
+                    Title = 'Preset per mode',
+                    Opened = true,
+                })
+
+                for _, mode in modes do
+                    local row = {
+                        mode = mode,
+                        byLabel = {},
+                    }
+
+                    row.dropdown = section:Dropdown({
+                        Title = mode,
+                        Values = {
+                            'None',
+                        },
+                        Value = 'None',
+                        Callback = function(label)
+                            if syncing or label == row.current then
+                                return
+                            end
+
+                            local ok, err = runtime.setRule(row.mode, row.byLabel[label])
+
+                            if ok then
+                                row.current = label
+                                row.signature = nil
+                            else
+                                pcall(function()
+                                    runtime.onStatus(RULES_ERRORS[err or ''] or ('Error: ' .. tostring(err)))
+                                end)
+
+                                row.signature = nil
+
+                                refreshRow(row)
+                            end
+                        end,
                     })
 
-                    for _, stageEntry in modeEntry.stages do
-                        local row = {
-                            mode = modeEntry.mode,
-                            stage = stageEntry.stage,
-                            byLabel = {},
-                        }
-
-                        row.dropdown = section:Dropdown({
-                            Title = stageEntry.name,
-                            Values = {
-                                'None',
-                            },
-                            Value = 'None',
-                            Callback = function(label)
-                                if syncing or label == row.current then
-                                    return
-                                end
-
-                                local ok, err = runtime.setRule(row.mode, row.stage, row.byLabel[label])
-
-                                if ok then
-                                    row.current = label
-                                    row.signature = nil
-                                else
-                                    pcall(function()
-                                        runtime.onStatus(RULES_ERRORS[err or ''] or ('Error: ' .. tostring(err)))
-                                    end)
-
-                                    row.signature = nil
-
-                                    refreshRow(row)
-                                end
-                            end,
-                        })
-
-                        table.insert(rows, row)
-                    end
+                    table.insert(rows, row)
                 end
 
                 tab:Button({
@@ -6323,49 +6320,28 @@ do
 
                 local count = 0
 
-                for mode, stages in raw do
-                    if validText(mode, MAX_KEY_LENGTH) and type(stages) == 'table' then
-                        for stage, entry in stages do
-                            if count < MAX_RULES and validText(stage, MAX_KEY_LENGTH) and type(entry) == 'table' and validText(entry.id, MAX_ID_LENGTH) and validText(entry.name, MAX_NAME_LENGTH) then
-                                local bucket = result[mode]
+                for mode, entry in raw do
+                    if count < MAX_RULES and validText(mode, MAX_KEY_LENGTH) and type(entry) == 'table' and validText(entry.id, MAX_ID_LENGTH) and validText(entry.name, MAX_NAME_LENGTH) then
+                        result[mode] = {
+                            id = entry.id,
+                            name = entry.name,
+                        }
 
-                                if not bucket then
-                                    bucket = {}
-                                    result[mode] = bucket
-                                end
-
-                                (bucket)[stage] = {
-                                    id = entry.id,
-                                    name = entry.name,
-                                }
-
-                                count += 1
-                            end
-                        end
+                        count += 1
                     end
                 end
 
                 return result
             end
-            function Rules.get(rules, mode, stage)
-                local bucket = rules[mode]
-
-                return if bucket then bucket[stage]else nil
+            function Rules.get(rules, mode)
+                return rules[mode]
             end
-            function Rules.set(rules, mode, stage, entry)
-                if not validText(mode, MAX_KEY_LENGTH) or not validText(stage, MAX_KEY_LENGTH) then
+            function Rules.set(rules, mode, entry)
+                if not validText(mode, MAX_KEY_LENGTH) then
                     return false
                 end
                 if entry == nil then
-                    local bucket = rules[mode]
-
-                    if bucket then
-                        bucket[stage] = nil
-
-                        if next(bucket) == nil then
-                            rules[mode] = nil
-                        end
-                    end
+                    rules[mode] = nil
 
                     return true
                 end
@@ -6373,14 +6349,7 @@ do
                     return false
                 end
 
-                local bucket = rules[mode]
-
-                if not bucket then
-                    bucket = {}
-                    rules[mode] = bucket
-                end
-
-                bucket[stage] = {
+                rules[mode] = {
                     id = entry.id,
                     name = entry.name,
                 }
@@ -6399,15 +6368,13 @@ do
             function Rules.prune(rules, presets)
                 local doomed = {}
 
-                for mode, stages in rules do
-                    for stage, entry in stages do
-                        if Rules.resolve(entry, presets) ~= 'ok' then
-                            table.insert(doomed, {mode, stage})
-                        end
+                for mode, entry in rules do
+                    if Rules.resolve(entry, presets) ~= 'ok' then
+                        table.insert(doomed, mode)
                     end
                 end
-                for _, key in doomed do
-                    Rules.set(rules, key[1], key[2], nil)
+                for _, mode in doomed do
+                    rules[mode] = nil
                 end
 
                 return #doomed
@@ -6783,7 +6750,7 @@ do
                         stage = data.Stage,
                     }
                 end
-                function self.getStageCatalog()
+                function self.getModes()
                     local deps = getDeps()
                     local data = deps and deps.stagesData
 
@@ -6801,11 +6768,35 @@ do
                     local modes = {}
                     local seen = {}
 
-                    for _, name in typeNames do
-                        if type(name) == 'string' and not seen[name] then
-                            seen[name] = true
+                    for _, mode in typeNames do
+                        if type(mode) == 'string' and not seen[mode] then
+                            seen[mode] = true
 
-                            table.insert(modes, name)
+                            local okStages, stageMap = pcall(data.GetAllStageNameAndIndex, mode)
+                            local supported = false
+
+                            if okStages and type(stageMap) == 'table' then
+                                for _, stageId in stageMap do
+                                    local blocked = false
+
+                                    if type(stageId) == 'string' and blocklist and type(blocklist.IsBlocked) == 'function' then
+                                        local okBlock, result = pcall(blocklist.IsBlocked, {
+                                            StageType = mode,
+                                            Stage = stageId,
+                                        })
+
+                                        blocked = not okBlock or result == true
+                                    end
+                                    if type(stageId) == 'string' and not blocked then
+                                        supported = true
+
+                                        break
+                                    end
+                                end
+                            end
+                            if supported then
+                                table.insert(modes, mode)
+                            end
                         end
                     end
 
@@ -6817,53 +6808,7 @@ do
                         return a < b
                     end)
 
-                    local catalog = {}
-
-                    for _, mode in modes do
-                        local okStages, stageMap = pcall(data.GetAllStageNameAndIndex, mode)
-                        local stages = {}
-
-                        if okStages and type(stageMap) == 'table' then
-                            for name, stageId in stageMap do
-                                if type(name) == 'string' and type(stageId) == 'string' then
-                                    local blocked = false
-
-                                    if blocklist and type(blocklist.IsBlocked) == 'function' then
-                                        local okBlock, result = pcall(blocklist.IsBlocked, {
-                                            StageType = mode,
-                                            Stage = stageId,
-                                        })
-
-                                        blocked = not okBlock or result == true
-                                    end
-                                    if not blocked then
-                                        table.insert(stages, {
-                                            stage = stageId,
-                                            name = name,
-                                        })
-                                    end
-                                end
-                            end
-                        end
-                        if #stages > 0 then
-                            table.sort(stages, function(a, b)
-                                local na = tonumber(string.match(a.stage, '%d+$'))
-                                local nb = tonumber(string.match(b.stage, '%d+$'))
-
-                                if na and nb and na ~= nb then
-                                    return na < nb
-                                end
-
-                                return a.stage < b.stage
-                            end)
-                            table.insert(catalog, {
-                                mode = mode,
-                                stages = stages,
-                            })
-                        end
-                    end
-
-                    return catalog
+                    return modes
                 end
                 function self.observe(kind, callback)
                     local deps = getDeps()
@@ -6939,7 +6884,7 @@ do
             local Rules = __DARKLUA_BUNDLE_MODULES.u()
             local Runtime = {}
             local STORAGE_KEY = 'AnimeVanguardsAutoPlay'
-            local SCHEMA_VERSION = 2
+            local SCHEMA_VERSION = 3
             local POLL_SECONDS = 1
             local RETRY_SECONDS = 8
             local PRESET_ATTEMPTS = (config).thresholds.presetSwitchAttempts
@@ -7043,8 +6988,8 @@ do
                 function self.isRulesLocked()
                     return self.enabled == true or (self.macro ~= nil and self.macro.mode == 'play')
                 end
-                function self.getRule(mode, stage)
-                    return Rules.get(self.rules, mode, stage)
+                function self.getRule(mode)
+                    return Rules.get(self.rules, mode)
                 end
                 function self.getPresets()
                     local ad = getAdapter()
@@ -7058,8 +7003,8 @@ do
                     if not self.catalog then
                         local ad = getAdapter()
 
-                        if ad and type(ad.getStageCatalog) == 'function' then
-                            local ok, result = pcall(ad.getStageCatalog)
+                        if ad and type(ad.getModes) == 'function' then
+                            local ok, result = pcall(ad.getModes)
 
                             if ok and type(result) == 'table' then
                                 self.catalog = result
@@ -7078,7 +7023,7 @@ do
 
                     return ad ~= nil and type(ad.requestPresets) == 'function' and (ad.requestPresets)() == true
                 end
-                function self.setRule(mode, stage, id)
+                function self.setRule(mode, id)
                     if self.enabled then
                         return false, 'AUTOPLAY_ENABLED'
                     end
@@ -7086,7 +7031,7 @@ do
                         return false, 'MACRO_ACTIVE'
                     end
                     if id == nil then
-                        Rules.set(self.rules, mode, stage, nil)
+                        Rules.set(self.rules, mode, nil)
                     else
                         local presets = self.getPresets()
                         local name = presets and presets.names[id]
@@ -7094,7 +7039,7 @@ do
                         if type(name) ~= 'string' then
                             return false, 'PRESET_UNKNOWN'
                         end
-                        if not Rules.set(self.rules, mode, stage, {
+                        if not Rules.set(self.rules, mode, {
                             id = id,
                             name = name,
                         }) then
@@ -7135,7 +7080,7 @@ do
                         return false
                     end
 
-                    local entry = Rules.get(self.rules, data.mode, data.stage)
+                    local entry = Rules.get(self.rules, data.mode)
 
                     if not entry then
                         self.presetAttempt = nil
@@ -7162,7 +7107,7 @@ do
                         return false
                     end
                     if Rules.resolve(entry, presets) ~= 'ok' then
-                        Rules.set(self.rules, data.mode, data.stage, nil)
+                        Rules.set(self.rules, data.mode, nil)
 
                         self.presetAttempt = nil
 
@@ -7178,7 +7123,7 @@ do
                         return true
                     end
 
-                    local key = data.mode .. '/' .. data.stage .. '/' .. entry.id
+                    local key = data.mode .. '/' .. entry.id
                     local attempt = self.presetAttempt
 
                     if not attempt or attempt.key ~= key then
@@ -7358,7 +7303,7 @@ do
                             if body and http then
                                 local ok, data = pcall(http.JSONDecode, http, body)
 
-                                if ok and type(data) == 'table' and (data.schemaVersion == SCHEMA_VERSION or data.schemaVersion == 1) then
+                                if ok and type(data) == 'table' and (data.schemaVersion == SCHEMA_VERSION or data.schemaVersion == 2 or data.schemaVersion == 1) then
                                     if type(data.enabled) == 'boolean' then
                                         self.enabled = data.enabled
                                     end

@@ -15,17 +15,17 @@ local RULES_ERRORS: { [string]: string } = {
     INVALID_RULE = "That rule could not be saved.",
 }
 
--- Mounts one row per stage grouped by mode; dropdowns lock while Auto Play or Play Macro is active.
+-- Mounts one dropdown per supported mode; dropdowns lock while Auto Play or Play Macro is active.
 local function mountRules(tab: any, runtime: any, macro: any?)
-    local catalog = runtime.getCatalog()
+    local modes = runtime.getCatalog()
     tab:Paragraph({
         Title = "Stage Preset Rules",
-        Desc = "Choose a saved Auto Play preset per mode and stage. None leaves the game's current preset untouched. Rules apply only while Auto play - ingame is on and can be edited only while it is off.",
+        Desc = "Choose a saved Auto Play preset per game mode. None leaves the game's current preset untouched. Rules apply only while Auto play - ingame is on and can be edited only while it is off.",
     })
-    if not catalog then
+    if not modes then
         tab:Paragraph({
-            Title = "Stage list unavailable",
-            Desc = "The game's stage data could not be read yet.",
+            Title = "Mode list unavailable",
+            Desc = "The game's mode data could not be read yet.",
         })
         return
     end
@@ -34,7 +34,7 @@ local function mountRules(tab: any, runtime: any, macro: any?)
     local syncing = false
 
     local function labelFor(row: any, options: { any }): string
-        local entry = runtime.getRule(row.mode, row.stage)
+        local entry = runtime.getRule(row.mode)
         if not entry then
             return "None"
         end
@@ -96,33 +96,31 @@ local function mountRules(tab: any, runtime: any, macro: any?)
         applyLock()
     end
 
-    for _, modeEntry in catalog do
-        local section = tab:Section({ Title = modeEntry.mode, Opened = modeEntry.mode == "Story" })
-        for _, stageEntry in modeEntry.stages do
-            local row: any = { mode = modeEntry.mode, stage = stageEntry.stage, byLabel = {} }
-            row.dropdown = section:Dropdown({
-                Title = stageEntry.name,
-                Values = { "None" },
-                Value = "None",
-                Callback = function(label: string)
-                    if syncing or label == row.current then
-                        return
-                    end
-                    local ok, err = runtime.setRule(row.mode, row.stage, row.byLabel[label])
-                    if ok then
-                        row.current = label
-                        row.signature = nil
-                    else
-                        pcall(function()
-                            runtime.onStatus(RULES_ERRORS[err or ""] or ("Error: " .. tostring(err)))
-                        end)
-                        row.signature = nil
-                        refreshRow(row)
-                    end
-                end,
-            })
-            table.insert(rows, row)
-        end
+    local section = tab:Section({ Title = "Preset per mode", Opened = true })
+    for _, mode in modes do
+        local row: any = { mode = mode, byLabel = {} }
+        row.dropdown = section:Dropdown({
+            Title = mode,
+            Values = { "None" },
+            Value = "None",
+            Callback = function(label: string)
+                if syncing or label == row.current then
+                    return
+                end
+                local ok, err = runtime.setRule(row.mode, row.byLabel[label])
+                if ok then
+                    row.current = label
+                    row.signature = nil
+                else
+                    pcall(function()
+                        runtime.onStatus(RULES_ERRORS[err or ""] or ("Error: " .. tostring(err)))
+                    end)
+                    row.signature = nil
+                    refreshRow(row)
+                end
+            end,
+        })
+        table.insert(rows, row)
     end
 
     tab:Button({
