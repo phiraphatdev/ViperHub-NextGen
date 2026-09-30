@@ -32,18 +32,19 @@ return table.freeze({
         LegendStage = "Legend Stage",
         BossEvent = "Boss Event",
         UnitTrial = "Unit Trial",
-        GuildWar = "Guild War",
-        Rememberance = "Training Grounds",
-        Scenarios = "Trials",
         Portals = "Portals",
         Challenge = "Challenge",
-        Extra = "Extra",
         Dungeon = "Dungeon",
         Raid = "Raid",
-        LTM = "Limited Time Event",
     }),
-    -- Modes without a familiar player-facing name or real matches (tutorial/greenscreen, guild war).
-    hiddenModes = table.freeze({ Extra = true, GuildWar = true }),
+    -- Modes left out of Stage Preset Rules by request.
+    hiddenModes = table.freeze({
+        Extra = true,
+        GuildWar = true,
+        LTM = true,
+        Rememberance = true,
+        Scenarios = true,
+    }),
     attributes = table.freeze({ riftOpen = "IsRiftOpen" }),
     thresholds = table.freeze({
         activitySnapshotSeconds = 7200,
