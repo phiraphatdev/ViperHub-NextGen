@@ -6,14 +6,17 @@ Public source; no obfuscation. WindUI via a pinned, locally adapted vendor bundl
 Two independent placeholder games. Verified lobby PlaceIds and Universe GameIds identify a game; a matching universe does not certify gameplay compatibility for every sub-place.
 Single-commit builds regenerate dist and manifest together; optional commit fields are not release gates.
 Runtime observations remain documented but do not block a local build. Operational status controls availability per game.
-No gameplay features or anti-cheat evasion.
+Anime Vanguards now has a game-owned Joiner for four stage-based modes and Regular/Daily/Weekly Challenge. It starts only its own confirmed hosted lobby; no anti-cheat evasion.
+Anime Vanguards Macro owns its file store, JSON validation, match adapter, recorder, player and UI. It uses observed game broadcasts and a separate executor-workspace directory; shared platform and UI stay game-neutral. Playback places directly after checking the live price and never creates phantom placements. Native per-unit Auto Upgrade, Upgrade Priority and Auto Ability toggle actions use the game's decoded client events and readback; auto-equip remains reserved.
+Macro playback processes action indices sequentially without the former time-adjacent upgrade skip. Upgrade actions carry the achieved level; older files infer per-unit levels in memory. Native auto-upgrade purchases are level checkpoints, not duplicate manual upgrade requests. Attack priority reads the game's numeric `Data.Priority` via `PriorityHandler.PRIORITIES` and records from the unit-state change signal.
+`GameModule.pages.render` now receives the tab and an optional window as its second argument so game-owned pages can show native confirmation dialogs; older one-argument renderers remain compatible.
 
 ## Boundaries
 
 bootstrap/Main -> core + games/Detector + platform + network + config + ui/App
 games/Detector -> Registry -> Metadata (never imports game behavior); exact PlaceId first, verified GameId fallback.
 ui/App -> WindUIAdapter + pages; individual games never call WindUI directly.
-Game exports are fetched independently and validated against id/version/start/stop.
+Game exports are fetched independently and validated against id/version/start/stop. An optional, validated `GameModule.pages` list owns game-specific navigation labels and descriptions; `ui/App` renders it generically between Overview and shared Settings/Diagnostics. Older modules without pages remain valid. A page may optionally render game-owned controls; shared UI remains game-neutral. Anime Vanguards Joiner owns distinct stage and challenge request paths, a matching confirmation subscription, and one-shot Start after host readback; shared UI does not know game modes.
 
 | Directory | Responsibility |
 | --- | --- |
@@ -37,6 +40,8 @@ Context starts created -> loading -> ready. Unsupported places finish unsupporte
 alive=false prevents late HTTP results from mounting UI after cancellation.
 Cleanup runs once in reverse acquisition order; one failing callback cannot skip remaining callbacks.
 The WindUI adapter owns the window and four root GUIs, destroys its owned GUIs and disconnects upstream connections; it does not invoke the asynchronous window destroy method because that can race the immediate cleanup path.
+The ViperHub window uses WindUI's non-NewElements layout and disables the animated element-hover gradient, so moving the pointer across controls does not trigger the newer moving/dimming treatment.
+The vendored WindUI patch also uses zero-duration tweens, tab transitions and progress transitions. This affects ViperHub only; game UI animation is unchanged.
 Upstream animation/task/connection lifetime still requires real-client verification; mock teardown is not proof of complete WindUI cleanup.
 
 ## Runtime paths
@@ -54,9 +59,10 @@ A newer module version is not proof that the latest game patch is compatible.
 ## Persistence and diagnostics
 
 Only known config fields survive decoding. NaN and infinities are rejected before clamping.
+Anime Vanguards Macro JSON schema v2 stores placement CFrame as 12 finite numbers; its reader normalizes v1 position/yaw without rewriting the source. Match metadata keeps mode/map only. Record start and match restart replace the selected file with an empty document before collecting new actions.
 Config paths are fixed under ViperHubNextGen/<Game>.json; callers cannot supply arbitrary paths.
 All required filesystem functions must be callable; failed calls remain contained.
-Saving verifies bytes by reading back. This is not atomic persistence and does not prove rejoin behavior.
+Valid shared UI changes autosave through ConfigStore; Anime Vanguards Joiner uses a separate fixed-path file for its controls. Saving verifies bytes by reading back. This is not atomic persistence and does not prove rejoin behavior.
 Diagnostics retain at most 64 sanitized codes; no network payloads, file contents or stack traces are printed.
 
 ## Build

@@ -11,6 +11,9 @@ Local adaptations to vendor/WindUI/source.lua:
 2. Disable the GUI protection callback; the scaffold has no stealth hook.
 3. Use the six already-bundled icon tables instead of executing mutable remote icon scripts.
 4. Route library print/warn to a sanitized UI_DIAGNOSTIC code supplied by the host.
+5. Contain FontFace update errors when the client reports insufficient Instance capability; retain the existing text font instead of aborting window construction.
+6. Parent owned GUI roots under the local PlayerGui rather than gethui/CoreGui so descendant controls remain accessible in clients with restricted Instance capability.
+7. Disable the animated element-hover gradient for a steadier, non-dimming ViperHub control surface.
 
 Both the normalized upstream bundle hash and the locally adapted file hash are recorded in dependencies.lock.json.
 The optional upstream key-system providers are not configured or invoked by ViperHub.
@@ -23,4 +26,3 @@ Build tools (development only):
 - Luau: https://github.com/luau-lang/luau — analyzer, compiler and CLI tests.
 
 Download URLs, archive checksums and extracted executable checksums are pinned in dependencies.lock.json.
-

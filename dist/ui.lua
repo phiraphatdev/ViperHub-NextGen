@@ -24763,7 +24763,7 @@ TabBorder="White",
 
 ElementBackground="Text",
 ElementBackgroundTransparency=0.93,
-ElementBackgroundHover=b:AddColor("ElementBackground","#ffffff",0.1),
+ElementBackgroundHover="ElementBackground",
 ElementTitle="Text",
 ElementDesc="Text",
 ElementIcon="Icon",
@@ -25077,7 +25077,9 @@ end
 function p.UpdateFont(r)
 p.Font=r
 for u,v in next,p.FontObjects do
+pcall(function()
 v.FontFace=Font.new(r,v.FontFace.Weight,v.FontFace.Style)
+end)
 end
 end
 
@@ -25379,7 +25381,7 @@ return x
 end
 
 function p.Tween(r,u,v,...)
-return f:Create(r,TweenInfo.new(u,...),v)
+return f:Create(r,TweenInfo.new(0,...),v)
 end
 
 
@@ -28292,7 +28294,7 @@ DropdownTabBackground=Color3.fromHex"#bebebe",
 DropdownBackground=Color3.fromHex"#ffffff",
 
 TabBackground=Color3.fromHex"#ffffff",
-TabBackgroundHover=Color3.fromHex"#f3f3f3",
+TabBackgroundHover=Color3.fromHex"#ffffff",
 TabBackgroundHoverTransparency=0,
 TabBackgroundActive=Color3.fromHex"#efefef",
 TabBackgroundActiveTransparency=0,
@@ -30670,7 +30672,7 @@ Window=ae.Window,
 Color=af.Color,
 Justify=af.Justify,
 TextOffset=20,
-Hover=true,
+Hover=false,
 Scalable=true,
 Tab=ae.Tab,
 Index=ae.Index,
@@ -31880,7 +31882,7 @@ ShowValue=am,
 DisplayMode=ag.DisplayMode or"Percent",
 Format=ag.Format,
 Animate=ag.Animate~=false,
-AnimationDuration=math.max(ToFiniteNumber(ag.AnimationDuration)or 0.15,0),
+AnimationDuration=0,
 Indeterminate=al,
 IndeterminateText=ag.IndeterminateText or"",
 Speed=math.max(ToFiniteNumber(ag.Speed)or 1,0.01),
@@ -36237,8 +36239,8 @@ end
 ak.AddSignal(ar.UIElements.Main.MouseEnter,function()
 if not ar.Locked then
 ak.SetThemeTag(ar.UIElements.Main.Frame,{
-ImageTransparency="TabBackgroundHoverTransparency",
-ImageColor3="TabBackgroundHover",
+ImageTransparency="TabBorderTransparency",
+ImageColor3="TabBackground",
 },0.1)
 end
 end)
@@ -36475,7 +36477,7 @@ end
 ao.Containers[aq].Visible=true
 local ar=game:GetService"TweenService"
 
-local as=TweenInfo.new(0.15,Enum.EasingStyle.Quart,Enum.EasingDirection.Out)
+local as=TweenInfo.new(0,Enum.EasingStyle.Quart,Enum.EasingDirection.Out)
 local at=ar:Create(ao.Containers[aq],as,{
 AnchorPoint=Vector2.new(0,0),
 })
@@ -39538,7 +39540,7 @@ local au=a.load'z'
 
 local av=function()end
 
-local aw=gethui and gethui()or(al or ap:WaitForChild"PlayerGui")
+local aw=ap:WaitForChild"PlayerGui"
 
 local ax=at("UIScale",{
 Scale=aa.UIScale,

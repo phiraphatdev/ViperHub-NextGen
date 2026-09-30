@@ -43,6 +43,20 @@ Set-Location 'C:\Users\phiraphat.pk\Documents\projects\_github\viper-hub-nextgen
 แล้วอ่านสถานะด้วย `tests/runtime/Readback.luau` ตาม [คู่มือทดสอบ](TESTING.md)
 การรันคำสั่งในเครื่องผ่าน ไม่ได้ยืนยันว่า UI ทำงานจริงใน Roblox
 
+หากรันด้วย Potassium โดยตรงและไม่ต้องการคัดลอกไฟล์ ให้เปิด PowerShell ที่ root ของ repo แล้วใช้:
+
+```powershell
+./scripts/run-runtime.ps1
+```
+
+เปิด terminal นี้ค้างไว้ แล้วบันทึกบรรทัดต่อไปนี้ใน Potassium เพื่อใช้รันซ้ำ:
+
+```lua
+loadstring(game:HttpGet("http://127.0.0.1:8766/runtime-smoke.lua"))()
+```
+
+เมื่อแก้ source ให้กด Ctrl+C และรัน `./scripts/run-runtime.ps1` ใหม่เพื่อ build และให้บริการ harness ล่าสุด
+
 **อย่าคัดลอก loader URL แบบเดาเอง:** ใช้ URL ที่ประกาศใน GitHub Release. ถ้า `manifest.json.artifactRevision` เป็น SHA จะ pin module ที่ revision นั้น; ถ้าเป็น `null` จะโหลดจาก `main/dist/`
 ตรวจ `status.json` ว่าเกมที่เข้าอยู่เป็น `ready`; foundation นี้ยังไม่มีฟีเจอร์ gameplay
 
@@ -63,7 +77,7 @@ Set-Location 'C:\Users\phiraphat.pk\Documents\projects\_github\viper-hub-nextgen
 | Toggle UI | เลือกปุ่มซ่อน/แสดง UI | `RightShift`; รองรับ Control, Insert/Delete, Home/End และ F1–F12; ไม่รองรับ `LeftAlt` |
 | Save settings | บันทึกและอ่านกลับเพื่อตรวจผล | ต้องมี filesystem APIs ครบ |
 
-หลังเลือก keybind ปุ่มใหม่ควรมีผลทันทีเมื่อ WindUI ส่งสัญญาณเปลี่ยนค่า; กด **Save settings** เพื่อบันทึกข้าม session และเป็น fallback หาก WindUI รุ่นที่ใช้ไม่มีสัญญาณดังกล่าว
+ค่าที่เปลี่ยนใน Settings และ Joiner บันทึกอัตโนมัติเมื่อ executor รองรับ filesystem APIs ครบ; ปุ่ม **Save settings** ยังใช้ตรวจการเขียนไฟล์ด้วยตนเองได้ Keybind มีผลทันทีเมื่อ WindUI ส่งสัญญาณเปลี่ยนค่า
 ถ้าเปิด Notifications จะเห็น `Saved and read back` เมื่อเขียนและอ่านกลับสำเร็จ
 ถ้าปิด Notifications อาจไม่มีข้อความสำเร็จ ให้ตรวจค่าภายหลังแทน
 ข้อผิดพลาดที่ทำให้เริ่มระบบไม่ได้ยังแสดงแม้ปิด Notifications เพื่อไม่ให้หน้า UI หายโดยไม่มีคำอธิบาย

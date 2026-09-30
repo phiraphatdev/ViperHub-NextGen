@@ -10,13 +10,13 @@
   "artifacts": {
     "loader": {
       "path": "dist/loader.lua",
-      "sha256": "b29043282d63010d82e788391704a72dc04f0e1435316144d7a80f520dbd91d0",
-      "bytes": 55385
+      "sha256": "ba2f89523cd4bd75a053965623c4b5f3cb961d62f1032db6c4dd6b389bb05835",
+      "bytes": 58243
     },
     "ui": {
       "path": "dist/ui.lua",
-      "sha256": "07bffde8cd7e897de1fc59b8cdaf49801f7d6d2905f891c19a06cc78b0c45188",
-      "bytes": 1348987
+      "sha256": "4357b21187c47f8e9aee5cda4f152a439eedeae82b3a0c0b4b5415f9ab2afd8c",
+      "bytes": 1348884
     },
     "AnimeExpeditions": {
       "path": "dist/games/AnimeExpeditions.lua",
@@ -25,8 +25,8 @@
     },
     "AnimeVanguards": {
       "path": "dist/games/AnimeVanguards.lua",
-      "sha256": "bc4dcce215f63ffb483e4394f667915c3118bb1105bdd35f1c5e6c5ad0a1f45c",
-      "bytes": 2352
+      "sha256": "623e4c8b4cd4a389af82a2918143c960f081f6182816d1934bab093368ee0395",
+      "bytes": 332359
     }
   },
   "games": {

@@ -31,6 +31,22 @@ function ConfigStore.new(
             end
         end
     end
+    local function save(): boolean
+        if not storage then
+            log("CONFIG_SESSION_ONLY")
+            return false
+        end
+        local ok, text = pcall(encode, current)
+        if not ok or type(text) ~= "string" then
+            log("CONFIG_ENCODE_FAILED")
+            return false
+        end
+        local saved = storage.write(text)
+        if not saved then
+            log("CONFIG_WRITE_FAILED")
+        end
+        return saved
+    end
     return {
         persistent = storage ~= nil,
         get = function(): Schema.Config
@@ -45,23 +61,9 @@ function ConfigStore.new(
                 return
             end
             current = sanitized
+            save()
         end,
-        save = function(): boolean
-            if not storage then
-                log("CONFIG_SESSION_ONLY")
-                return false
-            end
-            local ok, text = pcall(encode, current)
-            if not ok or type(text) ~= "string" then
-                log("CONFIG_ENCODE_FAILED")
-                return false
-            end
-            local saved = storage.write(text)
-            if not saved then
-                log("CONFIG_WRITE_FAILED")
-            end
-            return saved
-        end,
+        save = save,
     }
 end
 return ConfigStore

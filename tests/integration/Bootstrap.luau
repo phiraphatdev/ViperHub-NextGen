@@ -109,8 +109,8 @@ return function(source: string)
     passed += 1
     local uiSource = [=[
         local tab={ Paragraph=function(_,value) if value.Title=="Status codes" then shared.diagnosticText=value.Desc end return {SetDesc=function(_,text)shared.diagnosticText=text end}end, Toggle=function()end, Slider=function()end, Dropdown=function()end, Keybind=function()end, Button=function()end }
-        local window={Tab=function()return tab end,SelectTab=function()end,SetToggleKey=function()end,OnDestroy=function()end,SetUIScale=function()end}
-        return {CreateWindow=function()return window end,Notify=function()end,Creator={DisconnectAll=function()shared.disconnected=(shared.disconnected or 0)+1 end},ScreenGui={Destroy=function()shared.destroyed=(shared.destroyed or 0)+1 end}}
+        local window={Tab=function(_,options) shared.tabs=shared.tabs or {} table.insert(shared.tabs,options.Title) return tab end,SelectTab=function()end,SetToggleKey=function()end,OnDestroy=function()end,SetUIScale=function()end}
+        return {CreateWindow=function(_,options)shared.windowOptions=options return window end,Notify=function()end,Creator={DisconnectAll=function()shared.disconnected=(shared.disconnected or 0)+1 end},ScreenGui={Destroy=function()shared.destroyed=(shared.destroyed or 0)+1 end}}
     ]=]
     local gameSource =
         [=[return {metadata={id="AnimeVanguards",name="Anime Vanguards",version="0.2.2",lastUpdated="2026-09-24"},start=function(context)context.log("PLACEHOLDER_STARTED") shared.started=(shared.started or 0)+1 end,stop=function()shared.stopped=(shared.stopped or 0)+1 end}]=]
@@ -119,15 +119,36 @@ return function(source: string)
         { manifest = { mode = "development" }, ui = uiSource, AnimeVanguards = gameSource }
     local first = run(env)
     assert(first.context.state == "ready" and first.context.alive)
+    assert(env.shared.windowOptions.NewElements == false and env.shared.windowOptions.Acrylic == false)
     assert(env.shared.started == 1)
     assert(env.shared.diagnosticText:find("PLACEHOLDER_STARTED", 1, true) ~= nil)
     assert(env.shared.diagnosticText:find("FOUNDATION_READY", 1, true) ~= nil)
+    assert(#env.shared.tabs == 3) -- Existing game exports without pages stay compatible.
     local second = run(env)
     assert(not first.context.alive and second.context.alive)
     assert(env.shared.destroyed == 1 and env.shared.disconnected == 1)
     second.destroy()
     second.destroy()
     assert(env.shared.destroyed == 2 and env.shared.stopped == 2)
+    passed += 1
+    env = environment(16146832113)
+    env.VIPER_DEV_ARTIFACTS = {
+        manifest = { mode = "development" },
+        ui = uiSource,
+        AnimeVanguards = gameSource:gsub(
+            "start=function",
+            'pages={{title="Lobby",description="Navigation only"},{title="Macro",description="Navigation only"}},start=function'
+        ),
+    }
+    local withPages = run(env)
+    assert(withPages.context.state == "ready")
+    assert(
+        #env.shared.tabs == 5
+            and env.shared.tabs[1] == "Overview"
+            and env.shared.tabs[2] == "Lobby"
+            and env.shared.tabs[3] == "Macro"
+    )
+    withPages.destroy()
     passed += 1
     env = environment(999, 5578556129)
     env.VIPER_DEV_ARTIFACTS =

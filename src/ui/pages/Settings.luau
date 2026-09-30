@@ -17,7 +17,7 @@ local function applyToggleKey(window: any, store: any, keyCodes: any, value: any
     end
     window:SetToggleKey(keyCodes[selected])
 end
---- Mounts controls; save changes persist only when the storage backend is available.
+--- Mounts controls; valid changes autosave when the storage backend is available.
 function Settings.mount(window: any, store: any, library: any, keyCodes: any, context: any?)
     local config = store.get()
     local tab = window:Tab({ Title = "Settings", Icon = "settings" })
@@ -26,7 +26,7 @@ function Settings.mount(window: any, store: any, library: any, keyCodes: any, co
     tab:Paragraph({
         Title = "Storage",
         Desc = if store.persistent
-            then "File persistence available"
+            then "Autosave available; Save settings is an optional manual check"
             else "Session only: filesystem APIs unavailable",
     })
     controls.notifications = tab:Toggle({
@@ -78,8 +78,9 @@ function Settings.mount(window: any, store: any, library: any, keyCodes: any, co
     then
         local connection = keyLabel:GetPropertyChangedSignal("Text"):Connect(function()
             runtimeTask.defer(function()
-                if context.alive and controls.toggleKey.Value ~= store.get().toggleKey then
-                    applyToggleKey(window, store, keyCodes, controls.toggleKey.Value, controls.toggleKey)
+                local tk: any = controls.toggleKey
+                if context.alive and type(tk) == "table" and tk.Value ~= store.get().toggleKey then
+                    applyToggleKey(window, store, keyCodes, tk.Value, tk)
                 end
             end)
         end)

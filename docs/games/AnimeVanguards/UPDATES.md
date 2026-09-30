@@ -1,5 +1,155 @@
 # Updates
 
+## Local Stage Preset Rules — not published
+
+Auto Play tab gained "Stage Preset Rules": one collapsible section per mode that the game's Auto Play supports (modes in `StagesData` minus `AutoPlayModeBlocklist`; Story first) with one row per stage (name from `StagesData`) and a dropdown of the player's saved in-game Auto Play presets. Rules match on mode (`GameData.StageType`) plus `GameData.Stage` only; Act and Difficulty are ignored. None means no rule: the game's active preset is neither changed nor cleared. Observed from the game (read-only probes on a live client): the preset list arrives through `GameAutoPlayClient.AutoPlayPresetsUpdated` (`{Active, Max, Order, Names}`, ids like `P6`) and is re-requested with `RequestAutoPlayData`; a preset is activated with `SwitchAutoPlayPreset.Fire({PresetId = id})` and the new `Active` id is confirmed by the next update event (a switch P1 to P6 and back was verified). The game itself refuses switching while native Auto Play is on ("Disable Auto Play first."). Runtime behavior, active only while "Auto play - ingame" is on and never during Play Macro: before voting to start or enabling native Auto Play it reads the mode and stage, and when a rule exists and the active preset differs it pauses native Auto Play if needed, sends one switch, waits up to 8 seconds for the readback (3 attempts), then continues with the current preset if unconfirmed; it does not resend when the wanted preset is already active. The check repeats on match start and restart. A rule whose preset id is gone or whose name changed is reset to None (never replaced by a guess). Dropdowns are locked while Auto play - ingame is on or Play Macro is playing. Persistence: `AnimeVanguardsAutoPlay.json` is now schema v2 (`enabled`, `rules` as `{mode: {stage: {id, name}}}`); schema v1 files remain readable and are rewritten as v2 on the next save. Presets are never created, renamed, deleted or edited. Local build and 82 unit scenarios pass; live readback is recorded separately.
+
+## Local WindUI Window Folder Consolidation — not published
+
+WindUI window creation (`WindUIAdapter.create`) now explicitly specifies `Folder = "ViperHubNextGen"` matching the project's root storage directory. Previously, omitting the `Folder` option caused WindUI's default logic to execute `makefolder(Title)` (`makefolder("ViperHub NextGen")`), leaving an unused empty folder in the executor's workspace. Specifying the folder unifies all storage and eliminates redundant folder creation. Local build and 73 unit scenarios pass.
+
+## Local Game Tab Two-Way Settings Synchronization Correction — not published
+
+Game tab controls now continuously synchronize with the game's actual `SettingsState` values via periodic polling and `SettingsState.OnSettingUpdate` observation, eliminating the startup race condition where toggles defaulted to false before settings loaded. Removed direct `SharedSettingsClient.SettingUpdated.On` listener which collided with the game's native network handler. `Adapter.set` now calls `SettingsState:UpdateSetting` alongside `ChangeSetting.Fire`, ensuring immediate local client cache updates and server replication. Local build and 73 unit scenarios pass.
+
+## Local Native Auto Play and Vote Start Automation — not published
+
+Added a game-owned `AutoPlay` module (`Adapter`, `Runtime`, `Page`) mounting "Auto play - ingame" on the Auto Play tab. When active, it directly engages the game's native Auto Play via `GameAutoPlayClient.ToggleAutoPlay`. If the match has not yet started, it verifies the start prompt and automatically votes to start via `GameWavesClient.CastWaveSkipVote`, awaits match start, and engages native Auto Play. Automation loops continuously across matches (on restart, replay, or next stage). The toggle state persists to file storage (`ViperHubNextGen/AnimeVanguardsAutoPlay.json`). Enforces strict visual mutual exclusion: activating Auto play - ingame completely locks the Play Macro toggle via `:Lock()`, and starting Play Macro completely locks the Auto play - ingame toggle via `:Lock()`. Whichever is active unlocks the other when disabled. Local build and 73 unit scenarios pass.
+
+## Local Startup Settlement and Game Loading Delay — not published
+
+Bootstrap now verifies `game:IsLoaded()` before compiling modules. Game entry startup (`GameModule.start`) now runs asynchronously, waiting for core game download, giving native client singletons and network handlers a 2-second initialization window, and in match places waiting for `GameHandler.GameLoaded` plus a 1-second settlement delay before starting the Joiner, Macro, and Game settings adapters. This prevents early-require failures and signal race conditions during place transitions. Local build and 70 unit scenarios pass.
+
+## Local Auto Back to Lobby Eligibility and Legend Stage Exit — not published
+
+Game tab `Auto Back to Lobby` no longer requires `AutoReplay` and `AutoNext` settings to be false. Instead, it inspects the live `EndScreen` button states upon match completion: if Next is not visible and Replay shows zero remaining attempts (`(0/1)` on Legend Stages, daily-capped modes, or defeats), it recognizes that native automation cannot proceed and teleports back to the lobby after the 2.5s reward delay, with a 7s fallback. Local build and 70 unit scenarios pass.
+
+## Local Challenge Loop Prevention and In-Match Lock — not published
+
+Joiner in-match monitoring now checks `GameHandler.IsGameLoaded` before evaluating return conditions, and unconditionally suppresses return-to-lobby requests when actively playing any Challenge or Rift match (via `GameData.ChallengeType` and `currentJoinedName` locks), preventing infinite teleport loops between lobby and challenge matches. Activity seed evaluation now dynamically computes period validity in-match via `challengeData.GetChallengeSeed` and extends snapshot validity to 2 hours. Removed experimental ability cooldown listener hooks that conflicted with the game's native network dispatch. Local build and 69 unit scenarios pass.
+
+## Local Uncleared Activity detection and Match Return continuity — not published
+
+Joiner now evaluates game-recorded completion via `ActivityState` rather than a reset edge alone: in the lobby, a Challenge whose stored seed is behind current (`storedSeed < currentSeed`) or a Rift with remaining attempts is marked available and entered immediately. Lobby activity observations snapshot to player-scoped executor file storage across places with period-validity checks. In matches, when an enabled activity is uncleared and not currently in play, the configured Immediate return mode suspends Macro and fires the game's lobby return remote directly, while Wait Match End defers until `MatchEnded`. Game-tab `Auto Back to Lobby` persists across sessions via file storage. Local build and 68 unit scenarios pass; live teleport and clear-recording readback remain separate.
+
+## Local Joiner and Macro lifecycle corrections — not published
+
+Joiner Wait Match End no longer calls the boolean result of the first setting update as a function. Challenge selection preserves saved return preferences and reward focus. Lobby challenge reset data now fails closed when absent or invalid, and match return checks use the configured priority order. Rift availability uses epoch time rather than process uptime; full-room polling bypasses the general matchmaking cooldown. Missing game modules/remotes no longer crash the affected Joiner branch. The timer task stops with its owning runtime context, the Game tab's delayed return checks context lifetime, and Macro suspension waits rather than terminating playback. Local build/check pass; the latest harness loaded in the connected match client and the UI root display orders were read back, but no Joiner request, match-end return, Macro playback or teleport was verified live.
+
+Read-only inspection of the match-place game code found that `GameHandler.MatchEnded` has no result payload. Native Auto Next/Replay eligibility depends on match-result status and mode-specific restrictions in `MatchRewardsViewHandler`, not just the settings toggles. The inspected match place had no `IsRiftOpen` attribute or replicated lobby Challenge/Rift handlers. Consequently the in-match Rift hour fallback is an unverified inference, challenge reset monitoring cannot be considered live-validated in that place, and the current Game-tab Auto Back to Lobby cannot establish whether an enabled native Auto Next/Replay can proceed. These paths are not claimed complete.
+
+## Local release-check scheduler regression — not published
+
+Joiner startup now checks that the task scheduler exposes `spawn` and `wait` before starting its polling task. The unit-test environment has no Roblox `task` global, so game-module startup no longer throws while the live Roblox scheduler path remains unchanged. Focused Macro mocks were updated to provide placement references and confirmations required by the current persistent-playback runtime. Local release-mode build/check pass; live Joiner behavior remains pending.
+
+## Local Macro lazy adapter resolution and robust execution architecture — not published
+
+Auditing the lifecycle revealed that `Adapter.new()` previously attempted an unguarded require of `ReplicatedStorage.Modules.Gameplay.PriorityHandler`, which crashes in the lobby and match places where the module is absent; it now uses a safe static fallback (`DEFAULT_PRIORITIES`). Furthermore, `Runtime.start()` previously halted if match modules were not yet replicated (e.g. in the lobby); `ensureAdapter()` now resolves dependencies lazily, enabling players to turn on "Play macro" from the lobby and seamlessly engage playback when entering a match. Ability lifecycle confirmations now index by unit GUID and ability name rather than a single global variable, eliminating confirmation collisions when multiple units trigger abilities concurrently. Dependent actions (upgrades, abilities, priorities) on missing or sold units are cleanly skipped rather than failing requests and aborting. `waitReady` gracefully handles match termination without resetting the playback mode to idle, ensuring infinite looping across matches.
+
+## Local Macro persistent Play and Auto Replay/Next looping — not published
+
+Play Macro now operates persistently and never shuts down automatically. After executing all actions, playback retains its active play state and inspects in-game `AutoReplay` and `AutoNext` settings. When either automation is active, the macro awaits the next match or server restart and automatically replays all actions from step 1 indefinitely. When neither setting is active, playback holds on the victory screen while remaining engaged in play mode, stopping only on explicit user deactivation. `Runtime.play` stores the active document, and `own("restart")` seamlessly restarts the macro execution cycle across matches.
+
+## Local Game tab in-game settings synchronization — not published
+
+Read-only inspection of client modules identified `ReplicatedStorage.NetworkCode.SharedSettingsClient.ChangeSetting`, `ReplicatedStorage.Modules.Shared.SettingsNetworkCodec.EncodeScalarMutation`, and `StarterPlayer.Modules.Gameplay.SettingsHandler.SettingsState`. The Game tab now mounts four synchronized toggles: Auto Replay, Auto Next, Auto Skip Waves, and Auto Skip Start. Toggling in WindUI sends the corresponding scalar mutation to the server and sets local session overrides for immediate responsiveness. Game-side updates and server confirmations sync back to WindUI without recursive loops through `SettingsState.OnSettingUpdate`.
+
+## Local Macro Vote Start recording correction — not published
+
+Recording inspection revealed that `voteClicked` observer previously checked `PlayerGui:FindFirstChild("SkipWave")` only once at the moment recording started. If the user started recording before `SkipWave` was mounted, no listener was connected, causing clicked votes to be missed. Furthermore, GUI button clicks were ignored if `Holder.Description.Text` did not match strict string comparisons or if `gameHandler.IsMatchStarted` updated before callback execution. The adapter now monitors `PlayerGui.ChildAdded` dynamically to bind `SkipWave` whenever it mounts, wraps `GameWavesClient.CastWaveSkipVote.Fire` directly to intercept votes from any input method (mouse, touch, gamepad, or script), tracks `WaveSkipPromptShown` payloads, and falls back to safe zero defaults so `voteStart` is never dropped.
+
+## Local Macro price retry window and sell idempotency — not published
+
+Playback inspection revealed that transient HUD redraws or loading delays could cause `cost` lookup to return nil for a single 200 ms tick, immediately halting playback. `waitReady` now retries live price lookup for up to 3 seconds (15 polls) before failing, preventing premature macro stops during wave transitions. `Adapter.satisfied` now handles `action.kind == "sell"` when a unit is already absent from the field, and `Adapter.confirm` confirms removal whenever the unit is gone. Once sold, the unit reference is marked false in `refs`, cleanly skipping any subsequent dependent actions without hanging or erroring.
+
+## Local Macro and Joiner runtime optimization and resilience — not published
+
+Active snapshot profiling identified repeated `autoUpgrade.GetPriorities()` calls inside the per-unit loop every 200 ms; this map lookup is now hoisted outside the loop. Placement distance checks in `Adapter.confirm` now compute squared distance (`dx^2 + dy^2 + dz^2 < 9`) directly, avoiding Vector3 allocations and square-root calculations on every candidate. `Runtime.status` now deduplicates updates so WindUI's `SetDesc` is not redrawn when the status text has not changed. Unexpected match restarts during playback now call `stopPlayback()` immediately, preventing zombie coroutines from continuing in a new match. `Storage.read` and `write` now normalize macro document names to match target filenames, eliminating `MACRO_NAME_MISMATCH` when users rename files. `Adapter.cost` and `request` now include a smart slot fallback if equipped units are moved to different HUD slots. `Joiner.start` cleans up its context on dependency failure, allowing clean retry when the game finishes loading, and `Joiner.stop` frees its status callback.
+
+## Local Macro ability and native Auto Ability playback correction — not published
+
+Playback inspection of `awd.json` identified an abort at step 10 where a manual `ability` ("Death Gamble") was recorded 0.0009 seconds before its native `autoAbility` toggle; both were emitted concurrently when the player toggled auto-ability on in the game. In replay, step 10 attempted manual activation and timed out after retries, halting the macro. The recorder now suppresses redundant manual `ability` actions when `autoAbility` is active, and prunes an immediately preceding companion `ability` step upon receiving `autoAbility` enabled. Playback now detects companion and active auto-ability steps, skipping redundant manual activation without blocking or modifying saved JSON, and treats unconfirmed standalone abilities gracefully instead of stopping the run. `Adapter.satisfied` now recognizes when an ability is already managed under `unit.autoAbilities`. Local tests pass; full live replay readback remains pending.
+
+## Local Macro strict-index and recorder correction — not published
+
+Inspection of the existing `awd.json` in executor workspace showed 27 indexed actions, including six Auto Upgrade toggles, one Auto Ability toggle and one Upgrade Priority change, but no attack-priority action. The previous attack-priority recorder read a nonexistent string field while the game stores numeric `Data.Priority`; it now maps that value through the game's priority table after the unit-state change signal. New upgrades record their achieved level. Upgrades emitted by native Auto Upgrade are not recorded as separate manual purchases. Playback no longer silently skips time-adjacent upgrades; it handles indices in order and treats an old upgrade step under active Auto Upgrade as a wait for its inferred level, without issuing another purchase request. Existing JSON remains unchanged on disk. Local tests pass; full live record/play confirmation remains pending.
+
+## Local Macro native unit controls — not published
+
+Read-only client source inspection identified `GameUnitsClient.AutoUpgradeToggled` and `AutoUpgradePriorityUpdated`, and `GameUnitClientStateClient.AutoAbilityToggled` as decoded server updates. Recording now appends confirmed native Auto Upgrade on/off, Upgrade Priority (1–6) and per-ability Auto Ability on/off actions for units placed during the recording. Playback checks each unit's current state, sends the game's corresponding request only when needed, and waits for state readback. Upgrade Priority uses the game's one-step cycle request, so playback may need up to six requests to reach the recorded value. Existing schema-v2 files remain readable; these are additive action kinds. Local mock checks pass; live toggle/playback readback remains pending.
+
+## Local Macro direct-placement retry — not published
+
+Playback no longer calls the game's phantom queue. Placement and upgrade wait for current game-calculated prices, recheck affordability before each direct request, and stop with an explicit step error when price lookup fails. Placement attempts use the original CFrame followed by deterministic 1–2 stud X/Z offsets without changing saved JSON; delayed confirmation is checked before a second request. A 1–10 total-attempt control and Stop/Restart/None/Return to Lobby selector govern failed placement. Restart waits for `MatchRestarted` before replaying from step one; None skips actions dependent on the missing unit. Other unconfirmed actions stop rather than silently skip. Local tests pass; spending, restart voting and teleport paths remain unverified in a live match.
+
+## Local Macro false-upgrade recording fix — not published
+
+Read-only inspection of the existing `awaw.json` found action 3 recorded as an upgrade 0.004 seconds after placement with the same 105 yen balance; the same pattern recurs after several placements. That was a recorder false positive, so playback waited for a real 4,860-yen upgrade price on an action that was not a real purchase. New recordings require the decoded unit's `CurrentUpgrade` to increase before appending an upgrade. Playback skips this same-wave, same-yen, sub-0.1-second false-upgrade pattern in existing files without rewriting them. A focused mock reproduces action 3 and verifies that playback advances to the next placement. Live replay of the corrected build remains pending.
+
+## Local Macro live-price playback correction — not published
+
+Playback now reads the game's current placement affordability price and current upgrade price rather than deriving a cost from recorded yen. The placement HUD's game-calculated price is a fallback when the affordability helper is unavailable in the executor context. Upgrade actions wait for current yen to reach the current upgrade price and show wave/time/yen blockers in status. Upgrade readback uses the active unit's `Data.CurrentUpgrade`/`UnitData.CurrentUpgrade` instead of an unrelated top-level field. Local checks pass; an actual paid placement/upgrade still requires live match verification.
+
+## Local Macro playback corrections — not published
+
+Playback no longer treats recorded post-action yen as an affordability threshold. Placement uses the game's PhantomPlacementHandler queue when enabled and waits for a real placed-unit readback before advancing; direct placement remains a fallback. Record can start at the visible pre-match Start vote, and its Yes button activation is recorded as a `voteStart` action. CFrame components are rounded to six decimal places to avoid floating-point noise. Local checks pass; ghost placement and currency-dependent playback still require live match readback.
+
+## Local Macro lifecycle and reduced-motion UI — not published
+
+Record and Play are synchronized toggles. A repeated recording resets the selected JSON first; stop or a victory saves it; defeat discards it; match restart clears the recording while keeping Record enabled. Playback waits for the match and votes only for a positively identified Start prompt, once per prompt. Schema v2 stores placement CFrame components and omits stage/act/difficulty while accepting v1 files. The vendored WindUI now uses zero-duration transitions for ViperHub; its pinned checksum was updated. Local checks pass; action playback and motion still require live observation.
+
+## Local Macro V1 candidate — not published
+
+Added a versioned JSON document, game-owned executor file store, match adapter, confirmed-event recorder, bounded playback controller and WindUI Macro controls. Confirmed action readback is required during playback; request dispatch alone is not counted as success. Advanced ghost/auto/equip actions remain disabled. The sample `Marco_Data` format has an explicit converter, not implicit migration. Local tests cover schema, names, file operations and recorder cleanup. Live match result and UI behavior remain unverified.
+
+## Local Worldline and Boss Event Joiner — not published
+
+Read-only inspection of the connected game's client modules found Worldline entries in `WorldlinesData.GetAll()` (including Worlds Collide and alternate reruns), `LobbyWorldlinesClient.GetWorldlineProgress.Invoke`, and `TeleportToWorldline.Fire({ WorldlineId, TraitsType })`. The game UI uses `Traits` for non-infinite entries. The Joiner now offers replicated Worldline selections and sends that request only when progress is ready. A request is not proof of teleport. The current Boss Event comes from `BossRushDataHandler.GetCurrentBossEvent()`; the rotation uses a 604800-second week. The replicated event list contains multiple bosses, but only the current boss is requestable. The Joiner offers Normal/Elite and sends `LobbyBossEventsClient.StartBossEvent.Fire({ EventName, Difficulty })`, requiring matching host confirmation before the shared Start path. Local mock tests pass; the new automatic paths still need live readback.
+
+## Local Joiner cleanup — not published
+
+Removed the nonfunctional Pirate Dynasty, Spring Event and Summer Event sections and priority entries. Existing saved priority order is retained for all remaining entries.
+
+## Local automatic UI persistence — not published
+
+Shared Settings now saves on valid changes instead of requiring the Save button. Anime Vanguards Joiner automatically saves pause, cooldown, priority, enabled modes and validated selections to a separate fixed-path file when executor file APIs are available. Without those APIs values remain session-only. Live close/rejoin persistence still requires runtime readback.
+
+## Local confirmed-lobby Start — not published
+
+Auto Join now sends `StartMatch.Fire()` once after a matching `MatchConfirmed` and `IsHosting=true`, for all currently enabled stage-based and Challenge joiners. Disabling the toggle or global pause before Start cancels the unsent Start. On 2026-09-26 a manual Start request from a hosted lobby moved the client from lobby Place `16146832113` to match Place `16277809958`; the match screen showed `Wave 0/15`. This proves the game's Start path, not yet the full new Auto Join-to-teleport path for every mode.
+
+## Local Challenge Joiner — not published
+
+Regular, Daily and Weekly Challenge now use the game's current challenge names and a separate `LobbyChallengesClient.StartChallenge` path. The Joiner confirms only a matching `MatchConfirmed.ChallengeType`, Stage/Act and local host ID. Boss Event help text now reflects the observed `Normal/Elite` enum instead of Nightmare. On 2026-09-26, the Daily Challenge toggle-to-ACK path showed `Daily Challenge: confirmed by server`, a visible challenge lobby and `IsHosting=true`; disabling it and leaving returned `IsHosting=false`. Regular and Weekly remain unverified live. No match was started and no reward was claimed.
+
+## Local private-lobby Joiner — not published
+
+Story, Legend Stage, Raid and Dungeon can now request a private lobby when their selected act is unlocked. Only a matching `MatchConfirmed` event for the local host changes status to confirmed. A 10-second ACK timeout and 30-second retry floor prevent `.Fire` from being reported as success or retried rapidly. Other mode toggles stay locked. Live readback on 2026-09-26 confirmed the full WindUI toggle-to-ACK path for Story Stage1/Act1: `Stage: confirmed by server`, a visible private-lobby panel, `IsHosting=true`, then `IsHosting=false` after disabling the toggle and leaving. Legend Stage, Raid and Dungeon still need separate live checks.
+
+## Local Joiner hierarchy correction — not published
+
+Auto Join Settings now contains pause, cooldown and priority controls together. Each Joiner has its own collapsible section and a locked Auto Join checkbox until its action and confirmation are implemented. Story, Legend Stage, Raid and Dungeon read Stage/Act choices from replicated data; Boss Event and Worldline intentionally have no Stage/Act selector. This replaces the overly broad Challenges/Events/Other grouping.
+
+## Local Joiner layout — not published
+
+Joiner controls are grouped into collapsible WindUI sections: Auto Join Settings, Priority, Stage Joiner, Raid Joiner, Challenges, Events & Limited and Other Modes. Stage/act and raid/act remain dependent dropdowns backed by replicated game data. Other modes remain explicitly unavailable; no match request is sent.
+
+## Local Stage/Raid selection foundation — not published
+
+The Joiner now reads replicated Story and Raid stage/act labels at runtime, validates malformed data and displays sorted selectors. This is a read-only selection foundation: it does not enable Auto Join, issue a match request or prove teleport. Difficulty is documented per mode rather than applied globally.
+
+## Local Joiner priority order — not published
+
+Default priority starts Rift > Weekly Challenge > Daily Challenge > Regular Challenge, matching the visible beginning of the reference UI. The remaining Joiners follow ViperHub's stable category order because the reference truncates them. Reset changes priority only; it does not enable any auto-join behavior.
+
+## Local Joiner settings preview — not published
+
+Added game-owned Joiner settings, priority reorder/reset and unavailable mode labels. Preferences are session-only; no join action or equipper is implemented. The UI must not be interpreted as a working auto-join feature.
+
+## Local navigation candidate — not published
+
+Anime Vanguards now declares its own read-only tabs through optional `GameModule.pages`. Shared UI renders them without game-name checks. No gameplay feature was added.
+
 ## 0.2.2 candidate — no tagged release
 
 Shared foundation fixes for keybind validation, UI window cleanup, unsupported-game notification and registry consistency. No gameplay feature or game patch fix.

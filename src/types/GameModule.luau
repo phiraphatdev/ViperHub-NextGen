@@ -16,5 +16,12 @@ export type Metadata = {
 }
 export type Context =
     { alive: boolean, state: string, log: (string) -> (), cleanup: { add: (() -> ()) -> () } }
-export type GameModule = { metadata: Metadata, start: (Context) -> (), stop: () -> () }
+export type PageDefinition =
+    { title: string, icon: string?, description: string, render: ((any, any?) -> ())? }
+export type GameModule = {
+    metadata: Metadata,
+    pages: { PageDefinition }?,
+    start: (Context) -> (),
+    stop: () -> (),
+}
 return {}

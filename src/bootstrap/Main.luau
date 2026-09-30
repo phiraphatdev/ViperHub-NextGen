@@ -95,6 +95,11 @@ local function decode(text: string): any
     return httpService:JSONDecode(text)
 end
 local function run()
+    if type(gameObject.IsLoaded) == "function" and not gameObject:IsLoaded() then
+        pcall(function()
+            gameObject.Loaded:Wait()
+        end)
+    end
     local store = ConfigStore.new(FileStorage.new(ENV, metadata.id), decode, function(value: any): string
         return httpService:JSONEncode(value)
     end, buffer.push)
@@ -271,7 +276,7 @@ local function run()
         return
     end
     local window, refreshDiagnostics =
-        App.mount(exports.ui, context, gameModule.metadata, store, buffer, ENV.Enum.KeyCode)
+        App.mount(exports.ui, context, gameModule.metadata, store, buffer, ENV.Enum.KeyCode, gameModule.pages)
     session.window = window
     context.cleanup.add(gameModule.stop)
     gameModule.start(context)

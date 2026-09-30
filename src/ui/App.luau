@@ -1,7 +1,7 @@
 --!strict
 --[[
 Purpose: Compose the foundation UI without gameplay coupling
-Input: Library; context; metadata; config store; diagnostics; keys
+Input: Library; context; metadata; config store; diagnostics; keys; optional game pages
 Output: Window and diagnostics refresh callback
 Dependencies: WindUIAdapter; pages
 ]]
@@ -18,10 +18,21 @@ function App.mount(
     metadata: any,
     store: any,
     buffer: any,
-    keyCodes: any
+    keyCodes: any,
+    pages: { any }?
 ): (any, () -> ())
     local window = Adapter.create(library, context, store.get())
     Overview.mount(window, metadata)
+    if pages then
+        for _, page in pages do
+            local tab = window:Tab({ Title = page.title, Icon = page.icon or "layout-grid" })
+            if page.render then
+                page.render(tab, window)
+            else
+                tab:Paragraph({ Title = page.title, Desc = page.description })
+            end
+        end
+    end
     Settings.mount(window, store, library, keyCodes, context)
     local refreshDiagnostics = Diagnostics.mount(window, buffer)
     window:SelectTab(1)

@@ -677,6 +677,30 @@ do
                     end
                 end
 
+                local function save()
+                    if not storage then
+                        log('CONFIG_SESSION_ONLY')
+
+                        return false
+                    end
+
+                    local ok, text = pcall(encode, current)
+
+                    if not ok or type(text) ~= 'string' then
+                        log('CONFIG_ENCODE_FAILED')
+
+                        return false
+                    end
+
+                    local saved = storage.write(text)
+
+                    if not saved then
+                        log('CONFIG_WRITE_FAILED')
+                    end
+
+                    return saved
+                end
+
                 return {
                     persistent = storage ~= nil,
                     get = function()
@@ -694,30 +718,10 @@ do
                         end
 
                         current = sanitized
+
+                        save()
                     end,
-                    save = function()
-                        if not storage then
-                            log('CONFIG_SESSION_ONLY')
-
-                            return false
-                        end
-
-                        local ok, text = pcall(encode, current)
-
-                        if not ok or type(text) ~= 'string' then
-                            log('CONFIG_ENCODE_FAILED')
-
-                            return false
-                        end
-
-                        local saved = storage.write(text)
-
-                        if not saved then
-                            log('CONFIG_WRITE_FAILED')
-                        end
-
-                        return saved
-                    end,
+                    save = save,
                 }
             end
 
@@ -1028,7 +1032,22 @@ do
                 return result, nil
             end
             function ModuleLoader.isGame(value, id, version)
-                return type(value) == 'table' and type(value.metadata) == 'table' and value.metadata.id == id and value.metadata.version == version and type(value.start) == 'function' and type(value.stop) == 'function'
+                if type(value) ~= 'table' then
+                    return false
+                end
+                if value.pages ~= nil then
+                    if type(value.pages) ~= 'table' or #value.pages > 16 then
+                        return false
+                    end
+
+                    for _, page in value.pages do
+                        if type(page) ~= 'table' or type(page.title) ~= 'string' or #page.title == 0 or #page.title > 40 or type(page.description) ~= 'string' or #page.description > 200 or (page.icon ~= nil and (type(page.icon) ~= 'string' or #page.icon > 40)) or (page.render ~= nil and type(page.render) ~= 'function') then
+                            return false
+                        end
+                    end
+                end
+
+                return type(value.metadata) == 'table' and value.metadata.id == id and value.metadata.version == version and type(value.start) == 'function' and type(value.stop) == 'function'
             end
 
             return ModuleLoader
@@ -1094,8 +1113,9 @@ do
                 local window = (library.CreateWindow)(library, {
                     Title = 'ViperHub NextGen',
                     Author = 'Foundation 0.2.2',
+                    Folder = 'ViperHubNextGen',
                     Theme = 'Dark',
-                    NewElements = true,
+                    NewElements = false,
                     Acrylic = false,
                     Size = if ENV.UDim2 then(ENV.UDim2).fromOffset(WINDOW_WIDTH, WINDOW_HEIGHT)else nil,
                     AutoScale = false,
@@ -1105,13 +1125,40 @@ do
                         OnlyMobile = false,
                     },
                 })
+                local BASE_DISPLAY_ORDER = 100
 
+                if library.ScreenGui then
+                    pcall(function()
+                        (library.ScreenGui).DisplayOrder = BASE_DISPLAY_ORDER
+                    end)
+                end
+                if library.DropdownGui then
+                    pcall(function()
+                        (library.DropdownGui).DisplayOrder = BASE_DISPLAY_ORDER + 10
+                    end)
+                end
+                if library.TooltipGui then
+                    pcall(function()
+                        (library.TooltipGui).DisplayOrder = BASE_DISPLAY_ORDER + 20
+                    end)
+                end
+                if library.NotificationGui then
+                    pcall(function()
+                        (library.NotificationGui).DisplayOrder = BASE_DISPLAY_ORDER + 30
+                    end)
+                end
                 if window.SetUIScale then
                     (window.SetUIScale)(window, config.uiScale)
                 end
                 if window.OnDestroy then
                     (window.OnDestroy)(window, context.destroy)
                 end
+
+                context.cleanup.add(function()
+                    if window and not window.Destroyed and type(window.Destroy) == 'function' then
+                        pcall(window.Destroy, window)
+                    end
+                end)
 
                 return window
             end
@@ -1205,7 +1252,8 @@ do
 
                 tab:Paragraph({
                     Title = 'Storage',
-                    Desc = if store.persistent then'File persistence available'else'Session only: filesystem APIs unavailable',
+                    Desc = if store.persistent then
+[[Autosave available; Save settings is an optional manual check]]else'Session only: filesystem APIs unavailable',
                 })
 
                 controls.notifications = tab:Toggle({
@@ -1260,8 +1308,10 @@ do
                     local connection = keyLabel:GetPropertyChangedSignal('Text'):Connect(function(
                     )
                         runtimeTask.defer(function()
-                            if context.alive and controls.toggleKey.Value ~= store.get().toggleKey then
-                                applyToggleKey(window, store, keyCodes, controls.toggleKey.Value, controls.toggleKey)
+                            local tk = controls.toggleKey
+
+                            if context.alive and type(tk) == 'table' and tk.Value ~= store.get().toggleKey then
+                                applyToggleKey(window, store, keyCodes, tk.Value, tk)
                             end
                         end)
                     end)
@@ -1364,11 +1414,31 @@ do
                 metadata,
                 store,
                 buffer,
-                keyCodes
+                keyCodes,
+                pages
             )
                 local window = Adapter.create(library, context, store.get())
 
                 Overview.mount(window, metadata)
+
+                if pages then
+                    for _, page in pages do
+                        local tab = window:Tab({
+                            Title = page.title,
+                            Icon = page.icon or 'layout-grid',
+                        })
+
+                        if page.render then
+                            page.render(tab, window)
+                        else
+                            tab:Paragraph({
+                                Title = page.title,
+                                Desc = page.description,
+                            })
+                        end
+                    end
+                end
+
                 Settings.mount(window, store, library, keyCodes, context)
 
                 local refreshDiagnostics = Diagnostics.mount(window, buffer)
@@ -1519,6 +1589,12 @@ local function decode(text)
     return httpService:JSONDecode(text)
 end
 local function run()
+    if type(gameObject.IsLoaded) == 'function' and not gameObject:IsLoaded() then
+        pcall(function()
+            gameObject.Loaded:Wait()
+        end)
+    end
+
     local store = ConfigStore.new(FileStorage.new(ENV, metadata.id), decode, function(
         value
     )
@@ -1573,7 +1649,7 @@ local function run()
         local repository = ENV.VIPER_REPOSITORY or 'phiraphatdev/ViperHub-NextGen'
 
         if type(repository) ~= 'string' or not string.match(repository, '^[%w_-]+/[%w_.-]+$') then
-            fail('REPOSITORY_UNCONFIGURED', 
+            fail('REPOSITORY_UNCONFIGURED',
 [[GitHub repository is not configured. Use the local smoke harness.]])
 
             return
@@ -1750,7 +1826,7 @@ local function run()
         return
     end
 
-    local window, refreshDiagnostics = App.mount(exports.ui, context, gameModule.metadata, store, buffer, ENV.Enum.KeyCode)
+    local window, refreshDiagnostics = App.mount(exports.ui, context, gameModule.metadata, store, buffer, ENV.Enum.KeyCode, gameModule.pages)
 
     session.window = window
 
@@ -1775,7 +1851,7 @@ if not ok then
         end
     end
 
-    fail('STARTUP_FAILED', 
+    fail('STARTUP_FAILED',
 [[ViperHub startup failed. Inspect the private diagnostics buffer.]])
 end
 

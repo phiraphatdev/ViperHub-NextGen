@@ -44,19 +44,46 @@ function WindUIAdapter.create(library: any, context: Types.Context, config: any)
     local window = (library.CreateWindow :: any)(library, {
         Title = "ViperHub NextGen",
         Author = "Foundation 0.2.2",
+        Folder = "ViperHubNextGen",
         Theme = "Dark",
-        NewElements = true,
+        NewElements = false,
         Acrylic = false,
         Size = if ENV.UDim2 then (ENV.UDim2 :: any).fromOffset(WINDOW_WIDTH, WINDOW_HEIGHT) else nil,
         AutoScale = false,
         OpenButton = { Title = "ViperHub", Enabled = true, OnlyMobile = false },
     })
+    local BASE_DISPLAY_ORDER = 100
+    if library.ScreenGui then
+        pcall(function()
+            (library.ScreenGui :: any).DisplayOrder = BASE_DISPLAY_ORDER
+        end)
+    end
+    if library.DropdownGui then
+        pcall(function()
+            (library.DropdownGui :: any).DisplayOrder = BASE_DISPLAY_ORDER + 10
+        end)
+    end
+    if library.TooltipGui then
+        pcall(function()
+            (library.TooltipGui :: any).DisplayOrder = BASE_DISPLAY_ORDER + 20
+        end)
+    end
+    if library.NotificationGui then
+        pcall(function()
+            (library.NotificationGui :: any).DisplayOrder = BASE_DISPLAY_ORDER + 30
+        end)
+    end
     if window.SetUIScale then
         (window.SetUIScale :: any)(window, config.uiScale)
     end
     if window.OnDestroy then
         (window.OnDestroy :: any)(window, context.destroy)
     end
+    context.cleanup.add(function()
+        if window and not window.Destroyed and type(window.Destroy) == "function" then
+            pcall(window.Destroy, window)
+        end
+    end)
     return window
 end
 return WindUIAdapter

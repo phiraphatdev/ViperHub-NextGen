@@ -19,6 +19,8 @@ Multi-game Luau foundation พร้อม WindUI และโครงสร้
 ต้องมี Git, Node.js 22+ และ PowerShell เครื่องมือ Luau, darklua และ StyLua จะดาวน์โหลดแบบ pin version และตรวจ SHA-256
 ไม่ต้องติดตั้ง npm package ไม่มีบริการ paid tool
 
+เปิด `ViperHub.cmd` เพื่อใช้เมนูรวมสำหรับ Build, Check, เปิด/ปิด Potassium runtime server, Release build และ Verify ตัว runtime server จะเปิดในหน้าต่างแยกจึงใช้งานเมนูหลักต่อได้ หรือเรียกตรงจาก command line เช่น `ViperHub.cmd run` และ `ViperHub.cmd stop`
+
 คัดลอกทั้ง block ใน PowerShell:
 
 ~~~powershell
@@ -40,6 +42,14 @@ check สร้าง dist/manifest ใหม่ แล้วตรวจ format
 เชื่อมต่อ client กับ MCP แล้วให้ agent เรียก execute_file โดยใช้ absolute path ของ work/runtime-smoke.lua
 ตามด้วย get_data_by_code ที่อ่าน tests/runtime/Readback.luau และตรวจ UI ที่สร้างจริง
 ดูขั้นตอนปิด–เปิดใหม่และตรวจ config ใน [TESTING](docs/TESTING.md)
+
+ถ้าต้องการรัน local build เองโดยไม่คัดลอก harness ยาว ๆ ให้รัน `./scripts/run-runtime.ps1` ใน terminal ของ repo คำสั่งนี้จะ build และเปิด local server ให้ จากนั้นบันทึกบรรทัดนี้ใน executor เพื่อใช้ซ้ำ:
+
+~~~lua
+loadstring(game:HttpGet("http://127.0.0.1:8766/runtime-smoke.lua"))()
+~~~
+
+หลังแก้ sourceให้หยุด server ด้วย Ctrl+C แล้วรัน `./scripts/run-runtime.ps1` ใหม่เพื่อ build harness ล่าสุด ใช้เฉพาะเครื่องเดียวกันและเปิด terminal นี้ค้างไว้ระหว่างทดสอบ
 
 Loader URL ของ release ที่ tag แล้วใช้ artifact commit ที่ประกาศ; module ภายในจะอิง `manifest.json.artifactRevision` ถ้ามี SHA หรือ `main/dist/` หากเป็น `null`
 รูปแบบ loader แบบ pin คือ `https://raw.githubusercontent.com/phiraphatdev/ViperHub-NextGen/<artifactRevision>/dist/loader.lua`

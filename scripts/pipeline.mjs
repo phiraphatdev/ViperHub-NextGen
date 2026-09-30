@@ -52,6 +52,8 @@ function buildInto(directory){
     for(const [key,input]of Object.entries(entries)){
         const output=path.join(directory,paths[key]);fs.mkdirSync(path.dirname(output),{recursive:true});
         run(tool('darklua'),['process','-c','.darklua.json',input,output]);
+        // The readable generator occasionally emits whitespace-only line tails.
+        fs.writeFileSync(output,fs.readFileSync(output,'utf8').replace(/[\t ]+$/gm,''));
     }
     write(path.join(directory,paths.ui),read('vendor/WindUI/source.lua'));
     const artifacts={};
@@ -79,7 +81,7 @@ function build(preserveMode=false){
         if(!repository?.match(/^[\w-]+\/[\w.-]+$/))throw Error('An actual owner/repository is required');
         manifest.repository=repository;
     }
-    manifest.sourceCommit=null;manifest.mode=preserveMode?manifest.mode:(release?'release':'development');
+    manifest.sourceCommit=null;manifest.mode=preserveMode?manifest.mode:(process.argv.includes('--development')?'development':'release');
     if(tier)manifest.releaseTier=tier;
     if(releaseGames)manifest.releaseGames=releaseGames;
     manifest.artifactRevision=null;
@@ -111,7 +113,11 @@ function harness(){
     write('work/runtime-smoke.lua',source);
     console.log('Local runtime harness: work/runtime-smoke.lua');
 }
+function format(){
+    run(tool('stylua'),['src','tests']);
+}
 function check(){
+    format();
     build(true);
     projectCheck();
     console.log(run('node',['tests/release-guards.test.mjs']));
@@ -131,8 +137,9 @@ function check(){
 }
 try{
     switch(process.argv[2]){
-        case 'build':build();harness();break;
+        case 'build':format();build();harness();break;
         case 'check':check();break;
+        case 'format':format();break;
         case 'verify':verify(true);break;
         default:throw Error('Expected build, check or verify');
     }

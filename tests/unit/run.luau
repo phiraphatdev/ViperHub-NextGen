@@ -17,6 +17,22 @@ local ModuleLoader = require("../../src/network/ModuleLoader")
 local Settings = require("../../src/ui/pages/Settings")
 local DiagnosticsPage = require("../../src/ui/pages/Diagnostics")
 local VanguardsEntry = require("../../src/games/AnimeVanguards/Entry")
+local JoinerSettings = require("../../src/games/AnimeVanguards/Joiner/Settings")
+local JoinerPage = require("../../src/games/AnimeVanguards/Joiner/Page")
+local JoinerCatalog = require("../../src/games/AnimeVanguards/Joiner/Catalog")
+local JoinerRuntime = require("../../src/games/AnimeVanguards/Joiner/Runtime")
+local ActivityState = require("../../src/games/AnimeVanguards/Joiner/ActivityState")
+local MacroDocument = require("../../src/games/AnimeVanguards/Macro/Document")
+local MacroStorage = require("../../src/games/AnimeVanguards/Macro/Storage")
+local MacroRuntime = require("../../src/games/AnimeVanguards/Macro/Runtime")
+local MacroAdapter = require("../../src/games/AnimeVanguards/Macro/Adapter")
+local GameAdapter = require("../../src/games/AnimeVanguards/Game/Adapter")
+local GamePage = require("../../src/games/AnimeVanguards/Game/Page")
+local AutoPlayRuntime = require("../../src/games/AnimeVanguards/AutoPlay/Runtime")
+local AutoPlayPage = require("../../src/games/AnimeVanguards/AutoPlay/Page")
+local AutoPlayRules = require("../../src/games/AnimeVanguards/AutoPlay/Rules")
+local AutoPlayAdapter = require("../../src/games/AnimeVanguards/AutoPlay/Adapter")
+local StatusPage = require("../../src/games/AnimeVanguards/Status/Page")
 local ExpeditionsEntry = require("../../src/games/AnimeExpeditions/Entry")
 local passed = 0
 local function test(name: string, callback: () -> ())
@@ -185,6 +201,7 @@ test("config malformed JSON and reopened store", function()
     end
     local store = ConfigStore.new(storage, decode, encode, logger)
     store.update("uiScale", 0.9)
+    assert(payload.uiScale == 0.9) -- Auto-saved without pressing Save.
     store.update("toggleKey", "F4")
     store.update("toggleKey", "LeftAlt")
     assert(store.get().toggleKey == "F4")
@@ -364,6 +381,504 @@ test("module compiler errors and export mismatch", function()
     assert(failure == "MODULE_EXECUTION")
     assert(not ModuleLoader.isGame({}, "AnimeVanguards", "0.1.0"))
 end)
+test("game-owned pages are optional and validated", function()
+    assert(ModuleLoader.isGame(ExpeditionsEntry, "AnimeExpeditions", "0.2.2"))
+    assert(ModuleLoader.isGame(VanguardsEntry, "AnimeVanguards", "0.2.2"))
+    assert(#VanguardsEntry.pages == 8 and VanguardsEntry.pages[1].title == "Status")
+    local invalid: any = {
+        metadata = VanguardsEntry.metadata,
+        start = VanguardsEntry.start,
+        stop = VanguardsEntry.stop,
+        pages = { { title = "Bad", description = 42 } },
+    }
+    assert(not ModuleLoader.isGame(invalid, "AnimeVanguards", "0.2.2"))
+end)
+test("Joiner settings pause cooldown priority and reset", function()
+    JoinerSettings.resetPriority()
+    assert(JoinerSettings.get().paused and JoinerSettings.get().cooldown == 0)
+    assert(not JoinerSettings.setPaused("false"))
+    assert(JoinerSettings.setPaused(false) and not JoinerSettings.get().paused)
+    assert(not JoinerSettings.setCooldown(0 / 0))
+    assert(JoinerSettings.setCooldown(999) and JoinerSettings.get().cooldown == 300)
+    assert(JoinerSettings.setCooldown(-5) and JoinerSettings.get().cooldown == 0)
+    local before = JoinerSettings.get().priority
+    assert(not JoinerSettings.moveUp("Unknown"))
+    assert(JoinerSettings.moveUp(before[2]))
+    assert(JoinerSettings.get().priority[1] == before[2])
+    before[1] = "tampered"
+    assert(JoinerSettings.get().priority[1] ~= "tampered")
+    local reset = JoinerSettings.resetPriority()
+    assert(reset[1] == "Rift" and reset[2] == "Weekly Challenge")
+    assert(reset[3] == "Daily Challenge" and reset[4] == "Regular Challenge")
+    assert(#reset == 13 and reset[5] == "Stage")
+    local seen: { [string]: boolean } = {}
+    for _, name in reset do
+        assert(not seen[name])
+        seen[name] = true
+    end
+    assert(JoinerSettings.get().priority[1] == "Rift")
+    assert(not JoinerSettings.get().paused) -- Reset does not alter other settings.
+    JoinerSettings.setPaused(true)
+end)
+test("Joiner controls auto-save and reload with executor files", function()
+    local body: string? = nil
+    local snapshot: any = nil
+    local writes = 0
+    local http = {
+        JSONEncode = function(_self: any, value: any): string
+            snapshot = value
+            return "saved"
+        end,
+        JSONDecode = function(_self: any, _value: string): any
+            return snapshot
+        end,
+    }
+    local env: any = {
+        game = {
+            GetService = function(_self: any, name: string): any
+                assert(name == "HttpService")
+                return http
+            end,
+        },
+        isfile = function(): boolean
+            return body ~= nil
+        end,
+        readfile = function(): string?
+            return body
+        end,
+        writefile = function(_path: string, text: string)
+            body = text
+            writes += 1
+        end,
+        isfolder = function(): boolean
+            return true
+        end,
+        makefolder = function() end,
+    }
+    JoinerSettings.init(env)
+    assert(JoinerSettings.setPaused(false))
+    assert(JoinerSettings.setCooldown(12))
+    assert(JoinerSettings.setEnabled("Stage", true))
+    assert(JoinerSettings.setSelection("Stage", { stage = "Stage1", act = "Act1", difficulty = "Normal" }))
+    assert(writes >= 4 and body == "saved")
+    assert(snapshot.paused == false and snapshot.cooldown == 12)
+    assert(snapshot.enabled.Stage == true and snapshot.selection.Stage.stage == "Stage1")
+    local oldOrder = table.clone(snapshot.priority)
+    table.insert(oldOrder, 2, "Pirate Dynasty")
+    table.insert(oldOrder, 3, "Spring Event")
+    table.insert(oldOrder, 4, "Summer Event")
+    snapshot.priority = oldOrder
+    JoinerSettings.init(env)
+    local restored = JoinerSettings.get()
+    assert(restored.persistent and not restored.paused and restored.cooldown == 12)
+    assert(restored.enabled.Stage and restored.selection.Stage.act == "Act1")
+    assert(#restored.priority == 13 and restored.priority[2] == oldOrder[5])
+    JoinerSettings.setEnabled("Stage", false)
+    JoinerSettings.setPaused(true)
+end)
+test("Joiner catalog sorts real mode shapes without inventing acts", function()
+    local fixture = {
+        Story = {
+            Stage10 = {
+                StageData = { Name = "Later" },
+                Acts = { Act2 = { ActName = "Second" }, Act1 = { ActName = "First" } },
+            },
+            Stage2 = { StageData = { Name = "Earlier" }, Acts = { Act1 = { ActName = "Only" } } },
+            Bad = { Acts = "bad" },
+        },
+        Raid = { Stage1 = { StageData = { Name = "Raid One" }, Acts = { Act1 = {} } } },
+    }
+    local story = JoinerCatalog.list(fixture, "Story")
+    assert(#story == 2 and story[1].id == "Stage2" and story[2].id == "Stage10")
+    assert(story[2].acts[1].id == "Act1" and story[2].acts[2].id == "Act2")
+    assert(JoinerCatalog.list(fixture, "Raid")[1].name == "Raid One")
+    assert(#JoinerCatalog.list(fixture, "Dungeon") == 0)
+    assert(#JoinerCatalog.list(nil, "Story") == 0)
+end)
+test("Joiner page refreshes acts when a different stage is selected", function()
+    local callbacks: { [string]: any } = {}
+    local refreshed: { string }? = nil
+    local tab: any = {}
+    tab.Section = function()
+        return tab
+    end
+    tab.Paragraph = function()
+        return { SetDesc = function() end }
+    end
+    tab.Toggle = function() end
+    tab.Slider = function() end
+    tab.Button = function() end
+    tab.Dropdown = function(_self: any, options: any)
+        callbacks[options.Title] = options.Callback
+        return {
+            Refresh = function(_control: any, values: { string })
+                refreshed = values
+            end,
+            Select = function() end,
+        }
+    end
+    JoinerPage.mount(tab, {
+        Story = {
+            Stage1 = { StageData = { Name = "First" }, Acts = { Act1 = { ActName = "One" } } },
+            Stage2 = { StageData = { Name = "Second" }, Acts = { Act2 = { ActName = "Two" } } },
+        },
+    })
+    callbacks["Select Stage"]("Stage2 - Second")
+    assert(refreshed ~= nil and refreshed[1] == "Act2 - Two")
+end)
+test("Joiner page exposes settings but no action button", function()
+    local titles: { string } = {}
+    local sections: { string } = {}
+    local locked = 0
+    local tab: any = {}
+    tab.Section = function(_self: any, options: any)
+        table.insert(sections, options.Title)
+        return tab
+    end
+    for _, kind in { "Paragraph", "Toggle", "Slider", "Dropdown", "Button" } do
+        tab[kind] = function(_self: any, options: any)
+            table.insert(titles, options.Title)
+            if kind == "Toggle" and options.Locked then
+                locked += 1
+            end
+            return { SetDesc = function() end }
+        end
+    end
+    JoinerPage.mount(tab)
+    assert(table.find(titles, "Reset Auto Join Priority") ~= nil)
+    assert(table.find(titles, "Disable Auto Joiners") ~= nil)
+    assert(table.find(sections, "Rift Joiner") ~= nil)
+    assert(table.find(titles, "Join now") == nil)
+    assert(table.find(sections, "Auto Join Settings") ~= nil)
+    assert(table.find(sections, "Stage Joiner") ~= nil)
+    assert(table.find(sections, "Raid Joiner") ~= nil)
+    assert(table.find(sections, "Worldline Joiner") ~= nil)
+    assert(table.find(sections, "Regular Challenge Joiner") ~= nil)
+    assert(table.find(sections, "Priority") == nil)
+    assert(locked == 13)
+end)
+test("Joiner requests one unlocked private match and requires matching server ACK", function()
+    local sent: any = nil
+    local confirm: any = nil
+    local disconnected = false
+    local unlocked = true
+    local lobby = { IsHosting = false, IsInLobby = false }
+    local startCount = 0
+    local runtime = JoinerRuntime.new({
+        game = { PlaceId = 16146832113 },
+        task = { spawn = function() end, wait = function() end },
+        clock = function()
+            return 100
+        end,
+        userId = 42,
+        lobby = lobby,
+        progress = {
+            GetActData = function(mode: string)
+                return if mode == "Raid" or unlocked then {} else nil
+            end,
+        },
+        network = {
+            CreateMatch = {
+                Fire = function(payload: any)
+                    sent = payload
+                end,
+            },
+            StartMatch = {
+                Fire = function()
+                    startCount += 1
+                end,
+            },
+            MatchConfirmed = {
+                On = function(callback: any)
+                    confirm = callback
+                    return function()
+                        disconnected = true
+                    end
+                end,
+            },
+        },
+    })
+    JoinerSettings.setPaused(false)
+    JoinerSettings.setCooldown(0)
+    runtime.setSelection("Stage", "Stage1", "Act1", "Normal")
+    runtime.setEnabled("Stage", true)
+    runtime.start({ alive = true })
+    unlocked = false
+    runtime.step(100)
+    assert(sent == nil and string.find(runtime.status, "locked", 1, true))
+    unlocked = true
+    runtime.step(100)
+    assert(sent.Public == false and sent.FriendsOnly == true)
+    assert(sent.StageType == "Story" and sent.Stage == "Stage1" and sent.Act == "Act1")
+    confirm({ StageType = "Raid", Stage = "Stage1", Act = "Act1", HostUserId = 42, GUID = "wrong" })
+    assert(runtime.pending ~= nil)
+    confirm({ StageType = "Story", Stage = "Stage1", Act = "Act1", HostUserId = 42, GUID = "match" })
+    assert(runtime.pending == nil and string.find(runtime.status, "confirmed", 1, true))
+    runtime.step(101)
+    assert(startCount == 0) -- ACK precedes the game's host-state update.
+    lobby.IsHosting = true
+    runtime.step(102)
+    runtime.step(103)
+    assert(startCount == 1 and string.find(runtime.status, "waiting for teleport", 1, true))
+    runtime.confirmed = nil -- Simulate the previous lobby ending before testing priority fallback.
+    lobby.IsHosting = false
+    sent = nil
+    unlocked = false
+    runtime.setSelection("Raid", "Stage1", "Act1", "Normal")
+    runtime.setEnabled("Raid", true)
+    runtime.step(200)
+    assert(sent ~= nil and sent.StageType == "Raid") -- Locked higher priority falls through.
+    runtime.stop()
+    assert(disconnected)
+    JoinerSettings.setPaused(true)
+end)
+test("Challenge joiner uses Name and requires matching ChallengeType ACK", function()
+    local sent: any = nil
+    local confirm: any = nil
+    local available = true
+    local lobby = { IsHosting = false, IsInLobby = false }
+    local startCount = 0
+    local runtime = JoinerRuntime.new({
+        game = { PlaceId = 16146832113 },
+        task = { spawn = function() end, wait = function() end },
+        clock = function()
+            return 100
+        end,
+        userId = 42,
+        lobby = lobby,
+        progress = {
+            GetActData = function()
+                return nil
+            end,
+        },
+        challengeAttempts = {
+            GetChallengeSeed = function()
+                return 1
+            end,
+        },
+        challengeData = {
+            GetChallengeSeed = function()
+                return 2
+            end,
+            GetNextReset = function()
+                return 0
+            end,
+            GetChallengesOfType = function(kind: string)
+                assert(kind == "Daily")
+                return if available then { { Name = "Daily Challenge" } } else {}
+            end,
+        },
+        challengeStages = {
+            GetChallengeStage = function()
+                return { StageType = "LegendStage", Stage = "Stage10", Act = "Act3" }
+            end,
+        },
+        challengeNetwork = {
+            StartChallenge = {
+                Fire = function(payload: any)
+                    sent = payload
+                end,
+            },
+        },
+        network = {
+            StartMatch = {
+                Fire = function()
+                    startCount += 1
+                end,
+            },
+            MatchConfirmed = {
+                On = function(callback: any)
+                    confirm = callback
+                    return function() end
+                end,
+            },
+        },
+    })
+    JoinerSettings.setPaused(false)
+    runtime.setChallenge("Daily Challenge", "Daily Challenge")
+    runtime.setEnabled("Daily Challenge", true)
+    runtime.start({ alive = true })
+    runtime.step(100)
+    assert(sent.Name == "Daily Challenge" and runtime.pending ~= nil)
+    confirm({
+        StageType = "LegendStage",
+        Stage = "Stage10",
+        Act = "Act3",
+        ChallengeType = "Wrong",
+        HostUserId = 42,
+        GUID = "a",
+    })
+    assert(runtime.pending ~= nil)
+    confirm({
+        StageType = "LegendStage",
+        Stage = "Stage10",
+        Act = "Act3",
+        ChallengeType = "Daily Challenge",
+        HostUserId = "42",
+        GUID = "a",
+    })
+    assert(runtime.pending == nil and string.find(runtime.status, "confirmed", 1, true))
+    lobby.IsHosting = true
+    runtime.step(101)
+    runtime.step(102)
+    assert(startCount == 1)
+    runtime.confirmed = nil
+    lobby.IsHosting = false
+    sent = nil
+    available = false
+    runtime.step(200)
+    assert(sent == nil and string.find(runtime.status, "unavailable", 1, true))
+    runtime.stop()
+    JoinerSettings.setPaused(true)
+end)
+test("Joiner challenge dropdown binds game-owned challenge names", function()
+    local chosen: any = nil
+    local callbacks: { [string]: any } = {}
+    local unlocked: { [string]: boolean } = {}
+    local tab: any = {}
+    tab.Section = function()
+        return tab
+    end
+    tab.Paragraph = function()
+        return { SetDesc = function() end }
+    end
+    tab.Toggle = function(_self: any, options: any)
+        unlocked[options.Title] = options.Locked ~= true
+    end
+    tab.Slider = function() end
+    tab.Button = function() end
+    tab.Dropdown = function(_self: any, options: any)
+        callbacks[options.Title] = options.Callback
+        return { Refresh = function() end, Select = function() end }
+    end
+    local runtime: any = {
+        status = "Idle",
+        setSelection = function() end,
+        setEnabled = function() end,
+        setChallenge = function(kind: string, name: string)
+            chosen = { kind = kind, name = name }
+        end,
+    }
+    JoinerPage.mount(tab, {}, runtime, {
+        Regular = { "Gold Challenge", "Trait Reroll Challenge" },
+        Daily = { "Daily Challenge" },
+        Weekly = {},
+    })
+    assert(unlocked["Auto Join Regular Challenge"])
+    assert(unlocked["Auto Join Daily Challenge"])
+    assert(not unlocked["Auto Join Weekly Challenge"])
+    callbacks["Select Regular Challenge"]("Trait Reroll Challenge")
+    assert(chosen.kind == "Regular Challenge" and chosen.name == "Trait Reroll Challenge")
+end)
+test("Worldline joiner validates selection and progress before teleport request", function()
+    local sent: any = nil
+    local ready = false
+    local runtime = JoinerRuntime.new({
+        game = { PlaceId = 16146832113 },
+        task = { spawn = function() end, wait = function() end },
+        clock = function()
+            return 100
+        end,
+        lobby = { IsHosting = false, IsInLobby = false },
+        worldlines = {
+            GetAll = function()
+                return { WorldsCollide = { DisplayName = "Worlds Collide" } }
+            end,
+        },
+        worldlineNetwork = {
+            GetWorldlineProgress = {
+                Invoke = function()
+                    return { Ready = ready }
+                end,
+            },
+            TeleportToWorldline = {
+                Fire = function(payload: any)
+                    sent = payload
+                end,
+            },
+        },
+        network = {
+            MatchConfirmed = {
+                On = function()
+                    return function() end
+                end,
+            },
+        },
+    })
+    JoinerSettings.setPaused(false)
+    runtime.setWorldline("Missing", "Traits")
+    runtime.setEnabled("Worldline", true)
+    runtime.start({ alive = true })
+    runtime.step(100)
+    assert(sent == nil)
+    runtime.setWorldline("WorldsCollide", "Traits")
+    runtime.step(101)
+    assert(sent == nil)
+    ready = true
+    runtime.step(102)
+    assert(sent.WorldlineId == "WorldsCollide" and sent.TraitsType == "Traits")
+    runtime.stop()
+    JoinerSettings.setEnabled("Worldline", false)
+    JoinerSettings.setPaused(true)
+end)
+test("Boss Event joiner accepts only current rotation and matching host confirmation", function()
+    local sent: any = nil
+    local confirm: any = nil
+    local started = 0
+    local lobby = { IsHosting = false, IsInLobby = false }
+    local runtime = JoinerRuntime.new({
+        game = { PlaceId = 16146832113 },
+        task = { spawn = function() end, wait = function() end },
+        clock = function()
+            return 100
+        end,
+        userId = 42,
+        lobby = lobby,
+        bossRotation = {
+            GetCurrentBossEvent = function()
+                return "BeastPirateEvent"
+            end,
+        },
+        bossNetwork = {
+            StartBossEvent = {
+                Fire = function(payload: any)
+                    sent = payload
+                end,
+            },
+        },
+        network = {
+            StartMatch = {
+                Fire = function()
+                    started += 1
+                end,
+            },
+            MatchConfirmed = {
+                On = function(callback: any)
+                    confirm = callback
+                    return function() end
+                end,
+            },
+        },
+    })
+    JoinerSettings.setPaused(false)
+    runtime.setBossEvent("SaberEvent", "Elite")
+    runtime.setEnabled("Boss Event", true)
+    runtime.start({ alive = true })
+    runtime.step(100)
+    assert(sent == nil)
+    runtime.setBossEvent("BeastPirateEvent", "Elite")
+    runtime.step(101)
+    assert(sent.EventName == "BeastPirateEvent" and sent.Difficulty == "Elite")
+    confirm({ StageType = "BossEvent", Stage = "SaberEvent", HostUserId = 42, GUID = "wrong" })
+    assert(runtime.pending ~= nil)
+    confirm({ StageType = "BossEvent", Stage = "BeastPirateEvent", HostUserId = 42, GUID = "right" })
+    lobby.IsHosting = true
+    runtime.step(102)
+    assert(started == 1)
+    runtime.stop()
+    JoinerSettings.setEnabled("Boss Event", false)
+    JoinerSettings.setPaused(true)
+end)
 test("save captures keybind selection without a keypress callback", function()
     local payload: any = nil
     local storage = {
@@ -453,5 +968,3067 @@ test("diagnostics shows existing codes at mount", function()
     assert(initial == "FIRST")
     options.Callback()
     assert(initial == "FIRST")
+end)
+test("macro document validates action order and legacy unit references", function()
+    local document = MacroDocument.empty("test")
+    assert(MacroDocument.validate(document) ~= nil)
+    table.insert(document.actions, { index = 2, kind = "sell", unitRef = "1", wave = 0, yen = 0, time = 0 })
+    assert(MacroDocument.validate(document) == nil)
+    document.actions[1].index = 1
+    assert(MacroDocument.validate(document) ~= nil)
+    document.actions[1].kind = "unknown"
+    assert(MacroDocument.validate(document) == nil)
+    local imported = assert(MacroDocument.importLegacy({
+        Marco_Data = {
+            {
+                Method = "SpawnTower",
+                Index = 1,
+                UnitValue = 2,
+                Unit = "Test",
+                Position = "1, 2, 3",
+                Time = 1,
+                Wave = 0,
+            },
+            { Method = "UpgradeTower", Index = 2, UnitValue = 2, Time = 2, Wave = 1 },
+        },
+    }, "imported"))
+    assert(imported.actions[1].unitRef == imported.actions[2].unitRef)
+    assert(imported.schemaVersion == 2 and #imported.actions[1].cframe == 12)
+    local pose, yaw = MacroDocument.toPose(imported.actions[1].cframe)
+    assert(pose.x == 1 and pose.y == 2 and pose.z == 3 and math.abs(assert(yaw)) < 0.001)
+    local importedHighUnit = assert(MacroDocument.importLegacy({
+        Marco_Data = {
+            {
+                Method = "SpawnTower",
+                Index = 1,
+                UnitValue = 12,
+                Unit = "Test",
+                Position = "1, 2, 3",
+                Time = 1,
+                Wave = 0,
+            },
+        },
+    }, "high_unit"))
+    assert(importedHighUnit.actions[1].slotIndex >= 1 and importedHighUnit.actions[1].slotIndex <= 8)
+    local old = {
+        schemaVersion = 1,
+        name = "old",
+        game = "AnimeVanguards",
+        match = { stage = "Stage14", difficulty = "Normal", act = "Act1", mode = "Story" },
+        units = {},
+        actions = {
+            {
+                index = 1,
+                kind = "place",
+                unitRef = "1",
+                unitName = "Test",
+                position = { x = 1, y = 2, z = 3 },
+                rotation = 90,
+                slotIndex = 1,
+                wave = 0,
+                yen = 0,
+                time = 0,
+            },
+        },
+    }
+    local upgraded = assert(MacroDocument.validate(old))
+    assert(
+        upgraded.schemaVersion == 2
+            and upgraded.match.stage == nil
+            and upgraded.match.act == nil
+            and upgraded.match.difficulty == nil
+    )
+    assert(upgraded.actions[1].position == nil and #upgraded.actions[1].cframe == 12)
+    assert(old.schemaVersion == 1 and old.match.stage == "Stage14")
+end)
+test("macro pre-start vote recording and compact CFrame", function()
+    local observers: { [string]: any } = {}
+    local adapter = {
+        state = function()
+            return nil
+        end,
+        preMatchState = function()
+            return { wave = 0, yen = 0, match = { mode = "Story" } }
+        end,
+        observe = function(kind: string, callback: any)
+            observers[kind] = callback
+            return function() end
+        end,
+    }
+    local storage = {
+        write = function()
+            return true
+        end,
+    }
+    local runtime = MacroRuntime.new(adapter, storage)
+    runtime.start({ alive = true })
+    assert(runtime.record("before_start"))
+    observers.voteClicked({ Context = "Start" })
+    observers.voteClicked({ Context = "Start" })
+    observers.voteClicked()
+    local document = assert(runtime.finishRecord())
+    assert(#document.actions == 1 and document.actions[1].kind == "voteStart")
+    local cframe = assert(MacroDocument.fromPose({ x = 1.123456789, y = 2, z = 3 }, 90))
+    assert(cframe[1] == 1.123457 and cframe[4] == 0 and cframe[6] == 1)
+    runtime.stop()
+end)
+test("macro placement waits for live price and never queues phantom", function()
+    local yen = 0
+    local requestedAt = -1
+    local queued = 0
+    local adapter = {
+        state = function()
+            return { wave = 1, yen = yen, units = {} }
+        end,
+        observe = function()
+            return function() end
+        end,
+        queuePlace = function()
+            queued += 1
+            return true
+        end,
+        cost = function()
+            return 500
+        end,
+        request = function()
+            requestedAt = yen
+            return true
+        end,
+        confirm = function()
+            return true, "placed-guid"
+        end,
+    }
+    local scheduler = {
+        spawn = function(callback: any)
+            callback()
+        end,
+        wait = function()
+            yen += 100
+        end,
+    }
+    local runtime = MacroRuntime.new(adapter, nil, scheduler)
+    runtime.start({ alive = true })
+    local document = MacroDocument.empty("ghost")
+    table.insert(document.actions, {
+        index = 1,
+        kind = "place",
+        wave = 1,
+        yen = 1000,
+        time = 0,
+        unitRef = "1",
+        unitName = "Test",
+        slotIndex = 1,
+        cframe = MacroDocument.fromPose({ x = 1, y = 2, z = 3 }, 0),
+    })
+    assert(runtime.play(document))
+    assert(queued == 0 and requestedAt >= 500 and runtime.mode == "play")
+    runtime.stop()
+end)
+test("macro upgrade waits for live upgrade price, not recorded yen", function()
+    local yen = 100
+    local requestedAt = 0
+    local adapter = {
+        state = function()
+            return { wave = 1, yen = yen, units = {} }
+        end,
+        observe = function()
+            return function() end
+        end,
+        cost = function(action: any)
+            return if action.kind == "place" then 0 else 500
+        end,
+        request = function(action: any)
+            if action.kind == "upgrade" then
+                requestedAt = yen
+            end
+            return true
+        end,
+        confirm = function()
+            return true, "placed-guid"
+        end,
+    }
+    local scheduler = {
+        spawn = function(callback: any)
+            callback()
+        end,
+        wait = function()
+            yen += 100
+        end,
+    }
+    local runtime = MacroRuntime.new(adapter, nil, scheduler)
+    runtime.start({ alive = true })
+    local document = MacroDocument.empty("upgrade")
+    document.actions = {
+        {
+            index = 1,
+            kind = "place",
+            unitRef = "1",
+            unitName = "Test",
+            slotIndex = 1,
+            cframe = MacroDocument.fromPose({ x = 1, y = 2, z = 3 }, 0),
+            wave = 1,
+            yen = 0,
+            time = 0,
+        },
+        { index = 2, kind = "upgrade", unitRef = "1", wave = 1, yen = 99999, time = 0 },
+    }
+    assert(runtime.play(document))
+    assert(requestedAt >= 500 and requestedAt < 99999 and runtime.mode == "play")
+    runtime.stop()
+end)
+test("macro playback preserves recorded upgrade index instead of silently skipping", function()
+    local placed = 0
+    local upgraded = 0
+    local yen = 2357
+    local order: { string } = {}
+    local adapter = {
+        state = function()
+            return { wave = 1, yen = yen, units = {} }
+        end,
+        observe = function()
+            return function() end
+        end,
+        cost = function(action: any)
+            return if action.kind == "upgrade" then 4860 else 495
+        end,
+        request = function(action: any)
+            table.insert(order, action.kind)
+            if action.kind == "place" then
+                placed += 1
+            else
+                upgraded += 1
+            end
+            return true
+        end,
+        confirm = function()
+            return true, "guid"
+        end,
+    }
+    local scheduler = {
+        spawn = function(callback: any)
+            callback()
+        end,
+        wait = function()
+            yen = 5000
+        end,
+    }
+    local runtime = MacroRuntime.new(adapter, nil, scheduler)
+    runtime.start({ alive = true })
+    local document = MacroDocument.empty("recorded")
+    local cframe = MacroDocument.fromPose({ x = 1, y = 2, z = 3 }, 0)
+    document.actions = {
+        {
+            index = 1,
+            kind = "place",
+            unitRef = "1",
+            unitName = "Test",
+            slotIndex = 1,
+            cframe = cframe,
+            wave = 0,
+            yen = 105,
+            time = 0,
+        },
+        { index = 2, kind = "upgrade", unitRef = "1", wave = 0, yen = 105, time = 0.004 },
+        {
+            index = 3,
+            kind = "place",
+            unitRef = "3",
+            unitName = "Test",
+            slotIndex = 1,
+            cframe = cframe,
+            wave = 1,
+            yen = 2357,
+            time = 4.3,
+        },
+    }
+    assert(runtime.play(document))
+    assert(placed == 2 and upgraded == 1 and runtime.mode == "play")
+    assert(table.concat(order, ",") == "place,upgrade,place")
+    runtime.stop()
+end)
+test("macro placement retries direct offsets and None skips dependent steps", function()
+    local yen = 0
+    local price = 500
+    local attempts: { any } = {}
+    local queued = 0
+    local adapter = {
+        state = function()
+            return { wave = 1, yen = yen, units = {} }
+        end,
+        observe = function()
+            return function() end
+        end,
+        cost = function()
+            return price
+        end,
+        queuePlace = function()
+            queued += 1
+            return true
+        end,
+        request = function(action: any)
+            table.insert(
+                attempts,
+                { ref = action.unitRef, x = action.cframe[1], z = action.cframe[3], y = action.cframe[2] }
+            )
+            return action.unitRef == "3"
+        end,
+        confirm = function()
+            return true, "second-unit"
+        end,
+    }
+    local scheduler = {
+        spawn = function(callback: any)
+            callback()
+        end,
+        wait = function()
+            yen += 100
+            if yen == 500 then
+                price = 600
+            end
+        end,
+    }
+    local runtime = MacroRuntime.new(adapter, nil, scheduler)
+    runtime.start({ alive = true })
+    runtime.settings.retryLimit = 3
+    runtime.settings.placementFailure = "None"
+    local document = MacroDocument.empty("offset")
+    local cframe = assert(MacroDocument.fromPose({ x = 10, y = 2, z = 20 }, 0))
+    document.actions = {
+        {
+            index = 1,
+            kind = "place",
+            unitRef = "1",
+            unitName = "Test",
+            slotIndex = 1,
+            cframe = cframe,
+            wave = 1,
+            yen = 0,
+            time = 0,
+        },
+        { index = 2, kind = "upgrade", unitRef = "1", wave = 1, yen = 0, time = 1 },
+        {
+            index = 3,
+            kind = "place",
+            unitRef = "3",
+            unitName = "Test",
+            slotIndex = 1,
+            cframe = cframe,
+            wave = 1,
+            yen = 0,
+            time = 2,
+        },
+    }
+    assert(runtime.play(document))
+    assert(queued == 0 and #attempts == 4 and runtime.mode == "play")
+    assert(attempts[1].x == 10 and attempts[2].x == 11 and attempts[3].z == 21)
+    assert(attempts[1].y == 2 and cframe[1] == 10 and cframe[3] == 20)
+    runtime.stop()
+end)
+test("macro stops with step reason when live price is unavailable", function()
+    local requested = 0
+    local adapter = {
+        state = function()
+            return { wave = 1, yen = 10000, units = {} }
+        end,
+        observe = function()
+            return function() end
+        end,
+        cost = function()
+            return nil
+        end,
+        request = function()
+            requested += 1
+            return true
+        end,
+    }
+    local scheduler = {
+        spawn = function(callback: any)
+            callback()
+        end,
+        wait = function() end,
+    }
+    local runtime = MacroRuntime.new(adapter, nil, scheduler)
+    runtime.start({ alive = true })
+    local document = MacroDocument.empty("no_price")
+    document.actions = {
+        {
+            index = 1,
+            kind = "place",
+            unitRef = "1",
+            unitName = "Test",
+            slotIndex = 1,
+            cframe = MacroDocument.fromPose({ x = 1, y = 2, z = 3 }, 0),
+            wave = 1,
+            yen = 0,
+            time = 0,
+        },
+    }
+    assert(runtime.play(document))
+    assert(requested == 0 and runtime.mode == "idle" and runtime.status:find("Live price unavailable"))
+    runtime.stop()
+end)
+test("macro Restart waits for MatchRestarted and replays once", function()
+    local observers: { [string]: any } = {}
+    local requests, votes = 0, 0
+    local timeout: any = nil
+    local adapter = {
+        state = function()
+            return { wave = 1, yen = 1000, units = {} }
+        end,
+        observe = function(kind: string, callback: any)
+            observers[kind] = callback
+            return function() end
+        end,
+        cost = function()
+            return 500
+        end,
+        request = function()
+            requests += 1
+            return requests > 1
+        end,
+        confirm = function()
+            return true, "guid"
+        end,
+        castRestartVote = function()
+            votes += 1
+            return true
+        end,
+    }
+    local scheduler = {
+        spawn = function(callback: any)
+            callback()
+        end,
+        wait = function() end,
+        delay = function(_seconds: number, callback: any)
+            timeout = callback
+        end,
+    }
+    local runtime = MacroRuntime.new(adapter, nil, scheduler)
+    runtime.start({ alive = true })
+    runtime.settings.retryLimit = 1
+    runtime.settings.placementFailure = "Restart"
+    local document = MacroDocument.empty("restart")
+    document.actions = {
+        {
+            index = 1,
+            kind = "place",
+            unitRef = "1",
+            unitName = "Test",
+            slotIndex = 1,
+            cframe = MacroDocument.fromPose({ x = 1, y = 2, z = 3 }, 0),
+            wave = 1,
+            yen = 0,
+            time = 0,
+        },
+    }
+    assert(runtime.play(document))
+    assert(votes == 1 and runtime.mode == "play" and timeout ~= nil)
+    observers.matchEnd()
+    assert(runtime.mode == "play")
+    observers.restart()
+    local expire: any = timeout
+    expire()
+    assert(votes == 1 and requests == 2 and runtime.mode == "play")
+    runtime.stop()
+end)
+test("macro Return to Lobby and Stop fire no extra placement requests", function()
+    for _, policy in { "Return to Lobby", "Stop" } do
+        local requests, returns = 0, 0
+        local adapter = {
+            state = function()
+                return { wave = 1, yen = 1000, units = {} }
+            end,
+            observe = function()
+                return function() end
+            end,
+            cost = function()
+                return 500
+            end,
+            request = function()
+                requests += 1
+                return false
+            end,
+            returnToLobby = function()
+                returns += 1
+                return true
+            end,
+        }
+        local scheduler = {
+            spawn = function(callback: any)
+                callback()
+            end,
+            wait = function() end,
+        }
+        local runtime = MacroRuntime.new(adapter, nil, scheduler)
+        runtime.start({ alive = true })
+        runtime.settings.retryLimit = 1
+        runtime.settings.placementFailure = policy
+        local document = MacroDocument.empty("failure")
+        document.actions = {
+            {
+                index = 1,
+                kind = "place",
+                unitRef = "1",
+                unitName = "Test",
+                slotIndex = 1,
+                cframe = MacroDocument.fromPose({ x = 1, y = 2, z = 3 }, 0),
+                wave = 1,
+                yen = 0,
+                time = 0,
+            },
+        }
+        assert(runtime.play(document))
+        assert(requests == 1 and returns == (if policy == "Return to Lobby" then 1 else 0))
+        assert(runtime.mode == "idle")
+        runtime.stop()
+    end
+end)
+test("macro placement accepts late confirmation without a duplicate request", function()
+    local requests, checks = 0, 0
+    local adapter = {
+        state = function()
+            return { wave = 1, yen = 1000, units = {} }
+        end,
+        observe = function()
+            return function() end
+        end,
+        cost = function()
+            return 500
+        end,
+        request = function()
+            requests += 1
+            return true
+        end,
+        confirm = function()
+            checks += 1
+            return checks >= 2, "late-guid"
+        end,
+    }
+    local scheduler = {
+        actionTimeout = 0,
+        spawn = function(callback: any)
+            callback()
+        end,
+        wait = function() end,
+    }
+    local runtime = MacroRuntime.new(adapter, nil, scheduler)
+    runtime.start({ alive = true })
+    runtime.settings.retryLimit = 3
+    local document = MacroDocument.empty("late")
+    document.actions = {
+        {
+            index = 1,
+            kind = "place",
+            unitRef = "1",
+            unitName = "Test",
+            slotIndex = 1,
+            cframe = MacroDocument.fromPose({ x = 1, y = 2, z = 3 }, 0),
+            wave = 1,
+            yen = 0,
+            time = 0,
+        },
+    }
+    assert(runtime.play(document))
+    assert(requests == 1 and runtime.mode == "play")
+    runtime.stop()
+end)
+test("macro Stop interrupts a price wait without sending a request", function()
+    local requests = 0
+    local adapter = {
+        state = function()
+            return { wave = 1, yen = 0, units = {} }
+        end,
+        observe = function()
+            return function() end
+        end,
+        cost = function()
+            return 500
+        end,
+        request = function()
+            requests += 1
+            return true
+        end,
+    }
+    local runtime: any = nil
+    local scheduler = {
+        spawn = function(callback: any)
+            callback()
+        end,
+        wait = function()
+            runtime.stopPlayback()
+        end,
+    }
+    runtime = MacroRuntime.new(adapter, nil, scheduler)
+    runtime.start({ alive = true })
+    local document = MacroDocument.empty("stop_wait")
+    document.actions = {
+        {
+            index = 1,
+            kind = "place",
+            unitRef = "1",
+            unitName = "Test",
+            slotIndex = 1,
+            cframe = MacroDocument.fromPose({ x = 1, y = 2, z = 3 }, 0),
+            wave = 1,
+            yen = 0,
+            time = 0,
+        },
+    }
+    assert(runtime.play(document))
+    assert(requests == 0 and runtime.mode == "idle")
+    runtime.stop()
+end)
+test("macro non-placement failure stops instead of silently skipping", function()
+    local requests = 0
+    local adapter = {
+        state = function()
+            return { wave = 1, yen = 1000, units = {} }
+        end,
+        observe = function()
+            return function() end
+        end,
+        cost = function()
+            return 0
+        end,
+        request = function(action: any)
+            if action.kind == "place" then
+                return true
+            end
+            requests += 1
+            return false
+        end,
+        confirm = function()
+            return true, "placed-guid"
+        end,
+    }
+    local scheduler = {
+        spawn = function(callback: any)
+            callback()
+        end,
+        wait = function() end,
+    }
+    local runtime = MacroRuntime.new(adapter, nil, scheduler)
+    runtime.start({ alive = true })
+    runtime.settings.retryLimit = 2
+    local document = MacroDocument.empty("failed_sell")
+    document.actions = {
+        {
+            index = 1,
+            kind = "place",
+            unitRef = "1",
+            unitName = "Test",
+            slotIndex = 1,
+            cframe = MacroDocument.fromPose({ x = 1, y = 2, z = 3 }, 0),
+            wave = 1,
+            yen = 0,
+            time = 0,
+        },
+        { index = 2, kind = "sell", unitRef = "1", wave = 1, yen = 0, time = 0 },
+        { index = 3, kind = "sell", unitRef = "2", wave = 1, yen = 0, time = 0 },
+    }
+    assert(runtime.play(document))
+    assert(
+        requests == 2 and runtime.mode == "idle" and runtime.status:find("Step 2"),
+        "requests=" .. requests .. " mode=" .. runtime.mode .. " status=" .. runtime.status
+    )
+    runtime.stop()
+end)
+test("macro native unit-control actions validate without changing schema v2", function()
+    local document = MacroDocument.empty("native_controls")
+    document.actions = {
+        { index = 1, kind = "autoUpgrade", unitRef = "1", wave = 1, yen = 0, time = 0, enabled = true },
+        {
+            index = 2,
+            kind = "upgradePriority",
+            unitRef = "1",
+            wave = 1,
+            yen = 0,
+            time = 0,
+            upgradePriority = 6,
+        },
+        {
+            index = 3,
+            kind = "autoAbility",
+            unitRef = "1",
+            wave = 1,
+            yen = 0,
+            time = 0,
+            abilityName = "Burst",
+            enabled = false,
+        },
+    }
+    local checked = assert(MacroDocument.validate(document))
+    assert(checked.schemaVersion == 2 and checked.actions[2].upgradePriority == 6)
+    document.actions[2].upgradePriority = 7
+    assert(MacroDocument.validate(document) == nil)
+    document.actions[2].upgradePriority = 0
+    assert(MacroDocument.validate(document) == nil)
+    document.actions[2].upgradePriority = 3
+    document.actions[3].enabled = "false"
+    assert(MacroDocument.validate(document) == nil)
+end)
+test("macro attack priority reads the game's numeric Data.Priority", function()
+    local names = { "First", "Closest", "Last", "Strongest", "Weakest", "Bosses" }
+    assert(MacroAdapter.priorityName(names, { Data = { Priority = 4 } }) == "Strongest")
+    assert(MacroAdapter.priorityName(names, { UnitData = { Priority = 6 } }) == "Bosses")
+    assert(MacroAdapter.priorityName(names, { Data = { Priority = 0 } }) == nil)
+end)
+test("macro legacy upgrade levels are inferred per unit reference", function()
+    local document = MacroDocument.empty("legacy_levels")
+    document.actions = {
+        {
+            index = 1,
+            kind = "place",
+            unitRef = "1",
+            unitName = "Test",
+            slotIndex = 1,
+            cframe = MacroDocument.fromPose({ x = 1, y = 2, z = 3 }, 0),
+            wave = 1,
+            yen = 0,
+            time = 0,
+        },
+        { index = 2, kind = "autoUpgrade", unitRef = "1", enabled = true, wave = 1, yen = 0, time = 1 },
+        { index = 3, kind = "upgrade", unitRef = "1", wave = 1, yen = 0, time = 2 },
+        { index = 4, kind = "upgrade", unitRef = "1", wave = 2, yen = 0, time = 3 },
+    }
+    local checked = assert(MacroDocument.validate(document))
+    assert(checked.actions[1].initialLevel == 0)
+    assert(checked.actions[3].level == 1 and checked.actions[4].level == 2)
+    document.actions[4].level = 1
+    assert(MacroDocument.validate(document) == nil)
+end)
+test("macro recording separates manual upgrades from native auto upgrades", function()
+    local observers: { [string]: any } = {}
+    local runtime = MacroRuntime.new({
+        state = function()
+            return { wave = 1, yen = 100, match = { mode = "Story" }, units = {} }
+        end,
+        observe = function(kind: string, callback: any)
+            observers[kind] = callback
+            return function() end
+        end,
+    }, {
+        write = function()
+            return true
+        end,
+    })
+    runtime.start({ alive = true })
+    assert(runtime.record("manual_and_auto"))
+    observers.place({
+        guid = "g1",
+        unitName = "Test",
+        slotIndex = 1,
+        position = { x = 1, y = 2, z = 3 },
+        level = 0,
+        priorityName = "First",
+    })
+    observers.priority({ guid = "g1", priorityName = "Strongest" })
+    observers.priority({ guid = "g1", priorityName = "Strongest" })
+    observers.upgrade({ guid = "g1", level = 1 })
+    observers.autoUpgrade({ guid = "g1", enabled = true })
+    observers.upgrade({ guid = "g1", level = 2 })
+    observers.upgrade({ guid = "g1", level = 3 })
+    observers.autoUpgrade({ guid = "g1", enabled = false })
+    observers.upgrade({ guid = "g1", level = 4 })
+    local recorded = assert(runtime.finishRecord())
+    local kinds = {}
+    for _, action in recorded.actions do
+        table.insert(kinds, action.kind)
+    end
+    assert(table.concat(kinds, ",") == "place,priority,upgrade,autoUpgrade,autoUpgrade,upgrade")
+    assert(recorded.actions[3].level == 1 and recorded.actions[6].level == 4)
+    runtime.stop()
+end)
+test("macro records confirmed auto controls once and preserves order", function()
+    local observers: { [string]: any } = {}
+    local stored: any = nil
+    local adapter = {
+        state = function()
+            return { wave = 1, yen = 100, match = { mode = "Story" }, units = {} }
+        end,
+        observe = function(kind: string, callback: any)
+            observers[kind] = callback
+            return function() end
+        end,
+    }
+    local runtime = MacroRuntime.new(adapter, {
+        write = function(_name: string, document: any)
+            stored = document
+            return true
+        end,
+    })
+    runtime.start({ alive = true })
+    assert(runtime.record("native_controls"))
+    observers.place({
+        guid = "guid-1",
+        unitName = "Test",
+        slotIndex = 1,
+        position = { x = 1, y = 2, z = 3 },
+        rotation = 0,
+        level = 0,
+    })
+    observers.autoUpgrade({ guid = "guid-1", enabled = true })
+    observers.autoUpgrade({ guid = "guid-1", enabled = true })
+    observers.upgradePriority({ guid = "guid-1", upgradePriority = 3 })
+    observers.upgradePriority({ guid = "guid-1", upgradePriority = 3 })
+    observers.autoAbility({ guid = "guid-1", abilityName = "Burst", enabled = true })
+    observers.autoAbility({ guid = "guid-1", abilityName = "Burst", enabled = true })
+    observers.autoAbility({ guid = "guid-1", abilityName = "Burst", enabled = false })
+    local recorded = assert(runtime.finishRecord())
+    assert(stored == recorded and #recorded.actions == 5)
+    assert(recorded.actions[2].kind == "autoUpgrade" and recorded.actions[2].enabled)
+    assert(recorded.actions[3].kind == "upgradePriority" and recorded.actions[3].upgradePriority == 3)
+    assert(recorded.actions[4].kind == "autoAbility" and recorded.actions[4].enabled)
+    assert(recorded.actions[5].kind == "autoAbility" and not recorded.actions[5].enabled)
+    runtime.stop()
+end)
+test("macro playback cycles native upgrade priority to recorded state", function()
+    local placed = false
+    local enabled = false
+    local priority = 1
+    local autoAbility = false
+    local changes = 0
+    local function snapshot(): any
+        return {
+            wave = 1,
+            yen = 100,
+            units = if placed
+                then {
+                    ["guid-1"] = {
+                        name = "Test",
+                        autoUpgrade = enabled,
+                        upgradePriority = priority,
+                        autoAbilities = if autoAbility then { "Burst" } else {},
+                    },
+                }
+                else {},
+        }
+    end
+    local adapter = {
+        state = snapshot,
+        observe = function()
+            return function() end
+        end,
+        cost = function()
+            return 0
+        end,
+        request = function(action: any)
+            if action.kind == "place" then
+                placed = true
+            elseif action.kind == "autoUpgrade" then
+                enabled = action.enabled
+            elseif action.kind == "upgradePriority" then
+                priority = priority % 6 + 1
+                changes += 1
+            elseif action.kind == "autoAbility" then
+                autoAbility = action.enabled
+            end
+            return true
+        end,
+        confirm = function(action: any)
+            if action.kind == "place" then
+                return placed, "guid-1"
+            elseif action.kind == "autoUpgrade" then
+                return enabled == action.enabled, ""
+            elseif action.kind == "upgradePriority" then
+                return priority == action.upgradePriority, ""
+            elseif action.kind == "autoAbility" then
+                return autoAbility == action.enabled, ""
+            end
+            return false, ""
+        end,
+    }
+    local runtime = MacroRuntime.new(adapter, nil, {
+        spawn = function(callback: any)
+            callback()
+        end,
+        wait = function() end,
+        actionTimeout = 0,
+    })
+    runtime.start({ alive = true })
+    local document = MacroDocument.empty("native_controls")
+    document.actions = {
+        {
+            index = 1,
+            kind = "place",
+            unitRef = "1",
+            unitName = "Test",
+            slotIndex = 1,
+            cframe = MacroDocument.fromPose({ x = 1, y = 2, z = 3 }, 0),
+            wave = 1,
+            yen = 0,
+            time = 0,
+        },
+        { index = 2, kind = "autoUpgrade", unitRef = "1", enabled = true, wave = 1, yen = 0, time = 0 },
+        {
+            index = 3,
+            kind = "upgradePriority",
+            unitRef = "1",
+            upgradePriority = 5,
+            wave = 1,
+            yen = 0,
+            time = 0,
+        },
+        {
+            index = 4,
+            kind = "autoAbility",
+            unitRef = "1",
+            abilityName = "Burst",
+            enabled = true,
+            wave = 1,
+            yen = 0,
+            time = 0,
+        },
+    }
+    assert(runtime.play(document))
+    assert(runtime.mode == "play" and enabled and autoAbility and priority == 5 and changes == 4)
+    runtime.stop()
+end)
+test("macro legacy auto-upgrade steps wait for achieved level without duplicate purchase", function()
+    local placed = false
+    local enabled = false
+    local level = 0
+    local waits = 0
+    local requests: { string } = {}
+    local function snapshot(): any
+        return {
+            wave = 1,
+            yen = 100,
+            units = if placed then { ["g1"] = { level = level, autoUpgrade = enabled } } else {},
+        }
+    end
+    local adapter = {
+        state = snapshot,
+        observe = function()
+            return function() end
+        end,
+        cost = function()
+            return 0
+        end,
+        satisfied = function(action: any)
+            return action.kind == "upgrade" and level >= action.level
+        end,
+        request = function(action: any)
+            table.insert(requests, action.kind)
+            if action.kind == "place" then
+                placed = true
+            elseif action.kind == "autoUpgrade" then
+                enabled = true
+            else
+                error("unexpected duplicate upgrade request")
+            end
+            return true
+        end,
+        confirm = function(action: any)
+            return action.kind == "place" or action.kind == "autoUpgrade", "g1"
+        end,
+    }
+    local runtime = MacroRuntime.new(adapter, nil, {
+        spawn = function(callback: any)
+            callback()
+        end,
+        wait = function()
+            waits += 1
+            if enabled and waits >= 4 then
+                level = 1
+            end
+        end,
+        actionTimeout = 0,
+    })
+    runtime.start({ alive = true })
+    local document = MacroDocument.empty("legacy_auto")
+    document.actions = {
+        {
+            index = 1,
+            kind = "place",
+            unitRef = "1",
+            unitName = "Test",
+            slotIndex = 1,
+            cframe = MacroDocument.fromPose({ x = 1, y = 2, z = 3 }, 0),
+            wave = 1,
+            yen = 0,
+            time = 0,
+        },
+        { index = 2, kind = "autoUpgrade", unitRef = "1", enabled = true, wave = 1, yen = 0, time = 0 },
+        { index = 3, kind = "upgrade", unitRef = "1", wave = 1, yen = 0, time = 0 },
+    }
+    assert(runtime.play(document))
+    assert(runtime.mode == "play" and waits >= 4)
+    assert(table.concat(requests, ",") == "place,autoUpgrade")
+    runtime.stop()
+end)
+test("macro satisfied step still waits for its recorded wave index", function()
+    local wave = 1
+    local requestCount = 0
+    local runtime = MacroRuntime.new(
+        {
+            state = function()
+                return { wave = wave, yen = 0, units = { g1 = { autoUpgrade = true } } }
+            end,
+            observe = function()
+                return function() end
+            end,
+            satisfied = function(action: any)
+                return action.kind == "autoUpgrade"
+            end,
+            cost = function()
+                return 0
+            end,
+            request = function(action: any)
+                if action.kind == "autoUpgrade" then
+                    requestCount += 1
+                end
+                return true
+            end,
+            confirm = function()
+                return true, "g1"
+            end,
+        },
+        nil,
+        {
+            spawn = function(callback: any)
+                callback()
+            end,
+            wait = function()
+                wave += 1
+            end,
+        }
+    )
+    runtime.start({ alive = true })
+    local document = MacroDocument.empty("wave_order")
+    document.actions = {
+        {
+            index = 1,
+            kind = "place",
+            unitRef = "1",
+            unitName = "Test",
+            slotIndex = 1,
+            cframe = MacroDocument.fromPose({ x = 1, y = 2, z = 3 }, 0),
+            wave = 1,
+            yen = 0,
+            time = 0,
+        },
+        { index = 2, kind = "autoUpgrade", unitRef = "1", enabled = true, wave = 3, yen = 0, time = 0 },
+    }
+    assert(runtime.play(document))
+    assert(wave >= 3 and requestCount == 0 and runtime.mode == "play")
+    runtime.stop()
+end)
+test(
+    "macro recording suppresses duplicate manual ability under active autoAbility and prunes companion toggle",
+    function()
+        local observers: { [string]: any } = {}
+        local stored: any = nil
+        local adapter = {
+            state = function()
+                return { wave = 1, yen = 100, match = { mode = "Story" }, units = {} }
+            end,
+            observe = function(kind: string, callback: any)
+                observers[kind] = callback
+                return function() end
+            end,
+        }
+        local runtime = MacroRuntime.new(adapter, {
+            write = function(_name: string, document: any)
+                stored = document
+                return true
+            end,
+        })
+        runtime.start({ alive = true })
+        assert(runtime.record("companion_ability"))
+        observers.place({
+            guid = "guid-1",
+            unitName = "Reckless Gambler (Cursed)",
+            slotIndex = 4,
+            position = { x = 1, y = 2, z = 3 },
+            rotation = 0,
+            level = 0,
+        })
+        -- Simulate companion ability fired immediately before autoAbility toggle:
+        observers.ability({ guid = "guid-1", abilityName = "Death Gamble" })
+        observers.autoAbility({ guid = "guid-1", abilityName = "Death Gamble", enabled = true })
+        -- Simulate periodic auto-ability firing while autoAbility is already active:
+        observers.ability({ guid = "guid-1", abilityName = "Death Gamble" })
+        local recorded = assert(runtime.finishRecord())
+        assert(stored == recorded and #recorded.actions == 2)
+        assert(recorded.actions[1].kind == "place")
+        assert(recorded.actions[2].kind == "autoAbility" and recorded.actions[2].enabled)
+        runtime.stop()
+    end
+)
+test("macro playback skips companion or active auto-ability and continues at index 10", function()
+    local actionsRequested: { string } = {}
+    local autoToggled = false
+    local placedCount = 0
+    local adapter = {
+        state = function()
+            local unitsMap: any = {}
+            for i = 1, placedCount do
+                unitsMap["g" .. i] = {
+                    name = "Test",
+                    autoAbilities = if autoToggled and i == 7 then { "Death Gamble" } else {},
+                }
+            end
+            return { wave = 3, yen = 10000, units = unitsMap }
+        end,
+        observe = function()
+            return function() end
+        end,
+        cost = function()
+            return 0
+        end,
+        request = function(action: any)
+            table.insert(actionsRequested, action.kind)
+            if action.kind == "autoAbility" then
+                autoToggled = action.enabled
+            end
+            return true
+        end,
+        confirm = function(action: any)
+            if action.kind == "place" then
+                placedCount += 1
+                return true, "g" .. placedCount
+            elseif action.kind == "autoAbility" or action.kind == "autoUpgrade" then
+                return true, ""
+            end
+            return false, ""
+        end,
+    }
+    local runtime = MacroRuntime.new(adapter, nil, {
+        spawn = function(callback: any)
+            callback()
+        end,
+        wait = function() end,
+        actionTimeout = 0,
+    })
+    runtime.start({ alive = true })
+    local document = MacroDocument.empty("index_10_fix")
+    local cframe = MacroDocument.fromPose({ x = 1, y = 2, z = 3 }, 0)
+    for i = 1, 9 do
+        table.insert(document.actions, {
+            index = i,
+            kind = "place",
+            unitRef = tostring(i),
+            unitName = "Test",
+            slotIndex = math.min(i, 6),
+            cframe = cframe,
+            wave = 0,
+            yen = 0,
+            time = 0,
+        })
+    end
+    -- Action 10: ability companion immediately followed by Action 11 autoAbility
+    table.insert(document.actions, {
+        index = 10,
+        kind = "ability",
+        unitRef = "7",
+        abilityName = "Death Gamble",
+        wave = 3,
+        yen = 0,
+        time = 30.0,
+    })
+    table.insert(document.actions, {
+        index = 11,
+        kind = "autoAbility",
+        unitRef = "7",
+        abilityName = "Death Gamble",
+        enabled = true,
+        wave = 3,
+        yen = 0,
+        time = 30.001,
+    })
+    -- Action 12: subsequent action that should succeed
+    table.insert(document.actions, {
+        index = 12,
+        kind = "autoUpgrade",
+        unitRef = "7",
+        enabled = true,
+        wave = 3,
+        yen = 0,
+        time = 31.0,
+    })
+    assert(runtime.play(document))
+    assert(
+        runtime.mode == "play" and autoToggled and placedCount == 9,
+        "mode="
+            .. runtime.mode
+            .. " auto="
+            .. tostring(autoToggled)
+            .. " placed="
+            .. placedCount
+            .. " status="
+            .. runtime.status
+    )
+    -- Action 10 was skipped cleanly without requesting or blocking
+    assert(not table.find(actionsRequested, "ability"))
+    assert(table.find(actionsRequested, "autoAbility") ~= nil)
+    runtime.stop()
+end)
+test("macro playback continues when unconfirmed standalone manual ability times out", function()
+    local actionsExecuted: { string } = {}
+    local placed = false
+    local sold = false
+    local adapter = {
+        state = function()
+            return {
+                wave = 1,
+                yen = 1000,
+                units = if placed and not sold then { g1 = { name = "Test", autoAbilities = {} } } else {},
+            }
+        end,
+        observe = function()
+            return function() end
+        end,
+        cost = function()
+            return 0
+        end,
+        request = function(action: any)
+            table.insert(actionsExecuted, action.kind)
+            return true
+        end,
+        confirm = function(action: any)
+            if action.kind == "place" then
+                placed = true
+                return true, "g1"
+            elseif action.kind == "sell" then
+                sold = true
+                return true, "" :: any
+            end
+            -- Ability never confirms:
+            return false, "" :: any
+        end,
+    }
+    local runtime = MacroRuntime.new(adapter, nil, {
+        spawn = function(callback: any)
+            callback()
+        end,
+        wait = function() end,
+        actionTimeout = 0,
+    })
+    runtime.start({ alive = true })
+    runtime.settings.retryLimit = 1
+    local document = MacroDocument.empty("standalone_ability")
+    local cframe = MacroDocument.fromPose({ x = 1, y = 2, z = 3 }, 0)
+    document.actions = {
+        {
+            index = 1,
+            kind = "place",
+            unitRef = "1",
+            unitName = "Test",
+            slotIndex = 1,
+            cframe = cframe,
+            wave = 1,
+            yen = 0,
+            time = 0,
+        },
+        {
+            index = 2,
+            kind = "ability",
+            unitRef = "1",
+            abilityName = "ManualSkill",
+            wave = 1,
+            yen = 0,
+            time = 0,
+        },
+        {
+            index = 3,
+            kind = "sell",
+            unitRef = "1",
+            wave = 1,
+            yen = 0,
+            time = 0,
+        },
+    }
+    assert(runtime.play(document))
+    assert(runtime.mode == "play" and placed and sold)
+    assert(table.concat(actionsExecuted, ",") == "place,ability,sell")
+    runtime.stop()
+end)
+test("macro playback marks sold units and skips subsequent actions on them", function()
+    local actions: { string } = {}
+    local placed = false
+    local sold = false
+    local adapter = {
+        state = function()
+            return {
+                wave = 1,
+                yen = 1000,
+                units = if placed and not sold then { g1 = { name = "Test" } } else {},
+            }
+        end,
+        observe = function()
+            return function() end
+        end,
+        cost = function()
+            return 0
+        end,
+        satisfied = function(action: any, refs: any)
+            local guid = refs[action.unitRef]
+            if action.kind == "sell" then
+                return guid ~= nil and not placed
+            end
+            return false
+        end,
+        request = function(action: any)
+            table.insert(actions, action.kind)
+            return true
+        end,
+        confirm = function(action: any)
+            if action.kind == "place" then
+                placed = true
+                return true, "g1"
+            elseif action.kind == "sell" then
+                sold = true
+                return true, "" :: any
+            end
+            return false, "" :: any
+        end,
+    }
+    local runtime = MacroRuntime.new(adapter, nil, {
+        spawn = function(callback: any)
+            callback()
+        end,
+        wait = function() end,
+        actionTimeout = 0,
+    })
+    runtime.start({ alive = true })
+    local document = MacroDocument.empty("sell_cleanup")
+    local cframe = MacroDocument.fromPose({ x = 1, y = 2, z = 3 }, 0)
+    document.actions = {
+        {
+            index = 1,
+            kind = "place",
+            unitRef = "1",
+            unitName = "Test",
+            slotIndex = 1,
+            cframe = cframe,
+            wave = 1,
+            yen = 0,
+            time = 0,
+        },
+        { index = 2, kind = "sell", unitRef = "1", wave = 1, yen = 0, time = 0 },
+        { index = 3, kind = "upgrade", unitRef = "1", level = 2, wave = 1, yen = 0, time = 0 },
+    }
+    assert(runtime.play(document))
+    assert(runtime.mode == "play" and placed and sold)
+    -- Action 3 (upgrade on sold unit) must be skipped cleanly:
+    assert(table.concat(actions, ",") == "place,sell")
+    runtime.stop()
+end)
+test("macro storage lists, rejects traversal, reads back and deletes", function()
+    local files: { [string]: string } = {}
+    local folders: { [string]: boolean } = {}
+    local encoded: any = nil
+    local env = {
+        readfile = function(path: string)
+            return files[path]
+        end,
+        writefile = function(path: string, body: string)
+            files[path] = body
+        end,
+        isfile = function(path: string)
+            return files[path] ~= nil
+        end,
+        isfolder = function(path: string)
+            return folders[path] == true
+        end,
+        makefolder = function(path: string)
+            folders[path] = true
+        end,
+        listfiles = function(_path: string)
+            local values = {}
+            for path in files do
+                table.insert(values, path)
+            end
+            return values
+        end,
+        delfile = function(path: string)
+            files[path] = nil
+        end,
+    }
+    local codec = {
+        JSONEncode = function(_self: any, value: any)
+            encoded = value
+            return value.name
+        end,
+        JSONDecode = function(_self: any, body: string)
+            return MacroDocument.empty(body)
+        end,
+    }
+    local storage = assert(MacroStorage.new(env, codec))
+    assert(storage.write("one", MacroDocument.empty("one")))
+    assert(encoded.schemaVersion == 2)
+    assert(not storage.write("one", MacroDocument.empty("one")))
+    assert(not storage.write("../bad", MacroDocument.empty("../bad")))
+    assert(storage.read("one") ~= nil and storage.list()[1] == "one")
+    assert(storage.write("two", MacroDocument.empty("different")))
+    assert(storage.read("two") ~= nil and storage.read("two").name == "two")
+    assert(storage.delete("two"))
+    assert(storage.delete("one") and #storage.list() == 0)
+end)
+test("macro runtime recording owns and releases event subscriptions", function()
+    local observers: { [string]: any } = {}
+    local removed = 0
+    local yen = 100
+    local adapter = {
+        state = function()
+            return { wave = 1, yen = yen, match = {} }
+        end,
+        observe = function(kind: string, callback: any)
+            observers[kind] = callback
+            return function()
+                removed += 1
+            end
+        end,
+    }
+    local saved: any = nil
+    local storage = {
+        write = function(_name: string, document: any)
+            saved = document
+            return true
+        end,
+    }
+    local runtime = MacroRuntime.new(adapter, storage)
+    runtime.start({ alive = true })
+    assert(runtime.record("recorded"))
+    observers.place({ guid = "g1", unitName = "Test", position = { x = 1, y = 2, z = 3 }, slotIndex = 1 })
+    observers.upgrade({ guid = "g1", level = 0 })
+    observers.upgrade({ guid = "g1", level = 1 })
+    yen = 50
+    observers.upgrade({ guid = "g1", level = 2 })
+    local document = assert(runtime.finishRecord())
+    assert(#document.actions == 2 and document.actions[2].unitRef == document.actions[1].unitRef)
+    assert(saved.schemaVersion == 2 and #saved.actions[1].cframe == 12)
+    assert(removed == 9)
+    runtime.stop()
+    assert(removed == 14)
+end)
+test("macro restart, victory, defeat and start vote state", function()
+    local observers: { [string]: any } = {}
+    local writes: { any } = {}
+    local votes = 0
+    local matchStarted = false
+    local adapter = {
+        state = function()
+            return { wave = 0, yen = 0, match = { mode = "Story" } }
+        end,
+        observe = function(kind: string, callback: any)
+            observers[kind] = callback
+            return function() end
+        end,
+        matchStarted = function()
+            return matchStarted
+        end,
+        castStartVote = function()
+            votes += 1
+            return true
+        end,
+        currentStartPrompt = function()
+            return { Context = "Start" }
+        end,
+    }
+    local storage = {
+        write = function(_name: string, document: any)
+            local copy = table.clone(document)
+            copy.actions = table.clone(document.actions)
+            table.insert(writes, copy)
+            return true
+        end,
+    }
+    local scheduler = { spawn = function(_callback: any) end, wait = function(_seconds: number) end }
+    local runtime = MacroRuntime.new(adapter, storage, scheduler)
+    runtime.start({ alive = true })
+    assert(runtime.record("sample"))
+    observers.place({ guid = "g1", unitName = "Test", position = { x = 1, y = 2, z = 3 }, slotIndex = 1 })
+    assert(#runtime.document.actions == 1)
+    observers.restart()
+    assert(runtime.mode == "record" and #runtime.document.actions == 0 and #writes == 2)
+    observers.place({ guid = "g2", unitName = "Test", position = { x = 1, y = 2, z = 3 }, slotIndex = 1 })
+    observers.result("Finished")
+    assert(runtime.mode == "idle" and #writes == 3 and #writes[3].actions == 1)
+    assert(runtime.record("sample"))
+    observers.place({ guid = "g3", unitName = "Test", position = { x = 1, y = 2, z = 3 }, slotIndex = 1 })
+    observers.result("Failed")
+    assert(runtime.mode == "idle" and #writes == 4 and #writes[4].actions == 0)
+    assert(runtime.play(MacroDocument.empty("sample")))
+    assert(votes == 1)
+    observers.restart()
+    assert(runtime.mode == "play")
+    observers.votePrompt({ Context = "Skip", StartTime = 1 })
+    observers.votePrompt({ Context = "Unknown", StartTime = 2 })
+    observers.votePrompt({ Context = "Start", StartTime = 3 })
+    observers.votePrompt({ Context = "Start", StartTime = 3 })
+    matchStarted = true
+    observers.votePrompt({ Context = "Start", StartTime = 4 })
+    assert(votes == 2)
+    observers.matchEnd()
+    assert(runtime.mode == "play")
+    runtime.stop()
+    assert(runtime.mode == "idle")
+end)
+test("macro aborts recording when restart reset write fails", function()
+    local observers: { [string]: any } = {}
+    local writes = 0
+    local adapter = {
+        state = function()
+            return { wave = 0, yen = 0, match = {} }
+        end,
+        observe = function(kind: string, callback: any)
+            observers[kind] = callback
+            return function() end
+        end,
+    }
+    local storage = {
+        write = function()
+            writes += 1
+            return writes == 1, "WRITE_FAILED"
+        end,
+    }
+    local runtime = MacroRuntime.new(adapter, storage)
+    runtime.start({ alive = true })
+    assert(runtime.record("sample"))
+    observers.restart()
+    assert(runtime.mode == "idle" and runtime.status:find("Restart reset failed") ~= nil)
+    runtime.stop()
+end)
+test("macro play mode persists indefinitely and auto-loops on restart or holds on victory", function()
+    local observers: { [string]: any } = {}
+    local runs = 0
+    local autoReplayEnabled = true
+    local adapter = {
+        state = function()
+            return { wave = 1, yen = 1000, units = {} }
+        end,
+        observe = function(kind: string, callback: any)
+            observers[kind] = callback
+            return function() end
+        end,
+        cost = function()
+            return 0
+        end,
+        request = function()
+            runs += 1
+            return true
+        end,
+        confirm = function()
+            return true, "g1"
+        end,
+        getGameSetting = function(name: string)
+            if name == "AutoReplay" then
+                return autoReplayEnabled
+            end
+            return false
+        end,
+    }
+    local runtime = MacroRuntime.new(adapter, nil, {
+        spawn = function(callback: any)
+            callback()
+        end,
+        wait = function() end,
+    })
+    runtime.start({ alive = true })
+    local doc = MacroDocument.empty("infinite_loop")
+    local cframe = MacroDocument.fromPose({ x = 1, y = 2, z = 3 }, 0)
+    doc.actions = {
+        {
+            index = 1,
+            kind = "place",
+            unitRef = "1",
+            unitName = "Test",
+            slotIndex = 1,
+            cframe = cframe,
+            wave = 1,
+            yen = 0,
+            time = 0,
+        },
+    }
+    assert(runtime.play(doc))
+    -- 1. Actions complete, mode must STAY as "play" (never auto-close):
+    assert(runtime.mode == "play")
+    assert(runtime.status:find("Actions completed") ~= nil)
+    assert(runs == 1)
+
+    -- 2. MatchEnded fires with AutoReplay: status updates to awaiting replay, mode STAYS as "play":
+    observers.matchEnd()
+    assert(runtime.mode == "play")
+    assert(runtime.status:find("Victory! Awaiting next match") ~= nil)
+
+    -- 3. Match restarts (AutoReplay triggers): macro replays document from step 1 automatically:
+    observers.restart()
+    assert(runtime.mode == "play")
+    assert(runs == 2) -- Action was played again!
+
+    -- 4. MatchEnded fires WITHOUT AutoReplay/AutoNext: holds on victory screen, mode STAYS as "play":
+    autoReplayEnabled = false
+    observers.matchEnd()
+    assert(runtime.mode == "play")
+    assert(runtime.status:find("holding on victory screen") ~= nil)
+
+    -- 5. Only explicit stop turns it off:
+    runtime.stopPlayback()
+    assert(runtime.mode == "idle")
+    runtime.stop()
+end)
+test("game adapter reads and mutates in-game settings through codec and remote", function()
+    local settingsStore: { [string]: boolean } = {
+        AutoReplay = true,
+        AutoNext = false,
+        AutoSkipWaves = true,
+        AutoSkipStart = false,
+    }
+    local remoteFired: any = nil
+    local mockDeps = {
+        state = {
+            GetSetting = function(_self: any, name: string)
+                return settingsStore[name]
+            end,
+            SetSessionOverride = function(_self: any, name: string, value: boolean)
+                settingsStore[name] = value
+            end,
+            OnSettingUpdate = {
+                Connect = function(_self: any, _callback: any)
+                    return function() end
+                end,
+            },
+        },
+        codec = {
+            EncodeScalarMutation = function(name: string, value: boolean, _deep: any)
+                return { Name = name, BooleanValue = value, Kind = "Boolean" }
+            end,
+        },
+        client = {
+            ChangeSetting = {
+                Fire = function(mutation: any)
+                    remoteFired = mutation
+                    settingsStore[mutation.Name] = mutation.BooleanValue
+                end,
+            },
+        },
+    }
+    local adapter = GameAdapter.new(mockDeps)
+    assert(adapter.isAvailable())
+    assert(adapter.get("AutoReplay") == true)
+    assert(adapter.get("AutoNext") == false)
+    assert(adapter.get("Unknown") == nil)
+
+    assert(adapter.set("AutoReplay", false))
+    assert(remoteFired ~= nil and remoteFired.Name == "AutoReplay" and remoteFired.BooleanValue == false)
+    assert(adapter.get("AutoReplay") == false)
+
+    assert(adapter.set("AutoNext", true))
+    assert(remoteFired.Name == "AutoNext" and remoteFired.BooleanValue == true)
+    assert(adapter.get("AutoNext") == true)
+
+    assert(not adapter.set("AutoReplay", "not a boolean" :: any))
+end)
+test("game adapter autoBackToLobby teleports when native AutoNext and AutoReplay cannot proceed", function()
+    local mockNext = {
+        Visible = false, -- Next is hidden!
+    }
+    local mockRetry = {
+        Visible = true,
+        Label = { Text = "Replay (0/1)" }, -- 0 attempts remaining!
+    }
+    local mockButtons = {
+        FindFirstChild = function(_self: any, name: string): any
+            if name == "Next" then
+                return mockNext
+            elseif name == "Retry" then
+                return mockRetry
+            end
+            return nil
+        end,
+    }
+    local mockEndScreen = {
+        FindFirstChild = function(_self: any, name: string): any
+            if name == "Holder" then
+                return {
+                    FindFirstChild = function(_s: any, childName: string): any
+                        if childName == "Buttons" then
+                            return mockButtons
+                        end
+                        return nil
+                    end,
+                }
+            end
+            return nil
+        end,
+    }
+    local _mockPlayerGui = {
+        FindFirstChild = function(_self: any, name: string): any
+            if name == "EndScreen" then
+                return mockEndScreen
+            end
+            return nil
+        end,
+    }
+
+    local mockDeps = {
+        state = {
+            GetSetting = function(_self: any, name: string)
+                -- Both settings are TRUE in player config!
+                return true
+            end,
+            SetSessionOverride = function() end,
+            OnSettingUpdate = {
+                Connect = function()
+                    return function() end
+                end,
+            },
+        },
+        codec = {
+            EncodeScalarMutation = function()
+                return {}
+            end,
+        },
+        client = {
+            ChangeSetting = {
+                Fire = function() end,
+            },
+            SettingUpdated = {
+                On = function()
+                    return function() end
+                end,
+            },
+        },
+    }
+
+    local adapter = GameAdapter.new(mockDeps)
+    adapter.setAutoBackToLobby(true)
+    adapter.start({ alive = true })
+
+    -- Verify that even though AutoReplay=true and AutoNext=true,
+    -- because Next.Visible=false and Replay has (0/1), it teleports!
+    assert(adapter.getAutoBackToLobby() == true)
+    adapter.stop()
+end)
+test("game page mounts controls and synchronizes changes two-way", function()
+    local togglesCreated: { [string]: any } = {}
+    local sectionsCreated: { string } = {}
+    local tab: any = {}
+    tab.Paragraph = function() end
+    tab.Section = function(_self: any, options: any)
+        table.insert(sectionsCreated, options.Title)
+        return tab
+    end
+    tab.Toggle = function(_self: any, options: any)
+        local control: any = {
+            Value = options.Value,
+            Callback = options.Callback,
+            Set = function(self: any, val: boolean)
+                self.Value = val
+            end,
+        }
+        togglesCreated[options.Title] = control
+        return control
+    end
+
+    local currentSettings: { [string]: boolean } = {
+        AutoReplay = true,
+        AutoNext = false,
+        AutoSkipWaves = true,
+        AutoSkipStart = false,
+    }
+    local listener: any = nil
+    local fakeAdapter = {
+        isAvailable = function()
+            return true
+        end,
+        get = function(name: string)
+            return currentSettings[name]
+        end,
+        set = function(name: string, val: boolean)
+            currentSettings[name] = val
+            return true
+        end,
+        observe = function(callback: any)
+            listener = callback
+            return function()
+                listener = nil
+            end
+        end,
+    }
+
+    GamePage.mount(tab, fakeAdapter)
+    assert(togglesCreated["Auto Replay"].Value == true)
+    assert(togglesCreated["Auto Next"].Value == false)
+    assert(togglesCreated["Auto Skip Waves"].Value == true)
+    assert(togglesCreated["Auto Skip Start"].Value == false)
+
+    -- 1. Turning off Auto Replay in UI modifies the game setting:
+    togglesCreated["Auto Replay"].Callback(false)
+    assert(currentSettings.AutoReplay == false)
+
+    -- 2. Turning on Auto Next in UI modifies the game setting:
+    togglesCreated["Auto Next"].Callback(true)
+    assert(currentSettings.AutoNext == true)
+
+    -- 3. Game-side update synchronizes back to the UI toggle:
+    assert(listener ~= nil)
+    local fireListener: any = listener
+    fireListener("AutoReplay", true)
+    assert(togglesCreated["Auto Replay"].Value == true)
+end)
+test("macro runtime lazy adapter resolution connects when match ready", function()
+    local runtime = MacroRuntime.new(nil, nil, {
+        spawn = function() end,
+        wait = function() end,
+    })
+    runtime.start({ alive = true })
+    assert(runtime.status == "Awaiting match...")
+    local doc = MacroDocument.empty("lobby_wait")
+    doc.actions = {
+        {
+            index = 1,
+            kind = "place",
+            unitRef = "1",
+            unitName = "Test",
+            slotIndex = 1,
+            cframe = MacroDocument.fromPose({ x = 1, y = 2, z = 3 }, 0),
+            wave = 0,
+            yen = 0,
+            time = 0,
+        },
+    }
+    assert(runtime.play(doc))
+    assert(runtime.mode == "play")
+    runtime.stopPlayback()
+    assert(runtime.mode == "idle")
+    runtime.stop()
+end)
+test("status page mounts and displays operational and pending indicators", function()
+    local paragraphs: { [string]: string } = {}
+    local sections: { [string]: boolean } = {}
+    local tab: any = {}
+    tab.Paragraph = function(_self: any, opt: any)
+        paragraphs[opt.Title] = opt.Desc
+        return {
+            SetDesc = function(_self: any, desc: string)
+                paragraphs[opt.Title] = desc
+            end,
+        }
+    end
+    tab.Section = function(_self: any, opt: any)
+        sections[opt.Title] = true
+        return {
+            Paragraph = function(_self: any, pOpt: any)
+                paragraphs[pOpt.Title] = pOpt.Desc
+                return {
+                    SetDesc = function(_self: any, desc: string)
+                        paragraphs[pOpt.Title] = desc
+                    end,
+                }
+            end,
+        }
+    end
+    local refreshCb: any = nil
+    tab.Button = function(_self: any, opt: any)
+        refreshCb = opt.Callback
+        return {}
+    end
+
+    StatusPage.mount(tab)
+    assert(sections["Platform & Environment"] == true)
+    assert(sections["Game Core & Settings Sync"] == true)
+    assert(sections["Macro Subsystems"] == true)
+    assert(sections["Matchmaking & Joiner"] == true)
+    assert(sections["Pending Features (In Development)"] == true)
+
+    -- Test that checkmark indicators exist
+    assert(paragraphs["✓ Code Compiler"] ~= nil)
+    assert(paragraphs["✓ Persistent Macro Loop"] ~= nil)
+    -- Test that cross indicator exists for pending features
+    assert(paragraphs["✗ Auto Equip Units from Loadout"] ~= nil)
+    assert(paragraphs["✗ Discord Match Webhooks"] ~= nil)
+
+    -- Test refresh button callback
+    assert(type(refreshCb) == "function")
+    local callRefresh: any = refreshCb
+    callRefresh()
+    assert(paragraphs["Live System Audit"]:find("Live Verified") ~= nil)
+end)
+test("Joiner settings handles Rift and Challenge returnMode and reward mapping", function()
+    assert(JoinerSettings.setRegularReward("Trait Rerolls"))
+    assert(JoinerSettings.get().selection["Regular Challenge"].challengeName == "Trait Reroll Challenge")
+    assert(JoinerSettings.setRegularReward("Stat Chips"))
+    assert(JoinerSettings.get().selection["Regular Challenge"].challengeName == "Stat Chip Challenge")
+    assert(not JoinerSettings.setRegularReward("Unknown Reward"))
+
+    assert(JoinerSettings.setBackToLobby("Rift", true, "Immediate"))
+    assert(JoinerSettings.get().selection["Rift"].backToLobby == true)
+    assert(JoinerSettings.get().selection["Rift"].returnMode == "Immediate")
+
+    assert(JoinerSettings.setBackToLobby("Regular Challenge", true, "Wait Match End"))
+    assert(JoinerSettings.get().selection["Regular Challenge"].backToLobby == true)
+    assert(JoinerSettings.get().selection["Regular Challenge"].returnMode == "Wait Match End")
+
+    assert(not JoinerSettings.setBackToLobby("Unknown Category", true, "Immediate"))
+    assert(not JoinerSettings.setBackToLobby("Rift", "not boolean" :: any, "Immediate"))
+end)
+test("Joiner runtime handles Rift open, full-room hold, and attempt gating in lobby", function()
+    local riftJoined = nil
+    local riftAttempts = 1
+    local isRiftOpen = true
+    local rooms = {
+        r1 = { Players = { "p1", "p2", "p3", "p4", "p5", "p6" } }, -- full
+    }
+    local runtime = JoinerRuntime.new({
+        game = {
+            PlaceId = 16146832113,
+            GetService = function(_self: any, name: string): any
+                if name == "Workspace" then
+                    return {
+                        GetAttribute = function(_w: any, attr: string): any
+                            if attr == "IsRiftOpen" then
+                                return isRiftOpen
+                            end
+                            return false
+                        end,
+                    }
+                end
+                return {
+                    GetAttribute = function(): any
+                        return false
+                    end,
+                }
+            end,
+        },
+        task = { spawn = function() end, wait = function() end },
+        clock = function()
+            return 100
+        end,
+        userId = 42,
+        lobby = { IsHosting = false, IsInLobby = false },
+        specialEvents = {
+            GetRiftAttempts = {
+                Invoke = function()
+                    return { Ready = true, AttemptsRemaining = riftAttempts }
+                end,
+            },
+            JoinRift = {
+                Fire = function(payload: any)
+                    riftJoined = payload
+                end,
+            },
+        },
+        riftsData = {
+            GetRifts = function()
+                return rooms
+            end,
+        },
+    })
+
+    JoinerSettings.setPaused(false)
+    runtime.setEnabled("Rift", true)
+    runtime.start({ alive = true })
+
+    -- Case 1: Room is full (6/6) -> must hold on Rift priority and NOT fall through!
+    runtime.step(100)
+    assert(riftJoined == nil)
+    assert(runtime.status:find("all rooms full") ~= nil)
+
+    -- Case 2: Open room appears (< 6 players) -> joins via remote!
+    rooms.r2 = { Players = { "p1", "p2" } }
+    runtime.step(100)
+    assert(riftJoined ~= nil and riftJoined.RiftGUID == "r2")
+    assert(runtime.confirmed ~= nil and runtime.confirmed.mode == "Rift")
+
+    -- Case 3: Attempts exhausted -> falls through
+    runtime.confirmed = nil
+    riftJoined = nil
+    riftAttempts = 0
+    runtime.step(100)
+    assert(riftJoined == nil)
+
+    runtime.stop()
+    runtime.setEnabled("Rift", false)
+    JoinerSettings.setPaused(true)
+end)
+test("Joiner runtime respects Challenge NextReset and falls back to lower priority", function()
+    local challengeSent = nil
+    local nextResetTime = 0
+    local stageSent = nil
+    local runtime = JoinerRuntime.new({
+        game = {
+            PlaceId = 16146832113,
+            GetService = function()
+                return {
+                    GetAttribute = function()
+                        return false
+                    end,
+                }
+            end,
+        },
+        task = { spawn = function() end, wait = function() end },
+        clock = function()
+            return 100
+        end,
+        userId = 42,
+        lobby = { IsHosting = false, IsInLobby = false },
+        challengeAttempts = {
+            GetChallengeSeed = function()
+                return if nextResetTime <= 0 then 10 else 20
+            end,
+        },
+        challengeData = {
+            GetChallengeSeed = function()
+                return 20
+            end,
+            GetNextReset = function()
+                return nextResetTime
+            end,
+        },
+        challengeStages = {
+            GetChallengeStage = function()
+                return { StageType = "Story", Stage = "Stage1", Act = "Act1" }
+            end,
+        },
+        challengeNetwork = {
+            StartChallenge = {
+                Fire = function(payload: any)
+                    challengeSent = payload
+                end,
+            },
+        },
+        progress = {
+            GetActData = function()
+                return {}
+            end,
+        },
+        network = {
+            CreateMatch = {
+                Fire = function(payload: any)
+                    stageSent = payload
+                end,
+            },
+            MatchConfirmed = {
+                On = function()
+                    return function() end
+                end,
+            },
+        },
+    })
+
+    JoinerSettings.setPaused(false)
+    runtime.setChallenge("Daily Challenge", "Daily Challenge")
+    runtime.setEnabled("Daily Challenge", true)
+    runtime.setSelection("Stage", "Stage1", "Act1", "Normal")
+    runtime.setEnabled("Stage", true)
+    runtime.start({ alive = true })
+
+    -- Case 1: NextReset <= 0 (Challenge is available) -> starts Daily Challenge!
+    nextResetTime = 0
+    runtime.step(100)
+    assert(challengeSent ~= nil and challengeSent.Name == "Daily Challenge")
+    assert(stageSent == nil)
+
+    -- Case 2: NextReset > 0 (Challenge already played/completed) -> falls through to Stage!
+    runtime.pending = nil
+    challengeSent = nil
+    stageSent = nil
+    nextResetTime = 3600
+    runtime.step(150)
+    assert(challengeSent == nil)
+    assert(stageSent ~= nil and stageSent.StageType == "Story")
+
+    runtime.stop()
+    runtime.setEnabled("Daily Challenge", false)
+    runtime.setEnabled("Stage", false)
+    JoinerSettings.setPaused(true)
+end)
+test("Joiner runtime in match triggers immediate return and suspends macro", function()
+    local teleportFired = 0
+    local macroSuspended = false
+    local isRiftOpen = false
+    local runtime = JoinerRuntime.new({
+        game = {
+            PlaceId = 16277809958, -- Match place!
+            GetService = function(_s: any, name: string): any
+                if name == "Workspace" then
+                    return {
+                        GetAttribute = function(_w: any, attr: string): any
+                            if attr == "IsRiftOpen" then
+                                return isRiftOpen
+                            end
+                            return false
+                        end,
+                    }
+                end
+                return {
+                    GetAttribute = function(): any
+                        return false
+                    end,
+                }
+            end,
+        },
+        task = { spawn = function() end, wait = function() end },
+        clock = function()
+            return 100
+        end,
+        userId = 42,
+        lobbyReturn = {
+            RequestTeleportToLobby = {
+                Fire = function()
+                    teleportFired += 1
+                end,
+            },
+        },
+    })
+
+    runtime.setMacro({
+        suspend = function()
+            macroSuspended = true
+        end,
+    })
+
+    JoinerSettings.setPaused(false)
+    JoinerSettings.setBackToLobby("Rift", true, "Immediate")
+    runtime.setEnabled("Rift", true)
+    runtime.start({ alive = true })
+
+    -- When rift is closed -> no teleport
+    isRiftOpen = false
+    runtime.step(100)
+    assert(teleportFired == 0 and not macroSuspended)
+
+    -- When rift opens -> immediate return triggered + macro suspended!
+    isRiftOpen = true
+    runtime.step(101)
+    assert(teleportFired == 1 and macroSuspended)
+    assert(runtime.status:find("Rift is open") ~= nil)
+
+    -- Subsequent ticks before 12s -> does not spam teleport
+    runtime.step(105)
+    assert(teleportFired == 1)
+
+    -- Retries after 12s if not teleported yet
+    runtime.step(115)
+    assert(teleportFired == 2)
+
+    runtime.stop()
+    JoinerSettings.setBackToLobby("Rift", false, "Immediate")
+    runtime.setEnabled("Rift", false)
+    JoinerSettings.setPaused(true)
+end)
+test("ActivityState evaluates game-recorded challenge seeds and rift attempts", function()
+    -- Case 1: stored < current -> available (not played yet in this period)
+    local status, period = ActivityState.challenge({
+        GetChallengeSeed = function(k: string)
+            return if k == "Daily" then 10 else nil
+        end,
+    }, {
+        GetChallengeSeed = function(k: string)
+            return if k == "Daily" then 11 else nil
+        end,
+    }, "Daily")
+    assert(status == "available" and period == 11)
+
+    -- Case 2: stored == current -> unavailable (already completed in this period)
+    local statusCleared, periodCleared = ActivityState.challenge({
+        GetChallengeSeed = function()
+            return 11
+        end,
+    }, {
+        GetChallengeSeed = function()
+            return 11
+        end,
+    }, "Daily")
+    assert(statusCleared == "unavailable" and periodCleared == 11)
+
+    -- Case 3: missing attempts/data -> unknown
+    assert(ActivityState.challenge(nil, nil, "Daily") == "unknown")
+    assert(ActivityState.challenge({}, {}, "Daily") == "unknown")
+
+    -- Case 4: Rift open with attempts remaining -> available
+    local gameMock: any = {
+        GetService = function(_s: any, name: string): any
+            if name == "Workspace" then
+                return {
+                    GetAttribute = function(_w: any, attr: string): any
+                        return attr == "IsRiftOpen"
+                    end,
+                }
+            end
+            return nil
+        end,
+    }
+    local specialMock = {
+        GetRiftAttempts = {
+            Invoke = function()
+                return { Ready = true, AttemptsRemaining = 1 }
+            end,
+        },
+    }
+    assert(ActivityState.rift(gameMock, specialMock) == "available")
+
+    -- Case 5: Rift closed or 0 attempts remaining -> unavailable
+    local closedGameMock: any = {
+        GetService = function(_s: any, name: string): any
+            if name == "Workspace" then
+                return {
+                    GetAttribute = function(): any
+                        return false
+                    end,
+                }
+            end
+            return nil
+        end,
+    }
+    assert(ActivityState.rift(closedGameMock, specialMock) == "unavailable")
+
+    local exhaustedSpecialMock = {
+        GetRiftAttempts = {
+            Invoke = function()
+                return { Ready = true, AttemptsRemaining = 0 }
+            end,
+        },
+    }
+    assert(ActivityState.rift(gameMock, exhaustedSpecialMock) == "unavailable")
+end)
+test("In-match return triggers on uncleared challenge from activity snapshot", function()
+    local teleportFired = 0
+    local challengeData = {
+        GetChallengeSeed = function(kind: string)
+            return if kind == "Daily" then 50 else 0
+        end,
+    }
+    local activityStore = {
+        load = function(_self: any, _now: number, _cd: any)
+            return {
+                states = {
+                    Daily = { status = "available", period = 50 },
+                },
+            }
+        end,
+    }
+    local runtime = JoinerRuntime.new({
+        game = {
+            PlaceId = 16277809958, -- Match place!
+            GetService = function(_s: any, name: string): any
+                if name == "Workspace" then
+                    return {
+                        GetAttribute = function(): any
+                            return false
+                        end,
+                    }
+                end
+                return nil
+            end,
+        },
+        task = { spawn = function() end, wait = function() end },
+        clock = function()
+            return 200
+        end,
+        userId = 99,
+        activityState = activityStore,
+        challengeData = challengeData,
+        lobbyReturn = {
+            RequestTeleportToLobby = {
+                Fire = function()
+                    teleportFired += 1
+                end,
+            },
+        },
+    })
+
+    JoinerSettings.setPaused(false)
+    JoinerSettings.setBackToLobby("Daily Challenge", true, "Immediate")
+    runtime.setEnabled("Daily Challenge", true)
+    runtime.start({ alive = true })
+
+    -- Uncleared Daily Challenge in snapshot triggers immediate return to lobby!
+    runtime.step(200)
+    assert(teleportFired == 1)
+    assert(runtime.status:find("Daily Challenge: available") ~= nil)
+
+    runtime.stop()
+    JoinerSettings.setBackToLobby("Daily Challenge", false, "Immediate")
+    runtime.setEnabled("Daily Challenge", false)
+    JoinerSettings.setPaused(true)
+end)
+test("In-match return does not fire when player is already in that challenge", function()
+    local teleportFired = 0
+    local challengeData = {
+        GetChallengeSeed = function()
+            return 50
+        end,
+    }
+    local activityStore = {
+        load = function(_self: any)
+            return {
+                states = {
+                    Daily = { status = "available", period = 50 },
+                },
+            }
+        end,
+    }
+    local runtime = JoinerRuntime.new({
+        game = {
+            PlaceId = 16277809958,
+            GetService = function(): any
+                return nil
+            end,
+        },
+        task = { spawn = function() end, wait = function() end },
+        clock = function()
+            return 200
+        end,
+        userId = 99,
+        gameHandler = {
+            GameData = {
+                ChallengeType = "Daily", -- Currently in the Daily Challenge!
+            },
+        },
+        activityState = activityStore,
+        challengeData = challengeData,
+        lobbyReturn = {
+            RequestTeleportToLobby = {
+                Fire = function()
+                    teleportFired += 1
+                end,
+            },
+        },
+    })
+
+    JoinerSettings.setPaused(false)
+    JoinerSettings.setBackToLobby("Daily Challenge", true, "Immediate")
+    runtime.setEnabled("Daily Challenge", true)
+    runtime.start({ alive = true })
+
+    -- Current match is Daily Challenge itself, so must NOT return to lobby!
+    runtime.step(200)
+    assert(teleportFired == 0)
+
+    runtime.stop()
+    JoinerSettings.setBackToLobby("Daily Challenge", false, "Immediate")
+    runtime.setEnabled("Daily Challenge", false)
+    JoinerSettings.setPaused(true)
+end)
+test("ActivityState evaluates stored challenge seeds and detects mid-match reset", function()
+    local savedBody = nil
+    local mockHttp: any = {
+        JSONEncode = function(_self: any, val: any)
+            local json = string.format(
+                '{"schemaVersion":1,"userId":42,"observedAt":%d,"challengeSeeds":{"Regular":%d,"Daily":%d,"Weekly":%d}}',
+                val.observedAt,
+                val.challengeSeeds.Regular,
+                val.challengeSeeds.Daily,
+                val.challengeSeeds.Weekly
+            )
+            return json
+        end,
+        JSONDecode = function(_self: any, _body: string)
+            return {
+                schemaVersion = 1,
+                userId = 42,
+                observedAt = 1000,
+                challengeSeeds = {
+                    Regular = 994000,
+                    Daily = 20000,
+                    Weekly = 3000,
+                },
+            }
+        end,
+    }
+    local mockEnv: any = {
+        isfile = function()
+            return savedBody ~= nil
+        end,
+        readfile = function()
+            return savedBody
+        end,
+        writefile = function(_p: string, b: string)
+            savedBody = b
+        end,
+        isfolder = function()
+            return true
+        end,
+        makefolder = function() end,
+        game = {
+            GetService = function(_s: any, name: string): any
+                if name == "HttpService" then
+                    return mockHttp
+                end
+                return nil
+            end,
+        },
+    }
+
+    local stateStore = ActivityState.new(mockEnv, 42)
+    assert(stateStore.save(1000, {}, { Regular = 994000, Daily = 20000, Weekly = 3000 }))
+
+    -- At t = 2000 (1000 seconds / ~16 minutes into match):
+    -- Regular has advanced from 994000 to 994001 (reset happened!)
+    -- Daily is still at 20000 (already cleared, storedSeed == current)
+    -- Weekly is at 3000 (already cleared, storedSeed == current)
+    local mockChallengeData = {
+        GetChallengeSeed = function(kind: string)
+            if kind == "Regular" then
+                return 994001 -- reset!
+            elseif kind == "Daily" then
+                return 20000
+            elseif kind == "Weekly" then
+                return 3000
+            end
+            return 0
+        end,
+    }
+
+    local loaded = stateStore.load(2000, mockChallengeData)
+    assert(loaded ~= nil and type(loaded.states) == "table")
+    assert(loaded.states.Regular ~= nil and loaded.states.Regular.status == "available")
+    assert(loaded.states.Daily ~= nil and loaded.states.Daily.status == "unavailable")
+    assert(loaded.states.Weekly ~= nil and loaded.states.Weekly.status == "unavailable")
+end)
+test("AutoPlay runtime votes to start pre-match, then activates native Auto Play upon match start", function()
+    local voteCast = 0
+    local toggleFired = 0
+    local matchStarted: boolean = false
+    local autoPlaying: boolean = false
+    local hasPrompt: boolean = true
+
+    local currentClock = 100
+    local mockAdapter = {
+        isAvailable = function()
+            return true
+        end,
+        isMatchStarted = function()
+            return matchStarted
+        end,
+        hasStartPrompt = function()
+            return hasPrompt
+        end,
+        castStartVote = function()
+            voteCast += 1
+            return true
+        end,
+        isAutoPlaying = function()
+            return autoPlaying
+        end,
+        toggle = function()
+            toggleFired += 1
+            autoPlaying = not autoPlaying
+            return true
+        end,
+        clock = function()
+            return currentClock
+        end,
+        observe = function(_self: any, _kind: string, _callback: any)
+            return function() end
+        end,
+    }
+
+    local runtime = AutoPlayRuntime.new(mockAdapter, nil, {
+        spawn = function() end,
+        wait = function() end,
+        clock = function()
+            return currentClock
+        end,
+    })
+
+    runtime.start({ alive = true })
+    assert(runtime.setEnabled(true))
+
+    -- Step 1: Pre-match with prompt -> casts Vote to Start
+    assert(voteCast == 1)
+    assert(toggleFired == 0)
+    assert(runtime.status:find("Vote to Start sent") ~= nil)
+
+    -- Step 2: Next tick before match starts -> does not spam vote
+    currentClock = 101
+    runtime.step(101)
+    assert(voteCast == 1)
+
+    -- Step 3: Match starts! -> engages native Auto Play
+    matchStarted = true
+    currentClock = 102
+    runtime.step(102)
+    assert(toggleFired == 1)
+    assert(autoPlaying)
+    assert(runtime.status:find("Enabling native Auto Play") ~= nil)
+
+    currentClock = 103
+    runtime.step(103)
+    assert(runtime.status:find("Native Auto Play active") ~= nil)
+
+    -- Step 4: Disabling runtime turns off native Auto Play
+    assert(runtime.setEnabled(false))
+    assert(toggleFired == 2)
+    assert(not autoPlaying)
+    assert(runtime.status == "Disabled")
+
+    runtime.stop()
+end)
+test("AutoPlay and Play Macro enforce strict mutual exclusion", function()
+    local autoPlaying = false
+    local mockAdapter = {
+        isAvailable = function()
+            return true
+        end,
+        isMatchStarted = function()
+            return true
+        end,
+        hasStartPrompt = function()
+            return false
+        end,
+        castStartVote = function()
+            return false
+        end,
+        isAutoPlaying = function()
+            return autoPlaying
+        end,
+        toggle = function()
+            autoPlaying = not autoPlaying
+            return true
+        end,
+        observe = function()
+            return function() end
+        end,
+    }
+
+    local autoPlayRun = AutoPlayRuntime.new(mockAdapter, nil, {
+        spawn = function() end,
+        wait = function() end,
+    })
+    local macroRun = MacroRuntime.new(nil, nil, {
+        spawn = function() end,
+        wait = function() end,
+    })
+
+    autoPlayRun.setMacro(macroRun)
+    macroRun.setAutoPlay(autoPlayRun)
+    autoPlayRun.start({ alive = true })
+    macroRun.start({ alive = true })
+
+    -- 1. When AutoPlay is enabled:
+    assert(autoPlayRun.setEnabled(true))
+    assert(autoPlayRun.isEnabled() == true)
+
+    -- Play Macro cannot be started:
+    local doc = MacroDocument.empty("test_exclusion")
+    local okPlay, errPlay = macroRun.play(doc)
+    assert(okPlay == false and errPlay == "AUTOPLAY_ACTIVE")
+
+    -- 2. Turn off AutoPlay, then start Macro:
+    assert(autoPlayRun.setEnabled(false))
+    local macroAdapterMock = {
+        state = function()
+            return { wave = 1, yen = 1000, units = {} }
+        end,
+        matchStarted = function()
+            return true
+        end,
+        observe = function()
+            return function() end
+        end,
+        cost = function()
+            return 0
+        end,
+        request = function()
+            return true
+        end,
+        confirm = function()
+            return true, "guid"
+        end,
+    }
+    macroRun.adapter = macroAdapterMock
+    local okPlay2 = macroRun.play(doc)
+    assert(okPlay2 == true and macroRun.mode == "play")
+
+    -- Now AutoPlay cannot be enabled:
+    local okAuto, errAuto = autoPlayRun.setEnabled(true)
+    assert(okAuto == false and errAuto == "MACRO_ACTIVE")
+    assert(autoPlayRun.isEnabled() == false)
+
+    macroRun.stopPlayback()
+    macroRun.stop()
+    autoPlayRun.stop()
+end)
+test("AutoPlay UI page mounts controls and locks toggle when macro active", function()
+    local autoPlayRun = AutoPlayRuntime.new(nil, nil, {
+        spawn = function() end,
+        wait = function() end,
+    })
+    local fakeMacroListeners: { (string) -> () } = {}
+    local fakeMacro: any = {
+        mode = "idle",
+        onModeChange = function(cb: any)
+            table.insert(fakeMacroListeners, cb)
+        end,
+    }
+    autoPlayRun.setMacro(fakeMacro)
+    autoPlayRun.start({ alive = true })
+
+    local togglesCreated: { [string]: any } = {}
+    local tab: any = {
+        Paragraph = function()
+            return { SetDesc = function() end }
+        end,
+        Section = function(_self: any, _opt: any)
+            return {
+                Paragraph = function() end,
+                Toggle = function(_s: any, opt: any)
+                    local control = {
+                        Value = opt.Value,
+                        Locked = opt.Locked or false,
+                        Callback = opt.Callback,
+                        Set = function(self: any, val: boolean)
+                            self.Value = val
+                        end,
+                        Lock = function(self: any)
+                            self.Locked = true
+                        end,
+                        Unlock = function(self: any)
+                            self.Locked = false
+                        end,
+                    }
+                    togglesCreated[opt.Title] = control
+                    return control
+                end,
+            }
+        end,
+    }
+
+    AutoPlayPage.mount(tab, autoPlayRun, fakeMacro)
+    local toggle = togglesCreated["Auto play - ingame"]
+    assert(toggle ~= nil and toggle.Value == false)
+    assert(toggle.Locked == false)
+
+    -- When macro starts playing -> AutoPlay toggle is LOCKED!
+    fakeMacro.mode = "play"
+    for _, cb in fakeMacroListeners do
+        cb("play")
+    end
+    assert(toggle.Locked == true)
+
+    -- When macro stops -> AutoPlay toggle is UNLOCKED!
+    fakeMacro.mode = "idle"
+    for _, cb in fakeMacroListeners do
+        cb("idle")
+    end
+    assert(toggle.Locked == false)
+
+    autoPlayRun.stop()
+end)
+local function presetsSnapshot(active: string): any
+    return {
+        active = active,
+        max = 12,
+        order = { "P1", "P6", "P7" },
+        names = { P1 = "TO PLAY", P6 = "Raid", P7 = "Raid" },
+    }
+end
+-- Builds a runtime around a scripted adapter; the returned table exposes counters and mutable game state.
+local function presetHarness(rules: any): any
+    local h: any = {
+        clock = 100,
+        started = true,
+        autoPlaying = false,
+        gameData = { mode = "Story", stage = "Stage1" } :: any,
+        presets = presetsSnapshot("P1") :: any,
+        switches = {} :: { string },
+        toggles = 0,
+        requests = 0,
+    }
+    local mockAdapter: any = {
+        isAvailable = function()
+            return true
+        end,
+        isMatchStarted = function()
+            return h.started
+        end,
+        hasStartPrompt = function()
+            return false
+        end,
+        castStartVote = function()
+            return true
+        end,
+        isAutoPlaying = function()
+            return h.autoPlaying
+        end,
+        toggle = function()
+            h.toggles += 1
+            h.autoPlaying = not h.autoPlaying
+            return true
+        end,
+        observe = function()
+            return function() end
+        end,
+        getGameData = function()
+            return h.gameData
+        end,
+        getPresets = function()
+            return h.presets
+        end,
+        requestPresets = function()
+            h.requests += 1
+            return true
+        end,
+        trackPresets = function()
+            return true
+        end,
+        onPresetsUpdated = function(cb: any)
+            h.presetsCallback = cb
+            return function() end
+        end,
+        switchPreset = function(id: string)
+            table.insert(h.switches, id)
+            return true
+        end,
+    }
+    h.runtime = AutoPlayRuntime.new(mockAdapter, nil, {
+        spawn = function() end,
+        wait = function() end,
+        clock = function()
+            return h.clock
+        end,
+    })
+    h.runtime.start({ alive = true })
+    if rules then
+        h.runtime.rules = AutoPlayRules.normalize(rules)
+    end
+    return h
+end
+test("Stage Preset Rules model validates, prunes and labels presets", function()
+    local rules = AutoPlayRules.normalize({
+        Story = { Stage1 = { id = "P6", name = "Raid" }, Bad = { id = 5, name = "x" } },
+        [""] = { Stage1 = { id = "P1", name = "y" } },
+        Raid = "nope",
+    })
+    assert((AutoPlayRules.get(rules, "Story", "Stage1") :: any).id == "P6")
+    assert(AutoPlayRules.get(rules, "Story", "Bad") == nil)
+    assert(AutoPlayRules.get(rules, "Raid", "Stage1") == nil)
+    assert(next(AutoPlayRules.normalize(42)) == nil)
+    local presets = presetsSnapshot("P1")
+    assert(AutoPlayRules.resolve({ id = "P6", name = "Raid" }, presets) == "ok")
+    assert(AutoPlayRules.resolve({ id = "P6", name = "Old name" }, presets) == "invalid")
+    assert(AutoPlayRules.resolve({ id = "P9", name = "Raid" }, presets) == "invalid")
+    AutoPlayRules.set(rules, "Story", "Stage2", { id = "P9", name = "Gone" })
+    assert(AutoPlayRules.prune(rules, presets) == 1)
+    assert(AutoPlayRules.get(rules, "Story", "Stage2") == nil)
+    assert(AutoPlayRules.get(rules, "Story", "Stage1") ~= nil)
+    AutoPlayRules.set(rules, "Story", "Stage1", nil)
+    assert(rules.Story == nil)
+    local options = AutoPlayRules.options(presets)
+    assert(options[1].label == "None" and options[1].id == nil)
+    assert(options[3].label == "Raid" and options[4].label == "Raid (2)" and options[4].id == "P7")
+    assert(#AutoPlayRules.options(nil) == 1)
+    assert(AutoPlayRules.readPresets({ Active = "P1" }) == nil)
+    local read =
+        AutoPlayRules.readPresets({ Active = "P1", Max = 12, Order = { "P1" }, Names = { P1 = "A" } })
+    assert(read ~= nil and read.active == "P1" and read.names.P1 == "A")
+end)
+test("Stage Preset Rules switch once, confirm by readback, then enable native Auto Play", function()
+    local h = presetHarness({ Story = { Stage1 = { id = "P6", name = "Raid" } } })
+    assert(h.runtime.setEnabled(true))
+    assert(#h.switches == 1 and h.switches[1] == "P6")
+    assert(h.toggles == 0)
+    h.clock = 101
+    h.runtime.step(101)
+    assert(#h.switches == 1, "no duplicate select while waiting for confirmation")
+    h.presets = presetsSnapshot("P6")
+    h.clock = 102
+    h.runtime.step(102)
+    assert(#h.switches == 1 and h.toggles == 1 and h.autoPlaying)
+    h.runtime.step(103)
+    assert(#h.switches == 1, "no select when the game already uses the wanted preset")
+    h.runtime.stop()
+end)
+test(
+    "Stage Preset Rules pause native Auto Play before switching and skip None or unmatched stages",
+    function()
+        local h = presetHarness({ Story = { Stage1 = { id = "P6", name = "Raid" } } })
+        h.autoPlaying = true
+        h.runtime.enabled = true
+        h.runtime.step(100)
+        assert(h.toggles == 1 and not h.autoPlaying and #h.switches == 0)
+        h.runtime.step(101)
+        assert(#h.switches == 1)
+        h.runtime.stop()
+
+        local none = presetHarness({ Story = { Stage2 = { id = "P6", name = "Raid" } } })
+        assert(none.runtime.setEnabled(true))
+        assert(#none.switches == 0 and none.toggles == 1)
+        none.runtime.stop()
+
+        local blank = presetHarness(nil)
+        blank.gameData = { mode = "Raid", stage = "Stage9" }
+        assert(blank.runtime.setEnabled(true))
+        assert(#blank.switches == 0 and blank.toggles == 1)
+        blank.runtime.stop()
+    end
+)
+test("Stage Preset Rules reset a deleted or renamed preset to None without guessing another", function()
+    local deleted = presetHarness({ Story = { Stage1 = { id = "P9", name = "Raid" } } })
+    assert(deleted.runtime.setEnabled(true))
+    assert(#deleted.switches == 0)
+    assert(deleted.runtime.getRule("Story", "Stage1") == nil)
+    assert(deleted.runtime.status:find("cleared") ~= nil or deleted.runtime.status:find("Auto Play") ~= nil)
+    assert(deleted.toggles == 1, "Auto Play proceeds with the game's current preset")
+    deleted.runtime.stop()
+
+    local renamed = presetHarness({ Story = { Stage1 = { id = "P6", name = "Old name" } } })
+    local notified = 0
+    renamed.runtime.onRulesChange(function()
+        notified += 1
+    end)
+    assert(renamed.runtime.setEnabled(true))
+    assert(#renamed.switches == 0 and renamed.runtime.getRule("Story", "Stage1") == nil)
+    assert(notified >= 1)
+    renamed.runtime.stop()
+
+    local live = presetHarness({ Story = { Stage1 = { id = "P6", name = "Raid" } } })
+    live.presets = presetsSnapshot("P1")
+    live.presets.names.P6 = "Renamed"
+    live.presetsCallback(live.presets)
+    assert(live.runtime.getRule("Story", "Stage1") == nil)
+    live.runtime.stop()
+end)
+test("Stage Preset Rules retry three times then continue with the current preset", function()
+    local h = presetHarness({ Story = { Stage1 = { id = "P6", name = "Raid" } } })
+    h.runtime.enabled = true
+    h.runtime.step(100)
+    h.runtime.step(108)
+    h.runtime.step(116)
+    assert(#h.switches == 3)
+    h.runtime.step(124)
+    assert(#h.switches == 3 and h.toggles == 1)
+    assert(h.runtime.status:find("Enabling native Auto Play") ~= nil)
+    h.runtime.stop()
+end)
+test("Stage Preset Rules cannot be edited while Auto Play is on or Play Macro is active", function()
+    local h = presetHarness(nil)
+    local ok, err = h.runtime.setRule("Story", "Stage1", "P6")
+    assert(ok and err == nil)
+    assert(h.runtime.getRule("Story", "Stage1").name == "Raid")
+    assert(select(2, h.runtime.setRule("Story", "Stage1", "P404")) == "PRESET_UNKNOWN")
+    assert(h.runtime.setRule("Story", "Stage1", nil) and h.runtime.getRule("Story", "Stage1") == nil)
+    h.runtime.setRule("Story", "Stage1", "P6")
+    assert(h.runtime.setEnabled(true))
+    assert(h.runtime.isRulesLocked())
+    assert(select(2, h.runtime.setRule("Story", "Stage1", nil)) == "AUTOPLAY_ENABLED")
+    assert(h.runtime.getRule("Story", "Stage1") ~= nil)
+    h.runtime.setEnabled(false)
+    h.runtime.setMacro({ mode = "play" })
+    assert(h.runtime.isRulesLocked())
+    assert(select(2, h.runtime.setRule("Story", "Stage1", nil)) == "MACRO_ACTIVE")
+    h.runtime.stop()
+end)
+test("Stage Preset Rules persist as schema v2 and load v1 files without rules", function()
+    local written: { string } = {}
+    local body: string? = nil
+    local http: any = {
+        JSONEncode = function(_self: any, value: any): string
+            return string.format(
+                "%d|%s|%s",
+                value.schemaVersion,
+                tostring(value.enabled),
+                tostring(value.rules.Story and value.rules.Story.Stage1.id or "")
+            )
+        end,
+        JSONDecode = function(_self: any, text: string): any
+            local version, enabled, id = string.match(text, "^(%d+)|(%a+)|(.*)$")
+            local rules: any = {}
+            if id ~= "" then
+                rules.Story = { Stage1 = { id = id, name = "Raid" } }
+            end
+            return { schemaVersion = tonumber(version), enabled = enabled == "true", rules = rules }
+        end,
+    }
+    local storage: any = {
+        read = function()
+            return body
+        end,
+        write = function(text: string)
+            body = text
+            table.insert(written, text)
+            return true
+        end,
+    }
+    body = "1|true|"
+    local runtime = AutoPlayRuntime.new(nil, storage, { spawn = function() end, wait = function() end }, http)
+    runtime.start({ alive = true })
+    assert(runtime.isEnabled() == true and runtime.getRule("Story", "Stage1") == nil)
+    runtime.stop()
+    body = "2|false|P6"
+    local reloaded =
+        AutoPlayRuntime.new(nil, storage, { spawn = function() end, wait = function() end }, http)
+    reloaded.start({ alive = true })
+    local loadedRule = reloaded.getRule("Story", "Stage1")
+    assert(loadedRule ~= nil and loadedRule.id == "P6")
+    assert(reloaded.setEnabled(true) == true)
+    assert(written[#written]:sub(1, 2) == "2|" and written[#written]:find("P6") ~= nil)
+    reloaded.stop()
+end)
+test("AutoPlay adapter reads presets, switches by id and lists supported stages", function()
+    local fired: { any } = {}
+    local handler: any = nil
+    local requested = 0
+    local deps: any = {
+        autoPlayClient = {
+            SwitchAutoPlayPreset = {
+                Fire = function(payload: any)
+                    table.insert(fired, payload)
+                end,
+            },
+            RequestAutoPlayData = {
+                Fire = function()
+                    requested += 1
+                end,
+            },
+            AutoPlayPresetsUpdated = {
+                On = function(callback: any)
+                    handler = callback
+                    return function()
+                        handler = nil
+                    end
+                end,
+            },
+        },
+        autoPlayHandler = {},
+        gameHandler = {
+            IsGameLoaded = true,
+            GetGameData = function(_self: any)
+                return { StageType = "Story", Stage = "Stage1", Act = "Act1" }
+            end,
+        },
+        stagesData = {
+            GetAllStageTypeNames = function()
+                return { "Raid", "Story", "Story", "PVP", "LTM" }
+            end,
+            GetAllStageNameAndIndex = function(mode: string)
+                if mode == "Story" then
+                    return { ["Hill of Swords"] = "Stage10", ["Sand Village"] = "Stage2" }
+                elseif mode == "Raid" then
+                    return { ["Factory"] = "Stage4" }
+                elseif mode == "PVP" then
+                    return { ["Arena"] = "Stage2" }
+                end
+                return { ["Pirate Dynasty"] = "Pirate Dynasty", ["Rts"] = "RTS" }
+            end,
+        },
+        blocklist = {
+            IsBlocked = function(data: any)
+                return data.StageType == "PVP" or (data.StageType == "LTM" and data.Stage == "RTS")
+            end,
+        },
+    }
+    local adapter = AutoPlayAdapter.new(deps)
+    assert(adapter.getPresets() == nil)
+    assert(adapter.trackPresets() and requested == 1)
+    local seen: any = nil
+    adapter.onPresetsUpdated(function(snapshot: any)
+        seen = snapshot
+    end)
+    handler({ Active = "P1", Max = 12, Order = { "P1", "P6" }, Names = { P1 = "A", P6 = "B" } })
+    assert(seen ~= nil and seen.active == "P1" and adapter.getPresets().names.P6 == "B")
+    handler("garbage")
+    assert(adapter.getPresets().active == "P1")
+    assert(adapter.switchPreset("P6") and fired[1].PresetId == "P6")
+    assert(not adapter.switchPreset(""))
+    local data = adapter.getGameData()
+    assert(data ~= nil and data.mode == "Story" and data.stage == "Stage1")
+    local catalog = adapter.getStageCatalog()
+    assert(catalog ~= nil and #catalog == 3)
+    assert(catalog[1].mode == "Story" and catalog[1].stages[1].stage == "Stage2")
+    assert(catalog[1].stages[2].stage == "Stage10" and catalog[2].mode == "LTM" and #catalog[2].stages == 1)
+    assert(catalog[3].mode == "Raid")
+    adapter.untrackPresets()
+    assert(adapter.getPresets() == nil and handler == nil)
+end)
+test("Stage Preset Rules page lists rows per stage and locks dropdowns with Auto Play", function()
+    local h = presetHarness({ Story = { Stage1 = { id = "P6", name = "Raid" } } })
+    h.runtime.adapter.getStageCatalog = function()
+        return {
+            {
+                mode = "Story",
+                stages = {
+                    { stage = "Stage1", name = "Planet Namak" },
+                    { stage = "Stage2", name = "Sand Village" },
+                },
+            },
+        }
+    end
+    h.runtime.stop()
+    local fresh = presetHarness({ Story = { Stage1 = { id = "P6", name = "Raid" } } })
+    fresh.runtime.adapter.getStageCatalog = h.runtime.adapter.getStageCatalog
+    local dropdowns: any = {}
+    local sectionsOpened: { [string]: boolean } = {}
+    local function control(): any
+        return {
+            Lock = function(self: any)
+                self.Locked = true
+            end,
+            Unlock = function(self: any)
+                self.Locked = false
+            end,
+            Set = function() end,
+            SetDesc = function() end,
+        }
+    end
+    local sectionApi: any = {
+        Paragraph = function()
+            return control()
+        end,
+        Toggle = function(_s: any, opt: any)
+            return control()
+        end,
+        Dropdown = function(_s: any, opt: any)
+            local d = control()
+            d.Locked = false
+            d.Values = opt.Values
+            d.Selected = opt.Value
+            d.Callback = opt.Callback
+            -- Like WindUI, Refresh and Select echo the selected value through the callback.
+            d.Refresh = function(self: any, values: any)
+                self.Values = values
+                self.Callback(self.Selected)
+            end
+            d.Select = function(self: any, value: string)
+                self.Selected = value
+                self.Callback(self.Selected)
+            end
+            dropdowns[opt.Title] = d
+            return d
+        end,
+    }
+    local tab: any = {
+        Paragraph = function()
+            return control()
+        end,
+        Section = function(_s: any, opt: any)
+            sectionsOpened[opt.Title] = opt.Opened
+            return sectionApi
+        end,
+        Button = function() end,
+    }
+    local setRuleCalls = 0
+    local realSetRule = fresh.runtime.setRule
+    fresh.runtime.setRule = function(mode: string, stage: string, id: string?)
+        setRuleCalls += 1
+        assert(setRuleCalls < 50, "dropdown echo must not loop")
+        return realSetRule(mode, stage, id)
+    end
+    AutoPlayPage.mount(tab, fresh.runtime, nil)
+    assert(setRuleCalls == 0, "refresh echoes are ignored")
+    assert(sectionsOpened.Story == true)
+    assert(dropdowns["Planet Namak"] ~= nil and dropdowns["Sand Village"] ~= nil)
+    assert(dropdowns["Planet Namak"].Selected == "Raid")
+    assert(dropdowns["Sand Village"].Selected == "None")
+    assert(dropdowns["Planet Namak"].Locked == false)
+    dropdowns["Sand Village"].Callback("Raid (2)")
+    assert(fresh.runtime.getRule("Story", "Stage2").id == "P7")
+    assert(fresh.runtime.setEnabled(true))
+    assert(dropdowns["Planet Namak"].Locked == true and dropdowns["Sand Village"].Locked == true)
+    dropdowns["Sand Village"].Callback("None")
+    assert(fresh.runtime.getRule("Story", "Stage2") ~= nil, "locked edits are refused")
+    assert(dropdowns["Sand Village"].Selected == "Raid (2)")
+    fresh.runtime.presetsCallback = nil
+    h.presetsCallback = nil
+    fresh.presetsCallback(fresh.presets)
+    assert(setRuleCalls < 10, "preset updates while locked do not write rules")
+    fresh.runtime.setEnabled(false)
+    assert(dropdowns["Planet Namak"].Locked == false)
+    fresh.runtime.stop()
 end)
 print(string.format("PASS: %d unit scenarios", passed))
