@@ -75,6 +75,7 @@ do
                     stagesData = 'Modules.Data.StagesData',
                     bountyData = 'Modules.Data.BountyData',
                     bountyState = 'Modules.Gameplay.Bounty.PlayerBountyDataHandler',
+                    bountyStateMatch = 'Modules.Gameplay.Bounties.PlayerBountyDataHandler',
                     autoPlayModeBlocklist = 'Modules.Shared.AutoPlayModeBlocklist',
                 }),
                 modeLabels = table.freeze({
@@ -2001,7 +2002,7 @@ do
                     challengeStages = if isLobby then optionalModule(starterPlayer, 'Modules.Gameplay.Challenges.ChallengesDataHandler')else nil,
                     challengeAttempts = optionalModule(starterPlayer, 'Modules.Gameplay.Challenges.ChallengesAttemptsHandler'),
                     bountyData = optionalModule(replicated, config.instancePaths.bountyData),
-                    bountyState = if isLobby then optionalModule(starterPlayer, config.instancePaths.bountyState)else nil,
+                    bountyState = optionalModule(starterPlayer, if isLobby then config.instancePaths.bountyState else config.instancePaths.bountyStateMatch),
                     worldlines = optionalModule(replicated, config.instancePaths.worldlinesData),
                     worldlineNetwork = if isLobby then optionalModule(replicated, config.instancePaths.worldlinesClient)else nil,
                     bossRotation = optionalModule(replicated, config.instancePaths.bossRotation),
@@ -2072,7 +2073,22 @@ do
                     for _, name in settings.priority do
                         local choice = settings.selection[name]
 
-                        if MODES[name] and settings.enabled[name] and type(choice) == 'table' then
+                        if name == 'Boss Bounties' and settings.enabled[name] then
+                            local bounty = self.readBounty()
+
+                            if bounty and bounty.left > 0 then
+                                target = {
+                                    StageType = bounty.mode,
+                                    Stage = bounty.stage,
+                                    Act = bounty.act,
+                                    Difficulty = if bounty.mode == 'LegendStage' or (type(choice) == 'table' and choice.difficulty == 'Nightmare')then'Nightmare'else'Normal',
+                                    FriendsOnly = true,
+                                }
+                                targetName = name
+
+                                break
+                            end
+                        elseif MODES[name] and settings.enabled[name] and type(choice) == 'table' then
                             target = {
                                 StageType = MODES[name],
                                 Stage = choice.stage,
@@ -2091,6 +2107,15 @@ do
                     end
                     if matchData.StageType == target.StageType and matchData.Stage == target.Stage and matchData.Act == target.Act and (matchData.Difficulty == nil or matchData.Difficulty == target.Difficulty) then
                         self.changeAttempt = nil
+
+                        if targetName == 'Boss Bounties' then
+                            Settings.setBountyRun({
+                                mode = target.StageType,
+                                stage = target.Stage,
+                                act = target.Act,
+                                at = os.time(),
+                            })
+                        end
 
                         return false
                     end
@@ -2283,12 +2308,15 @@ do
 
                         return
                     end
-                    if isBountyMatch(settings, matchData) then
-                        self.returnOnMatchEnd = true
-
+                    if tryChangeStage(settings, matchData, now) then
                         return
                     end
-                    if tryChangeStage(settings, matchData, now) then
+                    if isBountyMatch(Settings.get(), matchData) then
+                        local gs = self.gameSettings
+                        local autoReplay = if gs and type(gs.get) == 'function'then(gs.get)('AutoReplay')else nil
+
+                        self.returnOnMatchEnd = autoReplay ~= true
+
                         return
                     end
 

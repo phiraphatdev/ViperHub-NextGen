@@ -99,9 +99,10 @@ local function liveDependencies(): any
             "Modules.Gameplay.Challenges.ChallengesAttemptsHandler"
         ),
         bountyData = optionalModule(replicated, config.instancePaths.bountyData),
-        bountyState = if isLobby
-            then optionalModule(starterPlayer, config.instancePaths.bountyState)
-            else nil,
+        bountyState = optionalModule(
+            starterPlayer,
+            if isLobby then config.instancePaths.bountyState else config.instancePaths.bountyStateMatch
+        ),
         worldlines = optionalModule(replicated, config.instancePaths.worldlinesData),
         worldlineNetwork = if isLobby
             then optionalModule(replicated, config.instancePaths.worldlinesClient)
@@ -196,7 +197,23 @@ function Runtime.new(dependencies: any?): any
         local targetName: string? = nil
         for _, name in settings.priority do
             local choice = settings.selection[name]
-            if MODES[name] and settings.enabled[name] and type(choice) == "table" then
+            if name == "Boss Bounties" and settings.enabled[name] then
+                local bounty = self.readBounty()
+                if bounty and bounty.left > 0 then
+                    target = {
+                        StageType = bounty.mode,
+                        Stage = bounty.stage,
+                        Act = bounty.act,
+                        Difficulty = if bounty.mode == "LegendStage"
+                                or (type(choice) == "table" and choice.difficulty == "Nightmare")
+                            then "Nightmare"
+                            else "Normal",
+                        FriendsOnly = true,
+                    }
+                    targetName = name
+                    break
+                end
+            elseif MODES[name] and settings.enabled[name] and type(choice) == "table" then
                 target = {
                     StageType = MODES[name],
                     Stage = choice.stage,
@@ -220,6 +237,14 @@ function Runtime.new(dependencies: any?): any
             and (matchData.Difficulty == nil or matchData.Difficulty == target.Difficulty)
         then
             self.changeAttempt = nil
+            if targetName == "Boss Bounties" then
+                Settings.setBountyRun({
+                    mode = target.StageType,
+                    stage = target.Stage,
+                    act = target.Act,
+                    at = os.time(),
+                })
+            end
             return false
         end
         local key = target.StageType .. "/" .. target.Stage .. "/" .. target.Act .. "/" .. target.Difficulty
@@ -431,12 +456,17 @@ function Runtime.new(dependencies: any?): any
             return
         end
 
-        if isBountyMatch(settings, matchData) then
-            -- Return to the lobby after the match so the next random bounty can be joined (Auto Play stays the player's choice).
-            self.returnOnMatchEnd = true
+        if tryChangeStage(settings, matchData, now) then
             return
         end
-        if tryChangeStage(settings, matchData, now) then
+        if isBountyMatch(Settings.get(), matchData) then
+            -- Keep going with the game's Auto Replay (the next pre-start switches to the next bounty);
+            -- without Auto Replay, return to the lobby so the next random bounty can be joined there.
+            local gs = self.gameSettings
+            local autoReplay = if gs and type(gs.get) == "function"
+                then (gs.get :: any)("AutoReplay")
+                else nil
+            self.returnOnMatchEnd = autoReplay ~= true
             return
         end
 

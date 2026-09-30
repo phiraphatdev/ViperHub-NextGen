@@ -27,6 +27,7 @@ return table.freeze({
         stagesData = "Modules.Data.StagesData",
         bountyData = "Modules.Data.BountyData",
         bountyState = "Modules.Gameplay.Bounty.PlayerBountyDataHandler",
+        bountyStateMatch = "Modules.Gameplay.Bounties.PlayerBountyDataHandler",
         autoPlayModeBlocklist = "Modules.Shared.AutoPlayModeBlocklist",
     }),
     modeLabels = table.freeze({

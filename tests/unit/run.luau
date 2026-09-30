@@ -3249,10 +3249,12 @@ test("Joiner runtime in match triggers immediate return and suspends macro", fun
     runtime.setEnabled("Rift", false)
     JoinerSettings.setPaused(true)
 end)
-test("Joiner in match returns after Boss Bounty matches and changes stage before Vote Start", function()
-    local started = false
+test("Joiner in match switches to the current bounty or stage target before Vote Start", function()
     local fired: { any } = {}
-    local matchData: any = { StageType = "LegendStage", Stage = "Stage5", Act = "Act2", Host = 42 }
+    local left = 10
+    local bounty: any = { BossName = "Kiro", Act = "Act2", StageType = "LegendStage", Stage = "Stage5" }
+    local autoReplay = false
+    local matchData: any = { StageType = "Story", Stage = "Stage1", Act = "Act1", Host = 42 }
     local gameHandler: any = { IsGameLoaded = true, IsMatchStarted = false, GameData = matchData }
     local runtime = JoinerRuntime.new({
         game = {
@@ -3271,6 +3273,16 @@ test("Joiner in match returns after Boss Bounty matches and changes stage before
         end,
         userId = 42,
         gameHandler = gameHandler,
+        bountyState = {
+            GetData = function()
+                return { BountySeed = 28046, BountiesLeft = left }
+            end,
+        },
+        bountyData = {
+            GetBountyFromSeed = function()
+                return bounty
+            end,
+        },
         lobbyReturn = {
             RequestStartMatch = {
                 Fire = function(payload: any)
@@ -3279,47 +3291,70 @@ test("Joiner in match returns after Boss Bounty matches and changes stage before
             },
         },
     })
-    for _, other in { "Legend Stage", "Raid", "Dungeon", "Worldline", "Boss Event", "Boss Bounties" } do
+    runtime.setMacro(nil)
+    runtime.gameSettings = {
+        get = function()
+            return autoReplay
+        end,
+    }
+    for _, other in { "Stage", "Legend Stage", "Raid", "Dungeon", "Worldline", "Boss Event" } do
         JoinerSettings.setEnabled(other, false)
     end
     JoinerSettings.setPaused(false)
-    JoinerSettings.setBountyRun({ mode = "LegendStage", stage = "Stage5", act = "Act2", at = os.time() })
+    JoinerSettings.setBountyRun(nil)
+    runtime.setBounty("Normal")
+    runtime.setEnabled("Boss Bounties", true)
     runtime.start({ alive = true })
-    runtime.step(100)
-    assert(runtime.returnOnMatchEnd, "a bounty match returns to the lobby after it ends")
-    assert(#fired == 0, "bounty matches are never switched")
 
-    -- A stale bounty marker is ignored; the host then switches to the enabled Stage joiner's target.
-    JoinerSettings.setBountyRun({
-        mode = "LegendStage",
-        stage = "Stage5",
-        act = "Act2",
-        at = os.time() - 99999,
-    })
-    runtime.setSelection("Stage", "Stage1", "Act1", "Normal")
-    runtime.setEnabled("Stage", true)
-    runtime.step(101)
-    assert(#fired == 1 and fired[1].StageType == "Story" and fired[1].Stage == "Stage1")
-    assert(fired[1].Act == "Act1" and fired[1].Difficulty == "Normal")
+    -- Pre-start in another stage: the host switches to today's bounty (Legend Stage is always Nightmare).
+    runtime.step(100)
+    assert(#fired == 1 and fired[1].StageType == "LegendStage" and fired[1].Stage == "Stage5")
+    assert(fired[1].Act == "Act2" and fired[1].Difficulty == "Nightmare" and fired[1].FriendsOnly == true)
     runtime.step(102)
     assert(#fired == 1, "no resend inside the retry window")
-    runtime.step(108)
-    runtime.step(115)
-    assert(#fired == 2, "at most two attempts per target")
 
-    -- Already on the target or after Vote Start: nothing is sent.
-    matchData.StageType, matchData.Stage, matchData.Act = "Story", "Stage1", "Act1"
-    matchData.Difficulty = "Normal"
+    -- Once on the bounty stage: nothing is sent, and the match is remembered as a bounty match.
+    matchData.StageType, matchData.Stage, matchData.Act, matchData.Difficulty =
+        "LegendStage", "Stage5", "Act2", "Nightmare"
+    runtime.step(110)
+    assert(#fired == 1 and JoinerSettings.get().bountyRun ~= nil)
+    assert(runtime.returnOnMatchEnd == true, "without Auto Replay the bounty match returns to the lobby")
+    autoReplay = true
+    runtime.step(111)
+    assert(
+        runtime.returnOnMatchEnd == false,
+        "with Auto Replay the next pre-start switches to the next bounty"
+    )
+
+    -- The next replay is a new random bounty: the pre-start switches to it.
+    bounty = { BossName = "Hirko", Act = "Act4", StageType = "Story", Stage = "Stage2" }
+    runtime.step(120)
+    assert(
+        #fired == 2
+            and fired[2].StageType == "Story"
+            and fired[2].Stage == "Stage2"
+            and fired[2].Act == "Act4"
+    )
+    assert(fired[2].Difficulty == "Normal")
+
+    -- No bounties left: falls through to the enabled Stage joiner (higher priority than bounties).
+    left = 0
+    matchData.StageType, matchData.Stage, matchData.Act, matchData.Difficulty =
+        "Story", "Stage2", "Act4", "Normal"
+    runtime.setSelection("Stage", "Stage1", "Act1", "Normal")
+    runtime.setEnabled("Stage", true)
     runtime.step(130)
-    assert(#fired == 2)
+    assert(#fired == 3 and fired[3].Stage == "Stage1" and fired[3].Act == "Act1")
+
+    -- After Vote Start nothing is sent.
     gameHandler.IsMatchStarted = true
-    started = true
     matchData.Stage = "Stage9"
-    runtime.step(140)
-    assert(#fired == 2 and started)
+    runtime.step(150)
+    assert(#fired == 3)
     runtime.stop()
     JoinerSettings.setBountyRun(nil)
     runtime.setEnabled("Stage", false)
+    runtime.setEnabled("Boss Bounties", false)
     JoinerSettings.setPaused(true)
 end)
 test("ActivityState evaluates game-recorded challenge seeds and rift attempts", function()
