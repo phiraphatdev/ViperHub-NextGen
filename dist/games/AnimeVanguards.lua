@@ -604,10 +604,6 @@ do
                                 worldlineId = value.worldlineId,
                                 traitsType = value.traitsType,
                             }
-                        elseif type(name) == 'string' and name == 'Boss Bounties' and type(value) == 'table' and (value.difficulty == 'Normal' or value.difficulty == 'Nightmare') then
-                            selection[name] = {
-                                difficulty = value.difficulty,
-                            }
                         elseif type(name) == 'string' and name == 'Boss Event' and type(value) == 'table' and type(value.eventName) == 'string' and #value.eventName <= 80 and (value.difficulty == 'Normal' or value.difficulty == 'Elite') then
                             selection[name] = {
                                 eventName = value.eventName,
@@ -1302,12 +1298,6 @@ do
                     Opened = false,
                 })
                 local saved = Settings.get()
-                local previous = saved.selection['Boss Bounties']
-                local difficulty = if type(previous) == 'table' and previous.difficulty == 'Nightmare'then'Nightmare'else'Normal'
-
-                if runtime and type(runtime.setBounty) == 'function' then
-                    (runtime.setBounty)(difficulty)
-                end
 
                 section:Toggle({
                     Title = 'Auto Join Boss Bounties',
@@ -1329,21 +1319,6 @@ do
                 local info = section:Paragraph({
                     Title = 'Current bounty',
                     Desc = 'Waiting for bounty data...',
-                })
-
-                section:Dropdown({
-                    Title =
-[[Difficulty (Story bounties; Legend Stage is always Nightmare)]],
-                    Values = {
-                        'Normal',
-                        'Nightmare',
-                    },
-                    Value = difficulty,
-                    Callback = function(value)
-                        if runtime then
-                            (runtime.setBounty)(value)
-                        end
-                    end,
                 })
 
                 return function()
@@ -2081,7 +2056,7 @@ do
                                     StageType = bounty.mode,
                                     Stage = bounty.stage,
                                     Act = bounty.act,
-                                    Difficulty = if bounty.mode == 'LegendStage' or (type(choice) == 'table' and choice.difficulty == 'Nightmare')then'Nightmare'else'Normal',
+                                    Difficulty = if bounty.mode == 'LegendStage'then'Nightmare'else'Normal',
                                     FriendsOnly = true,
                                 }
                                 targetName = name
@@ -2179,13 +2154,6 @@ do
                         }
 
                         Settings.setSelection('Worldline', self.selection.Worldline)
-                    end
-                end
-                function self.setBounty(difficulty)
-                    if difficulty == 'Normal' or difficulty == 'Nightmare' then
-                        self.selection['Boss Bounties'] = {difficulty = difficulty}
-
-                        Settings.setSelection('Boss Bounties', self.selection['Boss Bounties'])
                     end
                 end
                 function self.readBounty()
@@ -2670,7 +2638,7 @@ do
                                 local okProgress, unlocked = pcall(deps.progress.GetActData, bounty.mode, bounty.stage, bounty.act)
 
                                 if okProgress and unlocked ~= nil then
-                                    local difficulty = if bounty.mode == 'LegendStage' or (choice and choice.difficulty == 'Nightmare')then'Nightmare'else'Normal'
+                                    local difficulty = if bounty.mode == 'LegendStage'then'Nightmare'else'Normal'
 
                                     self.pending = {
                                         name = name,

@@ -218,13 +218,6 @@ function Settings.init(env: any)
                 selection[name] = { worldlineId = value.worldlineId, traitsType = value.traitsType }
             elseif
                 type(name) == "string"
-                and name == "Boss Bounties"
-                and type(value) == "table"
-                and (value.difficulty == "Normal" or value.difficulty == "Nightmare")
-            then
-                selection[name] = { difficulty = value.difficulty }
-            elseif
-                type(name) == "string"
                 and name == "Boss Event"
                 and type(value) == "table"
                 and type(value.eventName) == "string"

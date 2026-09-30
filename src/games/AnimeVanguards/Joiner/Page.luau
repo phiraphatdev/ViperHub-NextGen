@@ -420,13 +420,6 @@ end
 local function addBounty(tab: any, runtime: any?): () -> ()
     local section = tab:Section({ Title = "Boss Bounties Joiner", Opened = false })
     local saved = Settings.get()
-    local previous = saved.selection["Boss Bounties"]
-    local difficulty = if type(previous) == "table" and previous.difficulty == "Nightmare"
-        then "Nightmare"
-        else "Normal"
-    if runtime and type(runtime.setBounty) == "function" then
-        (runtime.setBounty :: any)(difficulty)
-    end
     section:Toggle({
         Title = "Auto Join Boss Bounties",
         Value = saved.enabled["Boss Bounties"] == true,
@@ -444,16 +437,6 @@ local function addBounty(tab: any, runtime: any?): () -> ()
     local info = section:Paragraph({
         Title = "Current bounty",
         Desc = "Waiting for bounty data...",
-    })
-    section:Dropdown({
-        Title = "Difficulty (Story bounties; Legend Stage is always Nightmare)",
-        Values = { "Normal", "Nightmare" },
-        Value = difficulty,
-        Callback = function(value: string)
-            if runtime then
-                (runtime.setBounty :: any)(value)
-            end
-        end,
     })
     -- Bounty data replicates after the page mounts, so the text is refreshed by the page loop.
     return function()

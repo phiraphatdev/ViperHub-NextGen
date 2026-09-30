@@ -929,7 +929,6 @@ test("Boss Bounties joiner creates the game's daily bounty match and requires AC
     end
     JoinerSettings.setPaused(false)
     JoinerSettings.setCooldown(0)
-    runtime.setBounty("Bad")
     runtime.setEnabled("Boss Bounties", true)
     runtime.start({ alive = true })
     local bounty = runtime.readBounty()
@@ -946,7 +945,6 @@ test("Boss Bounties joiner creates the game's daily bounty match and requires AC
     runtime.step(100)
     assert(sent == nil and string.find(runtime.status, "locked", 1, true))
     unlocked = true
-    runtime.setBounty("Normal")
     runtime.step(100)
     assert(sent.StageType == "Story" and sent.Stage == "Stage2" and sent.Act == "Act4")
     assert(sent.Difficulty == "Normal" and sent.Public == false)
@@ -954,8 +952,6 @@ test("Boss Bounties joiner creates the game's daily bounty match and requires AC
     assert((string.find(runtime.status, "waiting for server confirmation", 1, true)) ~= nil)
     confirm({ StageType = "Story", Stage = "Stage2", Act = "Act4", HostUserId = 42, GUID = "bounty" })
     assert((string.find(runtime.status, "confirmed by server", 1, true)) ~= nil)
-    runtime.setBounty("Nightmare")
-    assert(JoinerSettings.get().selection["Boss Bounties"].difficulty == "Nightmare")
     runtime.stop()
     JoinerSettings.setEnabled("Boss Bounties", false)
     JoinerSettings.setPaused(true)
@@ -3302,7 +3298,6 @@ test("Joiner in match switches to the current bounty or stage target before Vote
     end
     JoinerSettings.setPaused(false)
     JoinerSettings.setBountyRun(nil)
-    runtime.setBounty("Normal")
     runtime.setEnabled("Boss Bounties", true)
     runtime.start({ alive = true })
 

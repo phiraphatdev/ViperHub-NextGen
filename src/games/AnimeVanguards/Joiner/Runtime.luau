@@ -204,10 +204,7 @@ function Runtime.new(dependencies: any?): any
                         StageType = bounty.mode,
                         Stage = bounty.stage,
                         Act = bounty.act,
-                        Difficulty = if bounty.mode == "LegendStage"
-                                or (type(choice) == "table" and choice.difficulty == "Nightmare")
-                            then "Nightmare"
-                            else "Normal",
+                        Difficulty = if bounty.mode == "LegendStage" then "Nightmare" else "Normal",
                         FriendsOnly = true,
                     }
                     targetName = name
@@ -300,14 +297,6 @@ function Runtime.new(dependencies: any?): any
         then
             self.selection.Worldline = { worldlineId = worldlineId, traitsType = traitsType }
             Settings.setSelection("Worldline", self.selection.Worldline)
-        end
-    end
-
-    --- Stores the difficulty used for the daily Boss Bounty match ("Normal" or "Nightmare").
-    function self.setBounty(difficulty: string)
-        if difficulty == "Normal" or difficulty == "Nightmare" then
-            self.selection["Boss Bounties"] = { difficulty = difficulty }
-            Settings.setSelection("Boss Bounties", self.selection["Boss Bounties"])
         end
     end
 
@@ -829,11 +818,8 @@ function Runtime.new(dependencies: any?): any
                     local okProgress, unlocked =
                         pcall(deps.progress.GetActData, bounty.mode, bounty.stage, bounty.act)
                     if okProgress and unlocked ~= nil then
-                        -- Legend Stage only exists on Nightmare; Story bounties use the chosen difficulty.
-                        local difficulty = if bounty.mode == "LegendStage"
-                                or (choice and choice.difficulty == "Nightmare")
-                            then "Nightmare"
-                            else "Normal"
+                        -- The game's bounty panel has no difficulty choice: Legend Stage is Nightmare-only, others Normal.
+                        local difficulty = if bounty.mode == "LegendStage" then "Nightmare" else "Normal"
                         self.pending = {
                             name = name,
                             mode = bounty.mode,
