@@ -93,6 +93,10 @@ local function liveDependencies(): any
             starterPlayer,
             "Modules.Gameplay.Challenges.ChallengesAttemptsHandler"
         ),
+        bountyData = optionalModule(replicated, config.instancePaths.bountyData),
+        bountyState = if isLobby
+            then optionalModule(starterPlayer, config.instancePaths.bountyState)
+            else nil,
         worldlines = optionalModule(replicated, config.instancePaths.worldlinesData),
         worldlineNetwork = if isLobby
             then optionalModule(replicated, config.instancePaths.worldlinesClient)
@@ -182,6 +186,75 @@ function Runtime.new(dependencies: any?): any
         end
     end
 
+    --- Stores the difficulty used for the daily Boss Bounty match ("Normal" or "Nightmare").
+    function self.setBounty(difficulty: string)
+        if difficulty == "Normal" or difficulty == "Nightmare" then
+            self.selection["Boss Bounties"] = { difficulty = difficulty }
+            Settings.setSelection("Boss Bounties", self.selection["Boss Bounties"])
+        end
+    end
+
+    --- Reads today's bounty from the game: {mode, stage, act, boss, left} or nil when unavailable.
+    function self.readBounty(): any
+        local deps = self.dependencies
+        if not deps or not deps.bountyData or not deps.bountyState then
+            return nil
+        end
+        local okSeed, seed = pcall(deps.bountyState.GetSeed)
+        local okLeft, left = pcall(deps.bountyState.GetBountiesLeft)
+        if not okSeed or not okLeft or type(seed) ~= "number" or type(left) ~= "number" then
+            return nil
+        end
+        local okData, bounty = pcall(deps.bountyData.GetBountyFromSeed, seed)
+        if
+            not okData
+            or type(bounty) ~= "table"
+            or type(bounty.StageType) ~= "string"
+            or type(bounty.Stage) ~= "string"
+            or type(bounty.Act) ~= "string"
+        then
+            return nil
+        end
+        return {
+            mode = bounty.StageType,
+            stage = bounty.Stage,
+            act = bounty.Act,
+            boss = if type(bounty.BossName) == "string" then bounty.BossName else nil,
+            left = left,
+        }
+    end
+
+    --- Reads Worldline progress: {room, worlds = {{id, room, completed}}} or nil when not ready.
+    function self.readWorldlineProgress(): any
+        local deps = self.dependencies
+        local remote = deps
+            and deps.worldlineNetwork
+            and deps.worldlineNetwork[config.remoteNames.worldlineProgress]
+        if not remote or type(remote.Invoke) ~= "function" then
+            return nil
+        end
+        local ok, progress = pcall(remote.Invoke)
+        if not ok or type(progress) ~= "table" or progress.Ready ~= true then
+            return nil
+        end
+        local worlds: { any } = {}
+        if type(progress.AltWorldlines) == "table" then
+            for _, entry in progress.AltWorldlines do
+                if type(entry) == "table" and type(entry.WorldlineId) == "string" then
+                    table.insert(worlds, {
+                        id = entry.WorldlineId,
+                        room = if type(entry.CurrentRoom) == "number" then entry.CurrentRoom else nil,
+                        completed = entry.Completed == true,
+                    })
+                end
+            end
+        end
+        return {
+            room = if type(progress.CurrentRoom) == "number" then progress.CurrentRoom else nil,
+            worlds = worlds,
+        }
+    end
+
     function self.setBossEvent(eventName: string, difficulty: string)
         if
             type(eventName) == "string"
@@ -195,8 +268,14 @@ function Runtime.new(dependencies: any?): any
 
     function self.setEnabled(name: string, value: boolean)
         if
-            (MODES[name] or CHALLENGES[name] or name == "Worldline" or name == "Boss Event" or name == "Rift")
-            and type(value) == "boolean"
+            (
+                MODES[name]
+                or CHALLENGES[name]
+                or name == "Worldline"
+                or name == "Boss Event"
+                or name == "Boss Bounties"
+                or name == "Rift"
+            ) and type(value) == "boolean"
         then
             self.enabled[name] = value
             Settings.setEnabled(name, value)
@@ -561,20 +640,89 @@ function Runtime.new(dependencies: any?): any
                         and type(teleportRemote.Fire) == "function"
                     then
                         local okProgress, progress = pcall(progressRemote.Invoke)
-                        if okProgress and type(progress) == "table" and progress.Ready == true then
+                        local completed = false
+                        if
+                            okProgress
+                            and type(progress) == "table"
+                            and type(progress.AltWorldlines) == "table"
+                        then
+                            for _, entry in progress.AltWorldlines do
+                                if
+                                    type(entry) == "table"
+                                    and entry.WorldlineId == choice.worldlineId
+                                    and entry.Completed == true
+                                then
+                                    completed = true
+                                end
+                            end
+                        end
+                        if completed then
+                            setStatus("Worldline: selected worldline already completed")
+                        elseif okProgress and type(progress) == "table" and progress.Ready == true then
                             self.lastAttempt = now
                             local ok = pcall(
                                 teleportRemote.Fire,
                                 { WorldlineId = choice.worldlineId, TraitsType = choice.traitsType }
                             )
+                            self.worldlineRequest = { id = choice.worldlineId, at = now }
                             setStatus(
                                 if ok then "Worldline: teleport request sent" else "Worldline: request failed"
                             )
                             return
+                        else
+                            setStatus("Worldline: selection or progress unavailable")
                         end
+                    else
+                        setStatus("Worldline: selection or progress unavailable")
                     end
+                else
+                    setStatus("Worldline: selection or progress unavailable")
                 end
-                setStatus("Worldline: selection or progress unavailable")
+            end
+            if
+                name == "Boss Bounties"
+                and self.enabled[name]
+                and deps.network
+                and deps.network.CreateMatch
+            then
+                local bounty = self.readBounty()
+                if not bounty then
+                    setStatus("Boss Bounties: today's bounty unavailable")
+                elseif bounty.left <= 0 then
+                    setStatus("Boss Bounties: none left today")
+                elseif deps.progress and type(deps.progress.GetActData) == "function" then
+                    local okProgress, unlocked =
+                        pcall(deps.progress.GetActData, bounty.mode, bounty.stage, bounty.act)
+                    if okProgress and unlocked ~= nil then
+                        local difficulty = if choice and choice.difficulty == "Nightmare"
+                            then "Nightmare"
+                            else "Normal"
+                        self.pending = {
+                            name = name,
+                            mode = bounty.mode,
+                            stage = bounty.stage,
+                            act = bounty.act,
+                            started = now,
+                        }
+                        self.lastAttempt = now
+                        local ok = pcall(deps.network.CreateMatch.Fire, {
+                            Public = false,
+                            StageType = bounty.mode,
+                            Stage = bounty.stage,
+                            Act = bounty.act,
+                            Difficulty = difficulty,
+                            FriendsOnly = true,
+                        })
+                        if not ok then
+                            self.pending = nil
+                            setStatus("Boss Bounties: request failed")
+                        else
+                            setStatus("Boss Bounties: waiting for server confirmation")
+                        end
+                        return
+                    end
+                    setStatus("Boss Bounties: stage/act locked or progress unavailable")
+                end
             end
             if CHALLENGES[name] and self.enabled[name] and choice then
                 local kind = CHALLENGES[name]

@@ -821,6 +821,145 @@ test("Worldline joiner validates selection and progress before teleport request"
     JoinerSettings.setEnabled("Worldline", false)
     JoinerSettings.setPaused(true)
 end)
+test("Worldline joiner skips completed alternate worldlines and reads progress", function()
+    local sent: any = nil
+    local completed = true
+    local runtime = JoinerRuntime.new({
+        game = { PlaceId = 16146832113 },
+        task = { spawn = function() end, wait = function() end },
+        clock = function()
+            return 100
+        end,
+        lobby = { IsHosting = false, IsInLobby = false },
+        worldlines = {
+            GetAll = function()
+                return { FriranRerun = { DisplayName = "Friran Rerun" } }
+            end,
+        },
+        worldlineNetwork = {
+            GetWorldlineProgress = {
+                Invoke = function()
+                    return {
+                        Ready = true,
+                        CurrentRoom = 51,
+                        AltWorldlines = {
+                            { WorldlineId = "FriranRerun", CurrentRoom = 50, Completed = completed },
+                        },
+                    }
+                end,
+            },
+            TeleportToWorldline = {
+                Fire = function(payload: any)
+                    sent = payload
+                end,
+            },
+        },
+        network = {
+            MatchConfirmed = {
+                On = function()
+                    return function() end
+                end,
+            },
+        },
+    })
+    JoinerSettings.setPaused(false)
+    runtime.setWorldline("FriranRerun", "Traits")
+    runtime.setEnabled("Worldline", true)
+    runtime.start({ alive = true })
+    runtime.step(100)
+    assert(sent == nil and string.find(runtime.status, "already completed", 1, true))
+    local progress = runtime.readWorldlineProgress()
+    assert(progress.room == 51 and progress.worlds[1].id == "FriranRerun" and progress.worlds[1].completed)
+    completed = false
+    runtime.step(101)
+    assert(sent ~= nil and sent.WorldlineId == "FriranRerun")
+    runtime.stop()
+    JoinerSettings.setEnabled("Worldline", false)
+    JoinerSettings.setPaused(true)
+end)
+test("Boss Bounties joiner creates the game's daily bounty match and requires ACK", function()
+    local sent: any = nil
+    local confirm: any = nil
+    local left = 0
+    local unlocked = true
+    local runtime = JoinerRuntime.new({
+        game = { PlaceId = 16146832113 },
+        task = { spawn = function() end, wait = function() end },
+        clock = function()
+            return 100
+        end,
+        userId = 42,
+        lobby = { IsHosting = false, IsInLobby = false },
+        progress = {
+            GetActData = function()
+                return if unlocked then {} else nil
+            end,
+        },
+        bountyState = {
+            GetSeed = function()
+                return 28046
+            end,
+            GetBountiesLeft = function()
+                return left
+            end,
+        },
+        bountyData = {
+            GetBountyFromSeed = function(seed: number)
+                assert(seed == 28046)
+                return { BossName = "Hirko", Act = "Act4", StageType = "Story", Stage = "Stage2" }
+            end,
+        },
+        network = {
+            CreateMatch = {
+                Fire = function(payload: any)
+                    sent = payload
+                end,
+            },
+            StartMatch = { Fire = function() end },
+            MatchConfirmed = {
+                On = function(callback: any)
+                    confirm = callback
+                    return function() end
+                end,
+            },
+        },
+    })
+    for _, other in { "Stage", "Legend Stage", "Raid", "Dungeon", "Worldline", "Boss Event" } do
+        JoinerSettings.setEnabled(other, false)
+    end
+    JoinerSettings.setPaused(false)
+    JoinerSettings.setCooldown(0)
+    runtime.setBounty("Bad")
+    runtime.setEnabled("Boss Bounties", true)
+    runtime.start({ alive = true })
+    local bounty = runtime.readBounty()
+    assert(
+        bounty.mode == "Story"
+            and bounty.stage == "Stage2"
+            and bounty.act == "Act4"
+            and bounty.boss == "Hirko"
+    )
+    runtime.step(100)
+    assert(sent == nil and string.find(runtime.status, "none left", 1, true), runtime.status)
+    left = 10
+    unlocked = false
+    runtime.step(100)
+    assert(sent == nil and string.find(runtime.status, "locked", 1, true))
+    unlocked = true
+    runtime.setBounty("Normal")
+    runtime.step(100)
+    assert(sent.StageType == "Story" and sent.Stage == "Stage2" and sent.Act == "Act4")
+    assert(sent.Difficulty == "Normal" and sent.Public == false)
+    confirm({ StageType = "Story", Stage = "Stage2", Act = "Act1", HostUserId = 42, GUID = "wrong" })
+    assert((string.find(runtime.status, "waiting for server confirmation", 1, true)) ~= nil)
+    confirm({ StageType = "Story", Stage = "Stage2", Act = "Act4", HostUserId = 42, GUID = "bounty" })
+    assert((string.find(runtime.status, "confirmed by server", 1, true)) ~= nil)
+    runtime.setBounty("Nightmare")
+    assert(JoinerSettings.get().selection["Boss Bounties"].difficulty == "Nightmare")
+    runtime.stop()
+    JoinerSettings.setEnabled("Boss Bounties", false)
+    JoinerSettings.setPaused(true)
+end)
 test("Boss Event joiner accepts only current rotation and matching host confirmation", function()
     local sent: any = nil
     local confirm: any = nil

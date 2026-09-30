@@ -25,6 +25,8 @@ return table.freeze({
         autoPlayClient = "NetworkCode.GameAutoPlayClient",
         wavesClient = "NetworkCode.GameWavesClient",
         stagesData = "Modules.Data.StagesData",
+        bountyData = "Modules.Data.BountyData",
+        bountyState = "Modules.Gameplay.Bounty.PlayerBountyDataHandler",
         autoPlayModeBlocklist = "Modules.Shared.AutoPlayModeBlocklist",
     }),
     modeLabels = table.freeze({

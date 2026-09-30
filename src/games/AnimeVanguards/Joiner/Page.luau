@@ -417,6 +417,63 @@ local function addUnavailable(tab: any, name: string, description: string)
     section:Paragraph({ Title = "Options", Desc = description })
 end
 
+local function addBounty(tab: any, runtime: any?)
+    local section = tab:Section({ Title = "Boss Bounties Joiner", Opened = false })
+    local saved = Settings.get()
+    local previous = saved.selection["Boss Bounties"]
+    local difficulty = if type(previous) == "table" and previous.difficulty == "Nightmare"
+        then "Nightmare"
+        else "Normal"
+    local bounty: any = if runtime and type(runtime.readBounty) == "function"
+        then (runtime.readBounty :: any)()
+        else nil
+    if runtime and type(runtime.setBounty) == "function" then
+        (runtime.setBounty :: any)(difficulty)
+    end
+    section:Toggle({
+        Title = "Auto Join Boss Bounties",
+        Value = saved.enabled["Boss Bounties"] == true and bounty ~= nil,
+        Locked = runtime == nil or bounty == nil,
+        Desc = "Creates a private lobby for today's bounty stage while bounties remain.",
+        Callback = function(value: boolean)
+            if runtime then
+                runtime.setEnabled("Boss Bounties", value)
+            end
+        end,
+    })
+    if runtime and saved.enabled["Boss Bounties"] == true and bounty ~= nil then
+        runtime.setEnabled("Boss Bounties", true)
+    end
+    if not bounty then
+        section:Paragraph({
+            Title = "Today's bounty",
+            Desc = "Unavailable: bounty data is not replicated in this place.",
+        })
+        return
+    end
+    section:Paragraph({
+        Title = "Today's bounty",
+        Desc = string.format(
+            "%s %s %s%s - %d left",
+            bounty.mode,
+            bounty.stage,
+            bounty.act,
+            if bounty.boss then " (" .. bounty.boss .. ")" else "",
+            bounty.left
+        ),
+    })
+    section:Dropdown({
+        Title = "Difficulty",
+        Values = { "Normal", "Nightmare" },
+        Value = difficulty,
+        Callback = function(value: string)
+            if runtime then
+                (runtime.setBounty :: any)(value)
+            end
+        end,
+    })
+end
+
 local function addChallenge(tab: any, kind: string, choices: any, runtime: any?): any
     local name = kind .. " Challenge"
     local section = tab:Section({ Title = name .. " Joiner", Opened = false })
@@ -597,6 +654,7 @@ function Page.mount(tab: any, stageDataOverride: any?, runtime: any?, challengeC
     )
     addSpecial(tab, "Boss Event", specialChoices, runtime)
     addSpecial(tab, "Worldline", specialChoices, runtime)
+    addBounty(tab, runtime)
     local riftTimer = addRift(tab, runtime)
     local regTimer = addChallenge(tab, "Regular", challengeChoices, runtime)
     local dailyTimer = addChallenge(tab, "Daily", challengeChoices, runtime)
@@ -605,7 +663,6 @@ function Page.mount(tab: any, stageDataOverride: any?, runtime: any?, challengeC
         {
             "Elemental Towers",
             "Portal",
-            "Boss Bounties",
         }
     do
         addUnavailable(tab, name, "Mode-specific choices are not verified yet.")
