@@ -231,7 +231,9 @@ function Adapter.new(injectedDeps: any?): any
         then
             (taskApi.spawn :: any)(function()
                 while self.context == context and context.alive do
-                    self.sync()(taskApi.wait :: any)(1.0)
+                    self.sync()
+                    local waitFn: any = taskApi.wait
+                    waitFn(1.0)
                 end
             end)
         end

@@ -15,8 +15,8 @@
     },
     "ui": {
       "path": "dist/ui.lua",
-      "sha256": "4357b21187c47f8e9aee5cda4f152a439eedeae82b3a0c0b4b5415f9ab2afd8c",
-      "bytes": 1348884
+      "sha256": "26ac60195917c2f6191ebbbba4252262fb6e8e9547a3f852e420b5383f714810",
+      "bytes": 1347024
     },
     "AnimeExpeditions": {
       "path": "dist/games/AnimeExpeditions.lua",
@@ -25,8 +25,8 @@
     },
     "AnimeVanguards": {
       "path": "dist/games/AnimeVanguards.lua",
-      "sha256": "8025ba123065f65bd8de61e6917317a4c0055bc3cdf149ba0c41a8a19509e1f7",
-      "bytes": 347885
+      "sha256": "0b27c6391f089d6b317e22808eac44720040e2baaf6a8557802bde4c2584d245",
+      "bytes": 347972
     }
   },
   "games": {

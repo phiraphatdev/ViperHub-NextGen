@@ -6235,7 +6235,11 @@ do
                     if type(taskApi) == 'table' and type(taskApi.spawn) == 'function' and type(taskApi.wait) == 'function' then
                         (taskApi.spawn)(function()
                             while self.context == context and context.alive do
-                                self.sync()(taskApi.wait)(1)
+                                self.sync()
+
+                                local waitFn = taskApi.wait
+
+                                waitFn(1)
                             end
                         end)
                     end

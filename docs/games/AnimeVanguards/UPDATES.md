@@ -1,5 +1,9 @@
 # Updates
 
+## Local UI Hover and Press Reactions Removed — not published
+
+The vendored WindUI no longer reacts visually to hover or press: element, menu, dropdown item, search item, open-button and user-button hover highlights, the topbar and small-button press scale, and the hover tooltip were removed (patch listed in `dependencies.lock.json`, pinned checksum updated). Window state changes such as opening a dropdown, switching a toggle or selecting a tab are unchanged. The Game tab settings sync loop also no longer raises an error each cycle (a missing statement separator in `Game/Adapter.luau`). Local build and 85 unit scenarios pass.
+
 ## Local Boss Bounty Loop Correction and In-Match Stage Change — not published
 
 Boss Bounties correction: the bounty is derived from the replicated `BountySeed` (`PlayerBountyDataHandler.GetData()`), not from `GetSeed()` (which returns `BountyStartTime`); the first local build joined the wrong stage. The game's bounty panel offers no difficulty choice, so there is no selector: Legend Stage bounties are Nightmare (the only option) and Story bounties are Normal. In the match place the bounty data is available at `Gameplay.Bounties.PlayerBountyDataHandler` (the lobby uses `Gameplay.Bounty`), which is also what the in-match "Change Stage" picker (Bounties tab) shows. The joiner records the bounty match it is in; when the game's Auto Replay is on it stays in the match and the next pre-start switches to the next random bounty, otherwise it returns to the lobby after the match. The joiner does not enable native Auto Play; that stays the player's own toggle.
