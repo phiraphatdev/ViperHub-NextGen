@@ -4192,8 +4192,12 @@ test("AutoPlay adapter reads presets, switches by id and lists supported modes",
     local data = adapter.getGameData()
     assert(data ~= nil and data.mode == "Story" and data.stage == "Stage1")
     local modes = adapter.getModes()
-    assert(modes ~= nil and #modes == 3, "blocked, empty and hidden modes are skipped")
-    assert(modes[1] == "Story" and modes[2] == "Portals" and modes[3] == "Raid")
+    assert(
+        modes ~= nil and #modes == 6,
+        "blocked, empty and hidden modes are skipped; joiner-only modes are added"
+    )
+    assert(modes[1] == "Story" and modes[2] == "ElementalTowers" and modes[3] == "Portals")
+    assert(modes[4] == "Raid" and modes[5] == "Rift" and modes[6] == "Worldline")
     adapter.untrackPresets()
     assert(adapter.getPresets() == nil and handler == nil)
 end)

@@ -25,8 +25,8 @@
     },
     "AnimeVanguards": {
       "path": "dist/games/AnimeVanguards.lua",
-      "sha256": "0b27c6391f089d6b317e22808eac44720040e2baaf6a8557802bde4c2584d245",
-      "bytes": 347972
+      "sha256": "f21f689bb4c49020580f8805ec8b22a53868b54a4ff75b0cb092b4a2a5484910",
+      "bytes": 349028
     }
   },
   "games": {

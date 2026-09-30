@@ -39,7 +39,12 @@ return table.freeze({
         Challenge = "Challenge",
         Dungeon = "Dungeon",
         Raid = "Raid",
+        Worldline = "Worldline",
+        ElementalTowers = "Elemental Towers",
+        Rift = "Rift",
     }),
+    -- Joiner modes whose StageType is not listed by StagesData (verified in game scripts: GameData.StageType).
+    extraModes = table.freeze({ "Worldline", "ElementalTowers", "Rift" }),
     -- Modes left out of Stage Preset Rules by request.
     hiddenModes = table.freeze({
         Extra = true,

@@ -320,6 +320,17 @@ function Adapter.new(injectedDeps: any?): any
                 end
             end
         end
+        for _, extra in (config :: any).extraModes do
+            local blocked = false
+            if blocklist and type(blocklist.IsBlocked) == "function" then
+                local okBlock, result = pcall(blocklist.IsBlocked, { StageType = extra, Stage = extra })
+                blocked = not okBlock or result == true
+            end
+            if not seen[extra] and not blocked and not (config :: any).hiddenModes[extra] then
+                seen[extra] = true
+                table.insert(modes, extra)
+            end
+        end
         table.sort(modes, function(a: string, b: string)
             if a == "Story" or b == "Story" then
                 return a == "Story" and b ~= "Story"

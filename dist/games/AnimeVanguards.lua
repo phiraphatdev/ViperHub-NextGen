@@ -87,6 +87,14 @@ do
                     Challenge = 'Challenge',
                     Dungeon = 'Dungeon',
                     Raid = 'Raid',
+                    Worldline = 'Worldline',
+                    ElementalTowers = 'Elemental Towers',
+                    Rift = 'Rift',
+                }),
+                extraModes = table.freeze({
+                    'Worldline',
+                    'ElementalTowers',
+                    'Rift',
                 }),
                 hiddenModes = table.freeze({
                     Extra = true,
@@ -7171,6 +7179,23 @@ do
                             if supported then
                                 table.insert(modes, mode)
                             end
+                        end
+                    end
+                    for _, extra in (config).extraModes do
+                        local blocked = false
+
+                        if blocklist and type(blocklist.IsBlocked) == 'function' then
+                            local okBlock, result = pcall(blocklist.IsBlocked, {
+                                StageType = extra,
+                                Stage = extra,
+                            })
+
+                            blocked = not okBlock or result == true
+                        end
+                        if not seen[extra] and not blocked and not (config).hiddenModes[extra] then
+                            seen[extra] = true
+
+                            table.insert(modes, extra)
                         end
                     end
 
