@@ -1,8 +1,8 @@
 # Updates
 
-## Local UI Hover and Press Reactions Removed — not published
+## Local Game Button Effects Opt-Out — not published
 
-The vendored WindUI no longer reacts visually to hover or press: element, menu, dropdown item, search item, open-button and user-button hover highlights, the topbar and small-button press scale, and the hover tooltip were removed (patch listed in `dependencies.lock.json`, pinned checksum updated). Window state changes such as opening a dropdown, switching a toggle or selecting a tab are unchanged. The Game tab settings sync loop also no longer raises an error each cycle (a missing statement separator in `Game/Adapter.luau`). Local build and 85 unit scenarios pass.
+The hover and press animation seen on the ViperHub window came from the game itself: its `ButtonEffects` module tags every TextButton and ImageButton under PlayerGui with `ButtonEffects_Button` and animates them. The window now tags its ScreenGui layers with `ButtonEffects_Ignore` and `NoButtonEffects` (the game's own opt-out) when it is created, so its buttons are only tagged `ButtonEffects_SFXOnly` (the click sound stays, no visual effect). Live: 253 window buttons carried `ButtonEffects_SFXOnly` and none `ButtonEffects_Button`. The Game tab settings sync loop also no longer raises an error each cycle (a missing statement separator in `Game/Adapter.luau`). No vendored WindUI change. Local build and 85 unit scenarios pass.
 
 ## Local Boss Bounty Loop Correction and In-Match Stage Change — not published
 

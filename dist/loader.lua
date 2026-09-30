@@ -1109,7 +1109,42 @@ do
                     end
                 end)
             end
+
+            local function ignoreGameButtonEffects(library)
+                local gameObject = ENV.game
+
+                if not gameObject then
+                    return
+                end
+
+                local ok, tagService = pcall(function()
+                    return (gameObject):GetService('CollectionService')
+                end)
+
+                if not ok or not tagService then
+                    return
+                end
+
+                for _, key in {
+                    'ScreenGui',
+                    'NotificationGui',
+                    'DropdownGui',
+                    'TooltipGui',
+                }do
+                    local gui = library[key]
+
+                    if gui then
+                        pcall(function()
+                            tagService:AddTag(gui, 'ButtonEffects_Ignore')
+                            tagService:AddTag(gui, 'NoButtonEffects')
+                        end)
+                    end
+                end
+            end
+
             function WindUIAdapter.create(library, context, config)
+                ignoreGameButtonEffects(library)
+
                 local window = (library.CreateWindow)(library, {
                     Title = 'ViperHub NextGen',
                     Author = 'Foundation 0.2.2',

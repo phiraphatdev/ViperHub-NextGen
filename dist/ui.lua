@@ -26867,7 +26867,12 @@ TextSize=18,
 }),
 })
 
-
+ab.AddSignal(ao.MouseEnter,function()
+ad(ao.Frame,0.047,{ImageTransparency=0.95}):Play()
+end)
+ab.AddSignal(ao.MouseLeave,function()
+ad(ao.Frame,0.047,{ImageTransparency=1}):Play()
+end)
 ab.AddSignal(ao.MouseButton1Click,function()
 if aj then
 aj:Close()()
@@ -29589,7 +29594,12 @@ al.Size=UDim2.new(
 )
 end)
 
-
+ab.AddSignal(an.TextButton.MouseEnter,function()
+ad(an.TextButton,.1,{BackgroundTransparency=.93}):Play()
+end)
+ab.AddSignal(an.TextButton.MouseLeave,function()
+ad(an.TextButton,.1,{BackgroundTransparency=1}):Play()
+end)
 
 local ao=ab.Drag(al)
 
@@ -30304,7 +30314,7 @@ PaddingBottom=UDim.new(0,ah.UIPadding),
 ah.UIElements.Main=d
 ah.UIElements.Locked=av
 
-if false then
+if ah.Hover then
 aa.AddSignal(d.MouseEnter,function()
 if am then
 
@@ -32959,7 +32969,12 @@ Callback()
 end)
 elseif ar=="Menu"then
 if not ay.Locked then
-
+ak.AddSignal(ay.UIElements.TabItem.MouseEnter,function()
+am(ay.UIElements.TabItem,0.08,{ImageTransparency=an}):Play()
+end)
+ak.AddSignal(ay.UIElements.TabItem.InputEnded,function()
+am(ay.UIElements.TabItem,0.08,{ImageTransparency=1}):Play()
+end)
 end
 ak.AddSignal(ay.UIElements.TabItem.MouseButton1Click,function()
 if ap.Locked or ay.Locked then
@@ -33691,7 +33706,19 @@ end
 aq.Set(al.Code)
 
 if at then
-
+af.AddSignal(at.InputBegan,function(aA:InputObject)
+if
+aA.UserInputType==Enum.UserInputType.MouseButton1
+or aA.UserInputType==Enum.UserInputType.Touch
+then
+ai(at.Button,0.05,{ImageTransparency=0.95}):Play()
+ai(at.Button.UIScale,0.05,{Scale=0.9}):Play()
+end
+end)
+af.AddSignal(at.InputEnded,function()
+ai(at.Button,0.08,{ImageTransparency=1}):Play()
+ai(at.Button.UIScale,0.08,{Scale=1}):Play()
+end)
 af.AddSignal(at.MouseButton1Click,function()
 if ao then
 ao()
@@ -36186,7 +36213,7 @@ local ay
 local az=false
 
 
-if false then
+if ar.Desc then
 ak.AddSignal(ar.UIElements.Main.InputBegan,function()
 az=true
 ax=task.spawn(function()
@@ -36209,7 +36236,14 @@ end)
 end)
 end
 
-
+ak.AddSignal(ar.UIElements.Main.MouseEnter,function()
+if not ar.Locked then
+ak.SetThemeTag(ar.UIElements.Main.Frame,{
+ImageTransparency="TabBorderTransparency",
+ImageColor3="TabBackground",
+},0.1)
+end
+end)
 ak.AddSignal(ar.UIElements.Main.InputEnded,function()
 if ar.Desc then
 az=false
@@ -36993,7 +37027,14 @@ and(((ap.Padding-2)*2)+aB.Main.Outline.Frame.Title.TextBounds.Y+6+aB.Main.Outlin
 or(((ap.Padding-2)*2)+aB.Main.Outline.Frame.Title.TextBounds.Y)
 )
 
+ai.AddSignal(aB.Main.MouseEnter,function()
+al(aB.Main,0.04,{ImageTransparency=0.95}):Play()
 
+end)
+ai.AddSignal(aB.Main.InputEnded,function()
+al(aB.Main,0.08,{ImageTransparency=1}):Play()
+
+end)
 ai.AddSignal(aB.Main.MouseButton1Click,function()
 if aA then
 aA()
@@ -37674,7 +37715,14 @@ if aw.User.Callback then
 an.AddSignal(d.MouseButton1Click,function()
 aw.User.Callback()
 end)
-
+an.AddSignal(d.MouseEnter,function()
+ap(d.UserIcon,0.04,{ImageTransparency=0.95}):Play()
+ap(d.Outline,0.04,{ImageTransparency=0.85}):Play()
+end)
+an.AddSignal(d.InputEnded,function()
+ap(d.UserIcon,0.04,{ImageTransparency=1}):Play()
+ap(d.Outline,0.04,{ImageTransparency=1}):Play()
+end)
 end
 end
 
@@ -38182,7 +38230,9 @@ J or aw.TopBarButtonIconSize
 end
 end)
 
-
+an.AddSignal(M.MouseButton1Down,function()
+ap(M.UIScale,0.2,{Scale=0.9},Enum.EasingStyle.Quint,Enum.EasingDirection.Out):Play()
+end)
 
 an.AddSignal(M.MouseLeave,function()
 if aw.Topbar.ButtonsType=="Default"then
