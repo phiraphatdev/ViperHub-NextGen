@@ -121,6 +121,15 @@ function Runtime.new(
         return Rules.get(self.rules, mode)
     end
 
+    --- Returns the familiar display name for a game mode id (config table, else spaced CamelCase).
+    function self.getModeLabel(mode: string): string
+        local known = (config :: any).modeLabels[mode]
+        if type(known) == "string" then
+            return known
+        end
+        return (string.gsub(mode, "(%l)(%u)", "%1 %2"))
+    end
+
     --- Returns the latest game presets snapshot, or nil when the game has not reported any yet.
     function self.getPresets(): any
         local ad = getAdapter()

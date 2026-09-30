@@ -75,6 +75,21 @@ do
                     stagesData = 'Modules.Data.StagesData',
                     autoPlayModeBlocklist = 'Modules.Shared.AutoPlayModeBlocklist',
                 }),
+                modeLabels = table.freeze({
+                    Story = 'Story',
+                    LegendStage = 'Legend Stage',
+                    BossEvent = 'Boss Event',
+                    UnitTrial = 'Unit Trial',
+                    GuildWar = 'Guild War',
+                    Rememberance = 'Remembrance',
+                    Scenarios = 'Scenarios',
+                    Portals = 'Portals',
+                    Challenge = 'Challenge',
+                    Extra = 'Extra',
+                    Dungeon = 'Dungeon',
+                    Raid = 'Raid',
+                    LTM = 'LTM',
+                }),
                 attributes = table.freeze({
                     riftOpen = 'IsRiftOpen',
                 }),
@@ -6132,7 +6147,7 @@ do
                     }
 
                     row.dropdown = section:Dropdown({
-                        Title = mode,
+                        Title = runtime.getModeLabel(mode),
                         Values = {
                             'None',
                         },
@@ -6990,6 +7005,15 @@ do
                 end
                 function self.getRule(mode)
                     return Rules.get(self.rules, mode)
+                end
+                function self.getModeLabel(mode)
+                    local known = (config).modeLabels[mode]
+
+                    if type(known) == 'string' then
+                        return known
+                    end
+
+                    return (string.gsub(mode, '(%l)(%u)', '%1 %2'))
                 end
                 function self.getPresets()
                     local ad = getAdapter()

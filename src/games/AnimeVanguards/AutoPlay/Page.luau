@@ -100,7 +100,7 @@ local function mountRules(tab: any, runtime: any, macro: any?)
     for _, mode in modes do
         local row: any = { mode = mode, byLabel = {} }
         row.dropdown = section:Dropdown({
-            Title = mode,
+            Title = runtime.getModeLabel(mode),
             Values = { "None" },
             Value = "None",
             Callback = function(label: string)

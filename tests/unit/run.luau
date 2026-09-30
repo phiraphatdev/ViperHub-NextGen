@@ -4011,6 +4011,8 @@ test("Stage Preset Rules page lists one dropdown per mode and locks it with Auto
     end
     AutoPlayPage.mount(tab, fresh.runtime, nil)
     assert(setRuleCalls == 0, "refresh echoes are ignored")
+    assert(fresh.runtime.getModeLabel("LegendStage") == "Legend Stage")
+    assert(fresh.runtime.getModeLabel("SomeNewMode") == "Some New Mode")
     assert(dropdowns.Story ~= nil and dropdowns.Raid ~= nil)
     assert(dropdowns.Story.Selected == "Raid")
     assert(dropdowns.Raid.Selected == "None")
