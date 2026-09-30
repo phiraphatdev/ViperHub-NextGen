@@ -897,10 +897,10 @@ test("Boss Bounties joiner creates the game's daily bounty match and requires AC
         },
         bountyState = {
             GetSeed = function()
-                return 28046
+                return 1790725735 -- BountyStartTime; must not be used as the bounty seed
             end,
-            GetBountiesLeft = function()
-                return left
+            GetData = function()
+                return { BountySeed = 28046, BountiesLeft = left, BountyStartTime = 1790725735 }
             end,
         },
         bountyData = {
@@ -3247,6 +3247,79 @@ test("Joiner runtime in match triggers immediate return and suspends macro", fun
     runtime.stop()
     JoinerSettings.setBackToLobby("Rift", false, "Immediate")
     runtime.setEnabled("Rift", false)
+    JoinerSettings.setPaused(true)
+end)
+test("Joiner in match returns after Boss Bounty matches and changes stage before Vote Start", function()
+    local started = false
+    local fired: { any } = {}
+    local matchData: any = { StageType = "LegendStage", Stage = "Stage5", Act = "Act2", Host = 42 }
+    local gameHandler: any = { IsGameLoaded = true, IsMatchStarted = false, GameData = matchData }
+    local runtime = JoinerRuntime.new({
+        game = {
+            PlaceId = 16277809958,
+            GetService = function(): any
+                return {
+                    GetAttribute = function(): any
+                        return false
+                    end,
+                }
+            end,
+        },
+        task = { spawn = function() end, wait = function() end },
+        clock = function()
+            return 100
+        end,
+        userId = 42,
+        gameHandler = gameHandler,
+        lobbyReturn = {
+            RequestStartMatch = {
+                Fire = function(payload: any)
+                    table.insert(fired, payload)
+                end,
+            },
+        },
+    })
+    for _, other in { "Legend Stage", "Raid", "Dungeon", "Worldline", "Boss Event", "Boss Bounties" } do
+        JoinerSettings.setEnabled(other, false)
+    end
+    JoinerSettings.setPaused(false)
+    JoinerSettings.setBountyRun({ mode = "LegendStage", stage = "Stage5", act = "Act2", at = os.time() })
+    runtime.start({ alive = true })
+    runtime.step(100)
+    assert(runtime.returnOnMatchEnd, "a bounty match returns to the lobby after it ends")
+    assert(#fired == 0, "bounty matches are never switched")
+
+    -- A stale bounty marker is ignored; the host then switches to the enabled Stage joiner's target.
+    JoinerSettings.setBountyRun({
+        mode = "LegendStage",
+        stage = "Stage5",
+        act = "Act2",
+        at = os.time() - 99999,
+    })
+    runtime.setSelection("Stage", "Stage1", "Act1", "Normal")
+    runtime.setEnabled("Stage", true)
+    runtime.step(101)
+    assert(#fired == 1 and fired[1].StageType == "Story" and fired[1].Stage == "Stage1")
+    assert(fired[1].Act == "Act1" and fired[1].Difficulty == "Normal")
+    runtime.step(102)
+    assert(#fired == 1, "no resend inside the retry window")
+    runtime.step(108)
+    runtime.step(115)
+    assert(#fired == 2, "at most two attempts per target")
+
+    -- Already on the target or after Vote Start: nothing is sent.
+    matchData.StageType, matchData.Stage, matchData.Act = "Story", "Stage1", "Act1"
+    matchData.Difficulty = "Normal"
+    runtime.step(130)
+    assert(#fired == 2)
+    gameHandler.IsMatchStarted = true
+    started = true
+    matchData.Stage = "Stage9"
+    runtime.step(140)
+    assert(#fired == 2 and started)
+    runtime.stop()
+    JoinerSettings.setBountyRun(nil)
+    runtime.setEnabled("Stage", false)
     JoinerSettings.setPaused(true)
 end)
 test("ActivityState evaluates game-recorded challenge seeds and rift attempts", function()

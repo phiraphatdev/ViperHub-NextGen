@@ -16,6 +16,11 @@ local RETRY_SECONDS = 30
 local POLL_SECONDS = 1
 local RIFT_POLL_SECONDS = 2
 local ACK_TIMEOUT_SECONDS = 10
+local BOUNTY_RUN_MAX_AGE_SECONDS = 10800
+local CHANGE_STAGE_RETRY_SECONDS = 6
+local CHANGE_STAGE_ATTEMPTS = 2
+-- Only these match types may be switched to another joiner target before Vote Start.
+local SWITCHABLE_STAGE_TYPES = { Story = true, LegendStage = true, Raid = true, Dungeon = true }
 local START_TIMEOUT_SECONDS = 15
 local MODES = { Stage = "Story", ["Legend Stage"] = "LegendStage", Raid = "Raid", Dungeon = "Dungeon" }
 local CHALLENGES = {
@@ -142,6 +147,7 @@ function Runtime.new(dependencies: any?): any
         returnOnMatchEnd = false,
         macro = nil,
         gameSettings = nil,
+        changeAttempt = nil,
     }
     local function setStatus(value: string)
         self.status = value
@@ -156,6 +162,92 @@ function Runtime.new(dependencies: any?): any
 
     function self.setGameSettings(gs: any)
         self.gameSettings = gs
+    end
+
+    -- True when the current match is the Boss Bounty match this joiner entered recently.
+    local function isBountyMatch(settings: any, matchData: any): boolean
+        local run = settings.bountyRun
+        return type(run) == "table"
+            and type(matchData) == "table"
+            and matchData.StageType == run.mode
+            and matchData.Stage == run.stage
+            and matchData.Act == run.act
+            and os.time() - run.at >= 0
+            and os.time() - run.at < BOUNTY_RUN_MAX_AGE_SECONDS
+    end
+
+    -- Before Vote Start the host may switch this match to the highest-priority stage joiner's target.
+    local function tryChangeStage(settings: any, matchData: any, now: number): boolean
+        local deps = self.dependencies
+        if
+            not settings.changeStageInMatch
+            or type(matchData) ~= "table"
+            or not SWITCHABLE_STAGE_TYPES[matchData.StageType]
+            or matchData.Host ~= deps.userId
+            or not deps.gameHandler
+            or deps.gameHandler.IsMatchStarted ~= false
+            or not deps.lobbyReturn
+            or type(deps.lobbyReturn.RequestStartMatch) ~= "table"
+            or type(deps.lobbyReturn.RequestStartMatch.Fire) ~= "function"
+        then
+            return false
+        end
+        local target: any = nil
+        local targetName: string? = nil
+        for _, name in settings.priority do
+            local choice = settings.selection[name]
+            if MODES[name] and settings.enabled[name] and type(choice) == "table" then
+                target = {
+                    StageType = MODES[name],
+                    Stage = choice.stage,
+                    Act = choice.act,
+                    Difficulty = if MODES[name] == "LegendStage" or choice.difficulty == "Nightmare"
+                        then "Nightmare"
+                        else "Normal",
+                    FriendsOnly = true,
+                }
+                targetName = name
+                break
+            end
+        end
+        if not target then
+            return false
+        end
+        if
+            matchData.StageType == target.StageType
+            and matchData.Stage == target.Stage
+            and matchData.Act == target.Act
+            and (matchData.Difficulty == nil or matchData.Difficulty == target.Difficulty)
+        then
+            self.changeAttempt = nil
+            return false
+        end
+        local key = target.StageType .. "/" .. target.Stage .. "/" .. target.Act .. "/" .. target.Difficulty
+        local attempt = self.changeAttempt
+        if not attempt or attempt.key ~= key then
+            attempt = { key = key, sent = 0, last = -math.huge }
+            self.changeAttempt = attempt
+        end
+        if attempt.sent >= CHANGE_STAGE_ATTEMPTS then
+            return false
+        end
+        if now - attempt.last < CHANGE_STAGE_RETRY_SECONDS then
+            return true
+        end
+        attempt.sent += 1
+        attempt.last = now
+        local ok = pcall(deps.lobbyReturn.RequestStartMatch.Fire, target)
+        setStatus(
+            if ok
+                then string.format(
+                    "%s: changing stage in match (%d/%d)",
+                    targetName :: string,
+                    attempt.sent,
+                    CHANGE_STAGE_ATTEMPTS
+                )
+                else "Change stage request failed"
+        )
+        return true
     end
 
     function self.setSelection(name: string, stage: string, act: string, difficulty: string)
@@ -200,9 +292,13 @@ function Runtime.new(dependencies: any?): any
         if not deps or not deps.bountyData or not deps.bountyState then
             return nil
         end
-        local okSeed, seed = pcall(deps.bountyState.GetSeed)
-        local okLeft, left = pcall(deps.bountyState.GetBountiesLeft)
-        if not okSeed or not okLeft or type(seed) ~= "number" or type(left) ~= "number" then
+        -- The game's own bounty panel seeds from the replicated BountySeed (not BountyStartTime).
+        local okState, data = pcall(deps.bountyState.GetData)
+        if not okState or type(data) ~= "table" then
+            return nil
+        end
+        local seed, left = data.BountySeed, data.BountiesLeft
+        if type(seed) ~= "number" or type(left) ~= "number" then
             return nil
         end
         local okData, bounty = pcall(deps.bountyData.GetBountyFromSeed, seed)
@@ -332,6 +428,15 @@ function Runtime.new(dependencies: any?): any
                         else "Lobby return request failed"
                 )
             end
+            return
+        end
+
+        if isBountyMatch(settings, matchData) then
+            -- Return to the lobby after the match so the next random bounty can be joined (Auto Play stays the player's choice).
+            self.returnOnMatchEnd = true
+            return
+        end
+        if tryChangeStage(settings, matchData, now) then
             return
         end
 
@@ -694,7 +799,9 @@ function Runtime.new(dependencies: any?): any
                     local okProgress, unlocked =
                         pcall(deps.progress.GetActData, bounty.mode, bounty.stage, bounty.act)
                     if okProgress and unlocked ~= nil then
-                        local difficulty = if choice and choice.difficulty == "Nightmare"
+                        -- Legend Stage only exists on Nightmare; Story bounties use the chosen difficulty.
+                        local difficulty = if bounty.mode == "LegendStage"
+                                or (choice and choice.difficulty == "Nightmare")
                             then "Nightmare"
                             else "Normal"
                         self.pending = {
@@ -882,6 +989,14 @@ function Runtime.new(dependencies: any?): any
                         self.pending = nil
                         pending.confirmedAt = deps.clock()
                         self.confirmed = pending
+                        if pending.name == "Boss Bounties" then
+                            Settings.setBountyRun({
+                                mode = pending.mode,
+                                stage = pending.stage,
+                                act = pending.act,
+                                at = os.time(),
+                            })
+                        end
                         setStatus(pending.name .. ": confirmed by server")
                     end
                 end)

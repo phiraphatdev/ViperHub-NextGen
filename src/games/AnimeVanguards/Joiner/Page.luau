@@ -417,53 +417,36 @@ local function addUnavailable(tab: any, name: string, description: string)
     section:Paragraph({ Title = "Options", Desc = description })
 end
 
-local function addBounty(tab: any, runtime: any?)
+local function addBounty(tab: any, runtime: any?): () -> ()
     local section = tab:Section({ Title = "Boss Bounties Joiner", Opened = false })
     local saved = Settings.get()
     local previous = saved.selection["Boss Bounties"]
     local difficulty = if type(previous) == "table" and previous.difficulty == "Nightmare"
         then "Nightmare"
         else "Normal"
-    local bounty: any = if runtime and type(runtime.readBounty) == "function"
-        then (runtime.readBounty :: any)()
-        else nil
     if runtime and type(runtime.setBounty) == "function" then
         (runtime.setBounty :: any)(difficulty)
     end
     section:Toggle({
         Title = "Auto Join Boss Bounties",
-        Value = saved.enabled["Boss Bounties"] == true and bounty ~= nil,
-        Locked = runtime == nil or bounty == nil,
-        Desc = "Creates a private lobby for today's bounty stage while bounties remain.",
+        Value = saved.enabled["Boss Bounties"] == true,
+        Locked = runtime == nil or type(runtime.readBounty) ~= "function",
+        Desc = "Creates a private lobby for the current bounty stage while bounties remain.",
         Callback = function(value: boolean)
             if runtime then
                 runtime.setEnabled("Boss Bounties", value)
             end
         end,
     })
-    if runtime and saved.enabled["Boss Bounties"] == true and bounty ~= nil then
+    if runtime and saved.enabled["Boss Bounties"] == true then
         runtime.setEnabled("Boss Bounties", true)
     end
-    if not bounty then
-        section:Paragraph({
-            Title = "Today's bounty",
-            Desc = "Unavailable: bounty data is not replicated in this place.",
-        })
-        return
-    end
-    section:Paragraph({
-        Title = "Today's bounty",
-        Desc = string.format(
-            "%s %s %s%s - %d left",
-            bounty.mode,
-            bounty.stage,
-            bounty.act,
-            if bounty.boss then " (" .. bounty.boss .. ")" else "",
-            bounty.left
-        ),
+    local info = section:Paragraph({
+        Title = "Current bounty",
+        Desc = "Waiting for bounty data...",
     })
     section:Dropdown({
-        Title = "Difficulty",
+        Title = "Difficulty (Story bounties; Legend Stage is always Nightmare)",
         Values = { "Normal", "Nightmare" },
         Value = difficulty,
         Callback = function(value: string)
@@ -472,6 +455,23 @@ local function addBounty(tab: any, runtime: any?)
             end
         end,
     })
+    -- Bounty data replicates after the page mounts, so the text is refreshed by the page loop.
+    return function()
+        local bounty: any = if runtime and type(runtime.readBounty) == "function"
+            then (runtime.readBounty :: any)()
+            else nil
+        local text = if bounty
+            then string.format(
+                "%s %s %s%s - %d left today",
+                bounty.mode,
+                bounty.stage,
+                bounty.act,
+                if bounty.boss then " (" .. bounty.boss .. ")" else "",
+                bounty.left
+            )
+            else "Unavailable: bounty data is not replicated in this place."
+        pcall(info.SetDesc, info, text)
+    end
 end
 
 local function addChallenge(tab: any, kind: string, choices: any, runtime: any?): any
@@ -593,6 +593,12 @@ function Page.mount(tab: any, stageDataOverride: any?, runtime: any?, challengeC
         Desc = if state.persistent then "Autosaved to file" else "Session only: file APIs unavailable",
     })
     settings:Toggle({ Title = "Disable Auto Joiners", Value = state.paused, Callback = Settings.setPaused })
+    settings:Toggle({
+        Title = "Change Stage in Match",
+        Desc = "As host before Vote Start, switch the match to the highest-priority enabled stage joiner's stage instead of returning to the lobby.",
+        Value = state.changeStageInMatch ~= false,
+        Callback = Settings.setChangeStageInMatch,
+    })
     settings:Slider({
         Title = "Joiner Cooldown (seconds)",
         Step = 1,
@@ -654,7 +660,7 @@ function Page.mount(tab: any, stageDataOverride: any?, runtime: any?, challengeC
     )
     addSpecial(tab, "Boss Event", specialChoices, runtime)
     addSpecial(tab, "Worldline", specialChoices, runtime)
-    addBounty(tab, runtime)
+    local updateBounty = addBounty(tab, runtime)
     local riftTimer = addRift(tab, runtime)
     local regTimer = addChallenge(tab, "Regular", challengeChoices, runtime)
     local dailyTimer = addChallenge(tab, "Daily", challengeChoices, runtime)
@@ -745,7 +751,9 @@ function Page.mount(tab: any, stageDataOverride: any?, runtime: any?, challengeC
                     updateTimer(dailyTimer, "Daily")
                     updateTimer(weeklyTimer, "Weekly")
                 end
-                (taskApi.wait :: any)(1)
+                pcall(updateBounty)
+                local waitFn: any = taskApi.wait
+                waitFn(1)
             end
         end)
     end

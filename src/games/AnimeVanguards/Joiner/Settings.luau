@@ -37,6 +37,8 @@ local cooldown = DEFAULT_COOLDOWN
 local priority = defaultPriority()
 local enabled: { [string]: boolean } = {}
 local selection: { [string]: any } = {}
+local changeStageInMatch = true
+local bountyRun: any = nil
 local storage: FileStorage.Storage? = nil
 local encode: ((any) -> string)? = nil
 
@@ -57,6 +59,8 @@ local function save()
         priority = priority,
         enabled = enabled,
         selection = selection,
+        changeStageInMatch = changeStageInMatch,
+        bountyRun = bountyRun,
     })
     if ok and type(body) == "string" then
         activeStorage.write(body)
@@ -117,6 +121,23 @@ function Settings.init(env: any)
             end
             priority = retained
         end
+    end
+    if type(data.changeStageInMatch) == "boolean" then
+        changeStageInMatch = data.changeStageInMatch
+    end
+    if
+        type(data.bountyRun) == "table"
+        and type(data.bountyRun.mode) == "string"
+        and type(data.bountyRun.stage) == "string"
+        and type(data.bountyRun.act) == "string"
+        and type(data.bountyRun.at) == "number"
+    then
+        bountyRun = {
+            mode = data.bountyRun.mode,
+            stage = data.bountyRun.stage,
+            act = data.bountyRun.act,
+            at = data.bountyRun.at,
+        }
     end
     if type(data.enabled) == "table" then
         for name, value in data.enabled do
@@ -224,8 +245,39 @@ function Settings.get()
         priority = table.clone(priority),
         enabled = table.clone(enabled),
         selection = table.clone(selection),
+        changeStageInMatch = changeStageInMatch,
+        bountyRun = bountyRun,
         persistent = storage ~= nil,
     }
+end
+
+--- Enables or disables changing the stage inside a match before Vote Start.
+function Settings.setChangeStageInMatch(value: boolean): boolean
+    if type(value) ~= "boolean" then
+        return false
+    end
+    changeStageInMatch = value
+    save()
+    return true
+end
+
+--- Records (or clears with nil) the Boss Bounty match the joiner entered, so the match place can recognise it.
+function Settings.setBountyRun(run: any): boolean
+    if run == nil then
+        bountyRun = nil
+    elseif
+        type(run) == "table"
+        and type(run.mode) == "string"
+        and type(run.stage) == "string"
+        and type(run.act) == "string"
+        and type(run.at) == "number"
+    then
+        bountyRun = { mode = run.mode, stage = run.stage, act = run.act, at = run.at }
+    else
+        return false
+    end
+    save()
+    return true
 end
 
 --- Stores a supported mode toggle and writes it immediately when storage exists.
