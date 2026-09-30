@@ -293,7 +293,7 @@ function Adapter.new(injectedDeps: any?): any
         local modes: { string } = {}
         local seen: { [string]: boolean } = {}
         for _, mode in typeNames do
-            if type(mode) == "string" and not seen[mode] then
+            if type(mode) == "string" and not seen[mode] and not (config :: any).hiddenModes[mode] then
                 seen[mode] = true
                 local okStages, stageMap = pcall(data.GetAllStageNameAndIndex, mode)
                 local supported = false

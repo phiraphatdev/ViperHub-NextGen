@@ -3907,7 +3907,7 @@ test("AutoPlay adapter reads presets, switches by id and lists supported modes",
         },
         stagesData = {
             GetAllStageTypeNames = function()
-                return { "Raid", "Story", "Story", "PVP", "LTM", "Empty" }
+                return { "Raid", "Story", "Story", "PVP", "LTM", "Empty", "Extra" }
             end,
             GetAllStageNameAndIndex = function(mode: string)
                 if mode == "Story" then
@@ -3918,6 +3918,8 @@ test("AutoPlay adapter reads presets, switches by id and lists supported modes",
                     return { ["Arena"] = "Stage2" }
                 elseif mode == "Empty" then
                     return {}
+                elseif mode == "Extra" then
+                    return { ["Greenscreen"] = "Stage1" }
                 end
                 return { ["Pirate Dynasty"] = "Pirate Dynasty", ["Rts"] = "RTS" }
             end,
@@ -3944,7 +3946,7 @@ test("AutoPlay adapter reads presets, switches by id and lists supported modes",
     local data = adapter.getGameData()
     assert(data ~= nil and data.mode == "Story" and data.stage == "Stage1")
     local modes = adapter.getModes()
-    assert(modes ~= nil and #modes == 3)
+    assert(modes ~= nil and #modes == 3, "blocked, empty and hidden modes are skipped")
     assert(modes[1] == "Story" and modes[2] == "LTM" and modes[3] == "Raid")
     adapter.untrackPresets()
     assert(adapter.getPresets() == nil and handler == nil)

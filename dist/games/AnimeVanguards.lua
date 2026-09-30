@@ -81,14 +81,18 @@ do
                     BossEvent = 'Boss Event',
                     UnitTrial = 'Unit Trial',
                     GuildWar = 'Guild War',
-                    Rememberance = 'Remembrance',
-                    Scenarios = 'Scenarios',
+                    Rememberance = 'Training Grounds',
+                    Scenarios = 'Trials',
                     Portals = 'Portals',
                     Challenge = 'Challenge',
                     Extra = 'Extra',
                     Dungeon = 'Dungeon',
                     Raid = 'Raid',
-                    LTM = 'LTM',
+                    LTM = 'Limited Time Event',
+                }),
+                hiddenModes = table.freeze({
+                    Extra = true,
+                    GuildWar = true,
                 }),
                 attributes = table.freeze({
                     riftOpen = 'IsRiftOpen',
@@ -6784,7 +6788,7 @@ do
                     local seen = {}
 
                     for _, mode in typeNames do
-                        if type(mode) == 'string' and not seen[mode] then
+                        if type(mode) == 'string' and not seen[mode] and not (config).hiddenModes[mode] then
                             seen[mode] = true
 
                             local okStages, stageMap = pcall(data.GetAllStageNameAndIndex, mode)
