@@ -21,7 +21,7 @@ local WEBHOOK: any = (config :: any).webhook
 local THRESHOLDS: any = (config :: any).thresholds
 local TICK_SECONDS = 1
 local SESSION_DELAY_SECONDS = 5
-local END_SCREEN_DELAY_SECONDS = 4
+local END_SCREEN_DELAY_SECONDS = 1.5
 local UNIT_DEDUP_LIMIT = 4000
 
 local function resolve(root: any, path: string): any
