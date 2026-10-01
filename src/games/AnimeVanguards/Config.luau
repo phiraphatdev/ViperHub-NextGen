@@ -164,6 +164,8 @@ return table.freeze({
         macroListCacheSeconds = 5,
         presetSwitchTimeoutSeconds = 8,
         presetRequestSeconds = 8,
+        -- Wait after the game reports loaded before any feature starts (keeps early network traffic away from the join).
+        startDelaySeconds = 6,
     }),
     remoteNames = table.freeze({
         worldlineProgress = "GetWorldlineProgress",

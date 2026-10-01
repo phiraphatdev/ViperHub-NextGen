@@ -265,6 +265,7 @@ do
                     macroListCacheSeconds = 5,
                     presetSwitchTimeoutSeconds = 8,
                     presetRequestSeconds = 8,
+                    startDelaySeconds = 6,
                 }),
                 remoteNames = table.freeze({
                     worldlineProgress = 'GetWorldlineProgress',
@@ -12627,7 +12628,7 @@ function GameModule.start(context)
             end)
         end
         if type(taskApi) == 'table' and type(taskApi.wait) == 'function' then
-            (taskApi).wait(2)
+            (taskApi).wait(config.thresholds.startDelaySeconds)
         end
         if gameObject and gameObject.PlaceId ~= metadata.placeIds[1] then
             pcall(function()

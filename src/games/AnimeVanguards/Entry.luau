@@ -104,7 +104,7 @@ function GameModule.start(context: Types.Context)
             end)
         end
         if type(taskApi) == "table" and type(taskApi.wait) == "function" then
-            (taskApi :: any).wait(2.0)
+            (taskApi :: any).wait(config.thresholds.startDelaySeconds)
         end
         if gameObject and gameObject.PlaceId ~= metadata.placeIds[1] then
             pcall(function()
