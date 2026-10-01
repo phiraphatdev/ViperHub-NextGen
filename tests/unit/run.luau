@@ -37,6 +37,11 @@ local AutoPlayPage = require("../../src/games/AnimeVanguards/AutoPlay/Page")
 local AutoPlayRules = require("../../src/games/AnimeVanguards/AutoPlay/Rules")
 local AutoPlayAdapter = require("../../src/games/AnimeVanguards/AutoPlay/Adapter")
 local StatusPage = require("../../src/games/AnimeVanguards/Status/Page")
+local WebhookEmbed = require("../../src/games/AnimeVanguards/Webhook/Embed")
+local WebhookSender = require("../../src/games/AnimeVanguards/Webhook/Sender")
+local WebhookEvents = require("../../src/games/AnimeVanguards/Webhook/Events")
+local WebhookRuntime = require("../../src/games/AnimeVanguards/Webhook/Runtime")
+local WebhookPage = require("../../src/games/AnimeVanguards/Webhook/Page")
 local ExpeditionsEntry = require("../../src/games/AnimeExpeditions/Entry")
 local passed = 0
 local function test(name: string, callback: () -> ())
@@ -5210,5 +5215,502 @@ test("Team popup guard replaces a stale wrapper instead of stacking", function()
     assert(calls == 1, "one wrapper layer: the original runs once")
     second.stop()
     assert(popupHandler.ShowPopup == original, "the original is back after stopping the current adapter")
+end)
+local WEBHOOK_CONFIG: any = (VanguardsConfig :: any).webhook
+local HOOK_URL = "https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_-ABCDEF"
+test("Webhook URL validation and masking", function()
+    local hosts = WEBHOOK_CONFIG.hosts
+    assert(WebhookEmbed.validUrl(HOOK_URL, hosts))
+    assert(WebhookEmbed.validUrl(HOOK_URL .. "/", hosts))
+    assert(
+        not WebhookEmbed.validUrl(
+            "http://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz",
+            hosts
+        )
+    )
+    assert(
+        not WebhookEmbed.validUrl(
+            "https://evil.example/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz",
+            hosts
+        )
+    )
+    assert(not WebhookEmbed.validUrl("https://discord.com/api/webhooks/123/abc", hosts))
+    assert(not WebhookEmbed.validUrl(HOOK_URL .. "?wait=true&x=1", hosts))
+    assert(not WebhookEmbed.validUrl(nil, hosts))
+    assert(not WebhookEmbed.validUrl(string.rep("a", 400), hosts))
+    local masked = WebhookEmbed.mask(HOOK_URL, hosts)
+    assert(not string.find(masked, "abcdefgh", 1, true), "token must not appear")
+    assert(not string.find(masked, "12345678901", 1, true), "only the first id digits may appear")
+    assert(WebhookEmbed.mask("nope", hosts) == "(not set)")
+end)
+test("Webhook embeds stay inside Discord limits and mentions stay disabled", function()
+    local fields: { any } = {}
+    for index = 1, 40 do
+        table.insert(fields, { name = "N" .. index, value = string.rep("v", 1500), inline = true })
+    end
+    local embed = WebhookEmbed.build({
+        title = string.rep("t", 400),
+        description = string.rep("d", 5000),
+        fields = fields,
+        footer = "f",
+        color = 0xFFFFFFF,
+        timestamp = "2026-01-02T03:04:05Z",
+        authorName = "Player",
+        authorIcon = "http://insecure.example/x.png",
+    })
+    assert(#embed.title <= 256 and #embed.description <= 4000 and #embed.fields <= 25)
+    assert(embed.color == 0xFFFFFF)
+    assert(embed.author.icon_url == nil, "non-https icon dropped")
+    local total = #embed.title + #embed.description + #embed.footer.text + #embed.author.name
+    for _, field in embed.fields do
+        assert(#field.value <= 1024)
+        total += #field.name + #field.value
+    end
+    assert(total <= 6000, "embed total " .. total)
+    assert(WebhookEmbed.build({ title = "x", timestamp = "yesterday" }).timestamp == nil)
+    local plain = WebhookEmbed.payload(
+        { embed },
+        { username = "Discord Bot", ping = true, pingUserId = "99" }
+    )
+    assert(plain.username == "ViperHub", "reserved bot name replaced")
+    assert(
+        plain.content == nil and #plain.allowed_mentions.parse == 0 and plain.allowed_mentions.users == nil
+    )
+    local pinged = WebhookEmbed.payload({ embed }, { ping = true, pingUserId = "123456789012345678" })
+    assert(
+        pinged.content == "<@123456789012345678>" and pinged.allowed_mentions.users[1] == "123456789012345678"
+    )
+    assert(#pinged.allowed_mentions.parse == 0, "no role/everyone parsing")
+    assert(WebhookEmbed.number(1234) == "1,234" and WebhookEmbed.number(25000) == "25.0K")
+    assert(WebhookEmbed.number(3400000) == "3.40M" and WebhookEmbed.number("x") == "0")
+    assert(WebhookEmbed.duration(3723) == "1h 02m 03s" and WebhookEmbed.duration(65) == "1m 05s")
+end)
+local function webhookClock(): any
+    local fake: any = { now = 0, waits = 0 }
+    fake.task = {
+        spawn = function(callback: any, ...: any)
+            callback(...)
+        end,
+        wait = function(seconds: number?)
+            fake.now += seconds or 0
+            fake.waits += 1
+            if fake.onWait then
+                (fake.onWait :: any)()
+            end
+        end,
+    }
+    fake.clock = function()
+        return fake.now
+    end
+    return fake
+end
+local function webhookCodec(): any
+    local codec: any = { values = {}, count = 0 }
+    codec.encode = function(value: any): string
+        codec.count += 1
+        local key = "J" .. codec.count
+        codec.values[key] = value
+        return key
+    end
+    codec.decode = function(text: string): any
+        return codec.values[text] or { retry_after = 1 }
+    end
+    return codec
+end
+test("Webhook sender queues, rate limits, retries and shuts down on a rejected URL", function()
+    local clk = webhookClock()
+    local codec = webhookCodec()
+    local statuses: { number } = {}
+    local urls: { string } = {}
+    local sender = WebhookSender.new({
+        request = function(req: any)
+            table.insert(urls, req.Url)
+            local status = table.remove(statuses, 1) or 204
+            return { StatusCode = status, Body = "{}", Headers = {} }
+        end,
+        encode = codec.encode,
+        decode = codec.decode,
+        task = clk.task,
+        clock = clk.clock,
+        minInterval = 1.5,
+        queueLimit = 3,
+        retryLimit = 2,
+    })
+    assert(not sender.enqueue({ a = 1 }), "no URL yet")
+    sender.setUrl(HOOK_URL)
+    assert(sender.isReady())
+    assert(sender.enqueue({ a = 1 }) and sender.stats.sent == 1 and sender.state == "idle")
+    local before = clk.now
+    assert(sender.enqueue({ a = 2 }) and sender.stats.sent == 2)
+    assert(clk.now - before >= 1.4, "second message waited for the minimum interval")
+    statuses = { 429, 204 }
+    assert(sender.enqueue({ a = 3 }) and sender.stats.sent == 3, "429 retried and then delivered")
+    statuses = { 500, 500, 500, 500 }
+    sender.enqueue({ a = 4 })
+    assert(sender.stats.failed == 1 and sender.state == "offline", "gave up after the retry limit")
+    statuses = { 400 }
+    sender.enqueue({ a = 5 })
+    assert(sender.stats.dropped == 1, "malformed payload dropped without retry")
+    statuses = { 404 }
+    sender.enqueue({ a = 6 })
+    assert(sender.state == "invalid" and not sender.isReady() and sender.url == nil)
+    assert(not sender.enqueue({ a = 7 }), "invalid URL stops delivery")
+    for _, value in { sender.state, sender.stats.sent, sender.stats.failed } do
+        assert(not string.find(tostring(value), "abcdefgh", 1, true))
+    end
+    assert(urls[1] == HOOK_URL)
+end)
+test("Webhook sender drops the oldest payload when the queue is full", function()
+    local clk = webhookClock()
+    local codec = webhookCodec()
+    local sender = WebhookSender.new({
+        request = function()
+            return { StatusCode = 204 }
+        end,
+        encode = codec.encode,
+        task = {
+            spawn = function() end, -- delivery never starts, so the queue fills
+            wait = clk.task.wait,
+        },
+        clock = clk.clock,
+        minInterval = 0,
+        queueLimit = 2,
+        retryLimit = 1,
+    })
+    sender.setUrl(HOOK_URL)
+    for index = 1, 4 do
+        sender.enqueue({ n = index })
+    end
+    assert(#sender.queue == 2 and sender.queue[1].payload.n == 3 and sender.stats.dropped == 2)
+    sender.stop()
+    assert(#sender.queue == 0 and not sender.enqueue({ n = 9 }))
+end)
+test("Webhook events build for every kind and ping only when it matters", function()
+    local ctx = {
+        player = "Tester",
+        userId = 42,
+        showPlayer = true,
+        timestamp = "2026-01-02T03:04:05Z",
+        version = "1.2.3",
+    }
+    for _, kind in WebhookEvents.kinds do
+        local spec = WebhookEvents.build(
+            kind.id,
+            { message = "m", name = "Boss", rarity = "Secret", result = "Victory" },
+            ctx,
+            WEBHOOK_CONFIG
+        )
+        assert(spec and spec.title and spec.title ~= "", kind.id)
+        assert(#WebhookEmbed.build(spec :: any).title > 0)
+    end
+    assert(WebhookEvents.build("test", {}, ctx, WEBHOOK_CONFIG) ~= nil)
+    assert(WebhookEvents.build("nonsense", {}, ctx, WEBHOOK_CONFIG) == nil)
+    local _, secretPing = WebhookEvents.build("unit", { name = "X", rarity = "Secret" }, ctx, WEBHOOK_CONFIG)
+    local _, mythicPing = WebhookEvents.build("unit", { name = "X", rarity = "Mythic" }, ctx, WEBHOOK_CONFIG)
+    local _, vanguardPing =
+        WebhookEvents.build("unit", { name = "X", rarity = "Vanguard" }, ctx, WEBHOOK_CONFIG)
+    assert(secretPing and vanguardPing and not mythicPing)
+    local win = WebhookEvents.build(
+        "matchEnd",
+        { result = "Victory", rewards = { { name = "Gems", amount = "50" } } },
+        ctx,
+        WEBHOOK_CONFIG
+    ) :: any
+    local loss = WebhookEvents.build("matchEnd", { result = "Defeat" }, ctx, WEBHOOK_CONFIG) :: any
+    assert(
+        win.color ~= loss.color and string.find(win.title, "Victory") and string.find(loss.title, "Defeat")
+    )
+    assert(win.authorName == "Tester" and string.find(win.authorIcon, "userId=42", 1, true))
+    ctx.showPlayer = false
+    local hidden = WebhookEvents.build("session", {}, ctx, WEBHOOK_CONFIG) :: any
+    assert(hidden.authorName == nil and hidden.authorIcon == nil, "player identity hidden when switched off")
+end)
+local function newWebhook(extra: any?): any
+    local clk = webhookClock()
+    local codec = webhookCodec()
+    local sent: { any } = {}
+    local holder: any = { stored = nil }
+    local deps: any = {
+        encode = codec.encode,
+        decode = codec.decode,
+        task = clk.task,
+        clock = clk.clock,
+        timestamp = function()
+            return "2026-01-02T03:04:05Z"
+        end,
+        playerName = "Tester",
+        userId = 42,
+        request = function(req: any)
+            table.insert(sent, codec.values[req.Body])
+            return { StatusCode = 204 }
+        end,
+        storage = {
+            read = function()
+                return holder.stored, nil
+            end,
+            write = function(body: string)
+                holder.stored = body
+                return true
+            end,
+        },
+    }
+    for key, value in extra or {} do
+        deps[key] = value
+    end
+    return { runtime = WebhookRuntime.new(deps), sent = sent, clk = clk, codec = codec, deps = deps }
+end
+test("Webhook runtime validates settings, hides the URL and persists", function()
+    local h = newWebhook()
+    local rt = h.runtime
+    rt.start({ alive = false }, {})
+    local ok, err = rt.setUrl("https://example.com/hook")
+    assert(not ok and err == "INVALID_URL")
+    assert(rt.setUrl(HOOK_URL))
+    assert(not rt.setPingUser("abc") and not rt.setPingUser("123") and rt.setPingUser("123456789012345678"))
+    assert(not rt.setMinRarity("Common") and rt.setMinRarity("Mythic"))
+    assert(not rt.setAvatar("http://x.example/a.png") and rt.setAvatar("https://cdn.example/a.png"))
+    assert(not rt.setEvent("unknown", true) and rt.setEvent("rift", false))
+    assert(rt.setEnabled(true) and rt.setUsername("My Bot"))
+    local view = rt.getSettings()
+    assert(view.url == nil and view.hasUrl and not string.find(view.urlMasked, "abcdefgh", 1, true))
+    assert(not string.find(rt.getStatus(), "abcdefgh", 1, true))
+    local second = newWebhook({ storage = h.deps.storage, encode = h.codec.encode, decode = h.codec.decode })
+    second.runtime.start({ alive = false }, {})
+    local restored = second.runtime.getSettings()
+    assert(
+        restored.enabled
+            and restored.hasUrl
+            and restored.minRarity == "Mythic"
+            and restored.events.rift == false
+    )
+    assert(restored.username == "My Bot" and restored.pingUserId == "123456789012345678")
+    second.runtime.clearUrl()
+    assert(not second.runtime.getSettings().hasUrl)
+end)
+test("Webhook runtime sends tests and respects the master and per-event switches", function()
+    local h = newWebhook()
+    local rt = h.runtime
+    local ok, err = rt.sendTest()
+    assert(not ok and err == "NO_URL")
+    rt.setUrl(HOOK_URL)
+    assert(rt.sendTest() and #h.sent == 1 and h.sent[1].embeds[1].title ~= nil)
+    assert(not rt.notify("rift", { message = "x" }), "disabled by default")
+    rt.setEnabled(true)
+    assert(rt.notify("rift", { message = "x" }) and #h.sent == 2)
+    rt.setEvent("rift", false)
+    assert(not rt.notify("rift", { message = "x" }) and #h.sent == 2)
+    assert(rt.notify("warning", { message = "careful" }, "w", 60) and #h.sent == 3)
+    assert(not rt.notify("warning", { message = "careful" }, "w", 60), "cooldown dedupes")
+    h.clk.now += 61
+    assert(rt.notify("warning", { message = "careful" }, "w", 60) and #h.sent == 4)
+end)
+test("Webhook runtime announces new units only after startup and only once", function()
+    local owned: any = { ["old"] = true }
+    local units: any = {
+        old = { UnitData = { Name = "Old", Rarity = "Secret" } },
+        n1 = { UnitData = { Name = "Rarey", Rarity = "Rare" }, Level = 1 },
+        n2 = { UnitData = { Name = "Ghost", Rarity = "Secret" }, Level = 1, Trait = { Name = "Fortune" } },
+    }
+    local captured: { any } = {}
+    local function signalHandler(...: any)
+        (captured[1] :: any)(...)
+    end
+    local ownedModule: any = {
+        GetOwnedUnits = function()
+            return owned
+        end,
+        GetUnitObject = function(guid: string)
+            return units[guid]
+        end,
+        UnitAdded = {
+            Connect = function(_self: any, handler: any)
+                captured[1] = handler
+                return { Disconnect = function() end }
+            end,
+        },
+    }
+    local h = newWebhook({ ownedUnitsModule = ownedModule, unitObject = ownedModule.GetUnitObject })
+    local rt = h.runtime
+    rt.setUrl(HOOK_URL)
+    rt.setEnabled(true)
+    rt.setMinRarity("Epic")
+    rt.start({ alive = false }, {})
+    assert(captured[1], "UnitAdded connected")
+    signalHandler("n2")
+    assert(#h.sent == 0, "ignored while the inventory is still replicating")
+    h.clk.now += 100
+    signalHandler("old")
+    signalHandler("n1")
+    assert(#h.sent == 0, "known and below-minimum units are ignored")
+    units.n2.UniqueIdentifier = "n2"
+    signalHandler(units.n2)
+    signalHandler("n2")
+    assert(#h.sent == 1, "announced exactly once")
+    local embed = h.sent[1].embeds[1]
+    assert(string.find(embed.title, "Secret") and string.find(embed.description, "Ghost"))
+    rt.stop()
+    rt.stop()
+end)
+test("Webhook runtime turns joiner and auto play status lines into notices", function()
+    local h = newWebhook()
+    local rt = h.runtime
+    rt.setUrl(HOOK_URL)
+    rt.setEnabled(true)
+    rt.onStatusLine("joiner", "Idle")
+    rt.onStatusLine("joiner", "Team Equipper: waiting for Team 1 to equip")
+    assert(#h.sent == 0, "progress lines are quiet")
+    rt.onStatusLine("joiner", "Stage Joiner: confirmed by server")
+    assert(#h.sent == 1 and string.find(h.sent[1].embeds[1].title, "entered"))
+    rt.onStatusLine("joiner", "Stage Joiner: entered match")
+    assert(#h.sent == 1, "same joiner not announced twice in a row")
+    rt.onStatusLine("joiner", "Boss Bounties: stage/act locked or progress unavailable")
+    assert(#h.sent == 2 and string.find(h.sent[2].embeds[1].title, "problem"))
+    rt.onStatusLine("joiner", "Boss Bounties: stage/act locked or progress unavailable")
+    assert(#h.sent == 2, "problem repeats are rate limited")
+    rt.onStatusLine("joiner", "Team Equipper: Team 1 was not confirmed; skipping Stage")
+    assert(#h.sent == 3 and string.find(h.sent[3].embeds[1].title, "Equipper"))
+    rt.onStatusLine("autoPlay", "Native Auto Play active")
+    rt.onStatusLine("autoPlay", "Preset switch not confirmed")
+    assert(#h.sent == 5)
+    rt.setEvent("autoPlay", false)
+    rt.onStatusLine("autoPlay", "Request failed")
+    assert(#h.sent == 5)
+end)
+test("Webhook runtime reports bounty progress, rift openings and match results", function()
+    local left = 5
+    local rift: boolean? = false
+    local screen: any =
+        { result = "Victory", damage = "1.2M", rewards = { { name = "Gems", amount = "50" } } }
+    local h = newWebhook({
+        readBounty = function()
+            return { left = left, mode = "Story", stage = "Planet Namak", act = "Act 1", boss = "Frieza" }
+        end,
+        riftOpen = function()
+            return rift
+        end,
+        readEndScreen = function()
+            return screen
+        end,
+        gameData = function()
+            return { StageType = "Story", Stage = "Planet Namak", Act = "Act 1", Difficulty = "Normal" }
+        end,
+    })
+    local rt = h.runtime
+    rt.setUrl(HOOK_URL)
+    rt.setEnabled(true)
+    rt.tick()
+    assert(#h.sent == 0, "first reading only sets the baseline")
+    left = 4
+    h.clk.now += 20
+    rt.tick()
+    assert(#h.sent == 1 and string.find(h.sent[1].embeds[1].title, "4 left"))
+    rift = true
+    rt.tick()
+    assert(#h.sent == 2 and string.find(h.sent[2].embeds[1].title, "Rift"))
+    rt.tick()
+    assert(#h.sent == 2, "an already open rift is not announced again")
+    rt.onMatchStarted()
+    h.clk.now += 90
+    rt.onMatchEnded()
+    assert(#h.sent == 3)
+    local embed = h.sent[3].embeds[1]
+    assert(string.find(embed.title, "Victory") and string.find(embed.description, "Planet Namak", 1, true))
+    local text = ""
+    for _, field in embed.fields do
+        text ..= field.name .. field.value
+    end
+    assert(string.find(text, "1m 3", 1, true) and string.find(text, "Gems", 1, true))
+    screen = nil
+    rt.onMatchEnded()
+    assert(
+        #h.sent == 4 and string.find(h.sent[4].embeds[1].title, "Defeat"),
+        "unreadable end screen still reports"
+    )
+end)
+test("Webhook runtime start sends one session notice and stops its loop", function()
+    local h = newWebhook()
+    local rt = h.runtime
+    rt.setUrl(HOOK_URL)
+    rt.setEnabled(true)
+    local ctx: any = { alive = true }
+    h.clk.onWait = function()
+        if h.clk.waits >= 4 then
+            ctx.alive = false
+        end
+    end
+    local feed: any = {
+        addStatusListener = function(listener: any)
+            listener("Stage Joiner: confirmed by server")
+            return function() end
+        end,
+    }
+    rt.start(ctx, { joiner = feed })
+    assert(#h.sent >= 2, "session start plus the joiner line")
+    local sessions = 0
+    for _, payload in h.sent do
+        if string.find(payload.embeds[1].title, "session") then
+            sessions += 1
+        end
+    end
+    assert(sessions == 1)
+    rt.stop()
+end)
+test("Webhook page mounts controls, hides the URL and reports errors", function()
+    local h = newWebhook()
+    local rt = h.runtime
+    local mounted: { [string]: any } = {}
+    local statusText = ""
+    local function ctl(name: string): any
+        return mounted[name]
+    end
+    local function control(kind: string): (any, any) -> any
+        return function(_self: any, options: any)
+            local entry: any = { options = options, kind = kind }
+            mounted[options.Title] = entry
+            entry.Set = function(_s: any, value: any)
+                entry.value = value
+            end
+            entry.SetPlaceholder = function(_s: any, value: string)
+                entry.placeholder = value
+            end
+            return entry
+        end
+    end
+    local function host(): any
+        local node: any = {}
+        for _, name in { "Input", "Toggle", "Button", "Dropdown" } do
+            node[name] = control(name)
+        end
+        node.Section = function()
+            return host()
+        end
+        node.Paragraph = function(_self: any, options: any)
+            return {
+                options = options,
+                SetDesc = function(_s: any, text: string)
+                    statusText = text
+                end,
+            }
+        end
+        return node
+    end
+    WebhookPage.mount(host(), rt)
+    assert(ctl("Webhook URL") and ctl("Send test message") and ctl("Minimum rarity to announce"))
+    for _, kind in WebhookEvents.kinds do
+        assert(ctl(kind.label), kind.id)
+    end
+    ctl("Webhook URL").options.Callback("")
+    ctl("Webhook URL").options.Callback("https://example.com/nope")
+    assert(string.find(statusText, "not a Discord webhook"), statusText)
+    ctl("Webhook URL").options.Callback(HOOK_URL)
+    assert(rt.getSettings().hasUrl and ctl("Webhook URL").value == "", "box cleared after entry")
+    assert(not string.find(ctl("Webhook URL").placeholder, "abcdefgh", 1, true))
+    ctl("Send notifications").options.Callback(true)
+    ctl("Send test message").options.Callback()
+    assert(string.find(statusText, "queued") and #h.sent == 1, statusText)
+    ctl("Rift opened").options.Callback(false)
+    assert(rt.getSettings().events.rift == false)
+    ctl("Forget webhook URL").options.Callback()
+    assert(not rt.getSettings().hasUrl)
 end)
 print(string.format("PASS: %d unit scenarios", passed))

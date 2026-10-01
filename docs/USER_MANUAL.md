@@ -130,3 +130,4 @@ loadstring(game:HttpGet("http://127.0.0.1:8766/runtime-smoke.lua"))()
 ไม่ส่ง token, cookie, ไฟล์ config ส่วนตัวหรือข้อมูลบัญชี ผู้ดูแลตรวจหลักฐานก่อนเปลี่ยนสถานะเกม
 
 เอกสารเพิ่มเติม: [Testing](TESTING.md) · [Executors](EXECUTORS.md) · [Security](SECURITY.md)
+- **Webhook (Discord):** วาง URL เว็บฮุคของช่อง Discord ในแท็บ Webhook (ระบบเก็บในเครื่องและไม่แสดง URL อีกหลังกรอก) เปิด "Send notifications" แล้วกด "Send test message" เพื่อลอง ระบบแจ้งเตือนผล match, unit ใหม่ (เลือกระดับขั้นต่ำได้ Secret ขึ้นไปสามารถ ping คุณ), joiner เข้าด่าน/มีปัญหา, ความคืบหน้า Boss Bounty, Rift เปิด, Equipper, Auto Play, คำเตือน และเริ่มเซสชัน เปิด/ปิดได้ทีละเหตุการณ์ ตั้งชื่อบอท รูปบอท และซ่อนชื่อ/รูป Roblox ได้ ถ้า Discord ปฏิเสธ URL ระบบจะหยุดส่งและบอกสถานะ

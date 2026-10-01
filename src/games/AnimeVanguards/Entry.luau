@@ -3,7 +3,7 @@
 Purpose: Expose game-owned navigation and lifecycle for verified stage joining
 Input: Game context
 Output: GameModule contract
-Dependencies: Metadata; Config; types/GameModule
+Dependencies: Metadata; Config; types/GameModule; Webhook
 ]]
 
 local Types = require("../../types/GameModule")
@@ -18,11 +18,14 @@ local GameAdapter = require("./Game/Adapter")
 local AutoPlayPage = require("./AutoPlay/Page")
 local AutoPlayRuntime = require("./AutoPlay/Runtime")
 local StatusPage = require("./Status/Page")
+local WebhookPage = require("./Webhook/Page")
+local WebhookRuntime = require("./Webhook/Runtime")
 local active = false
 local joiner = JoinerRuntime.new()
 local macro = MacroRuntime.new()
 local gameSettings = GameAdapter.new()
 local autoPlay = AutoPlayRuntime.new()
+local webhook = WebhookRuntime.new()
 local pages: { Types.PageDefinition } = {
     {
         title = "Status",
@@ -65,7 +68,14 @@ local pages: { Types.PageDefinition } = {
             MacroPage.mount(tab, macro, window, autoPlay)
         end,
     },
-    { title = "Webhook", icon = "bell", description = "Navigation only; no webhook actions yet." },
+    {
+        title = "Webhook",
+        icon = "bell",
+        description = "Discord notifications for units, matches, joiner and bounty events.",
+        render = function(tab: any)
+            WebhookPage.mount(tab, webhook)
+        end,
+    },
     { title = "Misc", icon = "ellipsis", description = "Navigation only; no miscellaneous actions yet." },
 }
 local GameModule = { metadata = metadata, config = config, pages = pages, windowTags = config.windowTags }
@@ -125,6 +135,7 @@ function GameModule.start(context: Types.Context)
         macro.start(context)
         gameSettings.start(context)
         autoPlay.start(context)
+        webhook.start(context, { joiner = joiner, autoPlay = autoPlay })
         context.log("GAME_STARTED")
     end
 
@@ -140,6 +151,7 @@ function GameModule.stop()
     macro.stop()
     gameSettings.stop()
     autoPlay.stop()
+    webhook.stop()
     active = false
 end
 return GameModule

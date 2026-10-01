@@ -390,7 +390,7 @@ local function evaluateSystems(): { [string]: { StatusItem } }
             {
                 name = "Discord Match Webhooks",
                 passed = false,
-                desc = "Pending • Outgoing HTTP webhook dispatcher unverified.",
+                desc = "Pending • Embeds and queue pass local tests; live Discord delivery and end-screen parsing unverified.",
             },
         },
     }

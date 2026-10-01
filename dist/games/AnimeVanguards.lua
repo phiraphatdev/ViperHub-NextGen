@@ -137,6 +137,56 @@ do
                     Weekly = 'Weekly Challenge',
                 }),
                 teamLoadMessagePrefix = '^Successfully ',
+                webhook = table.freeze({
+                    hosts = table.freeze({
+                        'discord.com',
+                        'discordapp.com',
+                        'ptb.discord.com',
+                        'canary.discord.com',
+                    }),
+                    rarityOrder = table.freeze({
+                        'Rare',
+                        'Epic',
+                        'Legendary',
+                        'Mythic',
+                        'Secret',
+                        'Exclusive',
+                        'Vanguard',
+                    }),
+                    rarityStyle = table.freeze({
+                        Rare = table.freeze({
+                            emoji = '\u{1f539}',
+                            color = 0x3498db,
+                        }),
+                        Epic = table.freeze({
+                            emoji = '\u{1f7e3}',
+                            color = 0x9b59b6,
+                        }),
+                        Legendary = table.freeze({
+                            emoji = '\u{1f7e0}',
+                            color = 0xe67e22,
+                        }),
+                        Mythic = table.freeze({
+                            emoji = '\u{1f534}',
+                            color = 0xe74c3c,
+                        }),
+                        Secret = table.freeze({
+                            emoji = '\u{1f576}\u{fe0f}',
+                            color = 0x6c3483,
+                        }),
+                        Exclusive = table.freeze({
+                            emoji = '\u{1f48e}',
+                            color = 0x1abc9c,
+                        }),
+                        Vanguard = table.freeze({
+                            emoji = '\u{1f451}',
+                            color = 0xf1c40f,
+                        }),
+                    }),
+                    footer = 'ViperHub NextGen \u{2022} Anime Vanguards',
+                    defaultUsername = 'ViperHub',
+                    pingMinRarity = 'Secret',
+                }),
                 attributes = table.freeze({
                     riftOpen = 'IsRiftOpen',
                 }),
@@ -149,6 +199,12 @@ do
                     teamLoadAttempts = 3,
                     teamLoadTimeoutSeconds = 8,
                     teamMessageSuppressSeconds = 15,
+                    webhookMinIntervalSeconds = 1.5,
+                    webhookQueueLimit = 40,
+                    webhookRetryLimit = 3,
+                    webhookUnitIgnoreSeconds = 20,
+                    webhookBountyPollSeconds = 15,
+                    webhookProblemCooldownSeconds = 300,
                     changeStageRetrySeconds = 6,
                     changeStageAttempts = 2,
                     joinerRunMaxAgeSeconds = 10800,
@@ -3525,6 +3581,7 @@ do
                     macroCache = nil,
                     macroOptionsCache = nil,
                 }
+                local statusListeners = {}
 
                 local function setStatus(value)
                     self.status = value
@@ -3532,8 +3589,23 @@ do
                     if self.onStatus then
                         pcall(self.onStatus, value)
                     end
+
+                    for _, listener in table.clone(statusListeners)do
+                        pcall(listener, value)
+                    end
                 end
 
+                function self.addStatusListener(listener)
+                    table.insert(statusListeners, listener)
+
+                    return function()
+                        local index = table.find(statusListeners, listener)
+
+                        if index then
+                            table.remove(statusListeners, index)
+                        end
+                    end
+                end
                 function self.setMacro(m)
                     self.macro = m
                 end
@@ -8725,6 +8797,7 @@ do
                     catalog = nil,
                     unsubscribePresets = nil,
                 }
+                local statusListeners = {}
 
                 local function setStatus(value)
                     self.status = value
@@ -8732,7 +8805,24 @@ do
                     if self.onStatus then
                         pcall(self.onStatus, value)
                     end
+
+                    for _, listener in table.clone(statusListeners)do
+                        pcall(listener, value)
+                    end
                 end
+
+                function self.addStatusListener(listener)
+                    table.insert(statusListeners, listener)
+
+                    return function()
+                        local index = table.find(statusListeners, listener)
+
+                        if index then
+                            table.remove(statusListeners, index)
+                        end
+                    end
+                end
+
                 local function getAdapter()
                     if not self.adapter then
                         local ok, ad = pcall(Adapter.new)
@@ -9600,7 +9690,7 @@ do
                         {
                             name = 'Discord Match Webhooks',
                             passed = false,
-                            desc = 'Pending \u{2022} Outgoing HTTP webhook dispatcher unverified.',
+                            desc = 'Pending \u{2022} Embeds and queue pass local tests; live Discord delivery and end-screen parsing unverified.',
                         },
                     },
                 }
@@ -9687,6 +9777,1889 @@ do
             return v.c
         end
     end
+    do
+        local function __modImpl()
+            local Embed = {}
+            local MAX_TITLE = 256
+            local MAX_DESCRIPTION = 4000
+            local MAX_FIELDS = 25
+            local MAX_FIELD_NAME = 256
+            local MAX_FIELD_VALUE = 1024
+            local MAX_FOOTER = 2048
+            local MAX_AUTHOR = 256
+            local MAX_TOTAL = 5800
+            local MAX_CONTENT = 2000
+            local MAX_USERNAME = 80
+            local MAX_EMBEDS = 10
+
+            function Embed.clip(text, max)
+                local value = if type(text) == 'string'then text else tostring(text)
+
+                if #value <= max then
+                    return value
+                end
+
+                return string.sub(value, 1, math.max(0, max - 3)) .. '...'
+            end
+            function Embed.validUrl(url, hosts)
+                if type(url) ~= 'string' or #url > 300 then
+                    return false
+                end
+
+                local host, id, token = string.match(url, '^https://([%w%.%-]+)/api/webhooks/(%d+)/([%w_%-]+)/?$')
+
+                if not host or not id or not token or #id < 15 or #id > 25 or #token < 20 then
+                    return false
+                end
+
+                return table.find(hosts, string.lower(host)) ~= nil
+            end
+            function Embed.mask(url, hosts)
+                if not Embed.validUrl(url, hosts) then
+                    return '(not set)'
+                end
+
+                local host, id = string.match(url, '^https://([%w%.%-]+)/api/webhooks/(%d+)/')
+
+                return string.format('https://%s/api/webhooks/%s\u{2026}/\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}', host or 'discord.com', string.sub(id or '', 1, 4))
+            end
+
+            local function isHttps(url)
+                return type(url) == 'string' and #url <= 512 and string.match(url, "^https://[%w%.%-]+/[%w%./%-_%%%?&=:,~+@!*'()]*$") ~= nil
+            end
+
+            function Embed.number(value)
+                local n = tonumber(value)
+
+                if n == nil or n ~= n then
+                    return '0'
+                end
+
+                local abs = math.abs(n)
+
+                if abs >= 1e9 then
+                    return string.format('%.2fB', n / 1e9)
+                elseif abs >= 1e6 then
+                    return string.format('%.2fM', n / 1e6)
+                elseif abs >= 1e4 then
+                    return string.format('%.1fK', n / 1e3)
+                end
+
+                local whole = math.floor(n + 0.5)
+                local text = tostring(whole)
+                local out = text
+
+                while true do
+                    local replaced, count = string.gsub(out, '^(-?%d+)(%d%d%d)', '%1,%2')
+
+                    out = replaced
+
+                    if count == 0 then
+                        break
+                    end
+                end
+
+                return out
+            end
+            function Embed.duration(seconds)
+                local total = math.max(0, math.floor(tonumber(seconds) or 0))
+                local h = total // 3600
+                local m = (total % 3600) // 60
+                local s = total % 60
+
+                if h > 0 then
+                    return string.format('%dh %02dm %02ds', h, m, s)
+                elseif m > 0 then
+                    return string.format('%dm %02ds', m, s)
+                end
+
+                return string.format('%ds', s)
+            end
+            function Embed.build(spec)
+                local embed = {}
+                local budget = MAX_TOTAL
+
+                local function take(text)
+                    local clipped = Embed.clip(text, math.max(0, budget))
+
+                    budget -= #clipped
+
+                    return clipped
+                end
+
+                if spec.title and spec.title ~= '' then
+                    embed.title = take(Embed.clip(spec.title, MAX_TITLE))
+                end
+                if spec.description and spec.description ~= '' then
+                    embed.description = take(Embed.clip(spec.description, MAX_DESCRIPTION))
+                end
+                if type(spec.color) == 'number' then
+                    embed.color = math.clamp(math.floor(spec.color), 0, 0xffffff)
+                end
+                if spec.url and isHttps(spec.url) then
+                    embed.url = spec.url
+                end
+                if spec.authorName and spec.authorName ~= '' then
+                    local author = {
+                        name = take(Embed.clip(spec.authorName, MAX_AUTHOR)),
+                    }
+
+                    if spec.authorIcon and isHttps(spec.authorIcon) then
+                        author.icon_url = spec.authorIcon
+                    end
+
+                    embed.author = author
+                end
+                if spec.thumbnail and isHttps(spec.thumbnail) then
+                    embed.thumbnail = {
+                        url = spec.thumbnail,
+                    }
+                end
+                if spec.image and isHttps(spec.image) then
+                    embed.image = {
+                        url = spec.image,
+                    }
+                end
+                if spec.fields then
+                    local fields = {}
+
+                    for _, field in spec.fields do
+                        if #fields >= MAX_FIELDS or budget <= 0 then
+                            break
+                        end
+
+                        local name = Embed.clip(field.name, MAX_FIELD_NAME)
+                        local value = Embed.clip(field.value, MAX_FIELD_VALUE)
+
+                        if name ~= '' and value ~= '' then
+                            table.insert(fields, {
+                                name = take(name),
+                                value = take(value),
+                                inline = field.inline == true,
+                            })
+                        end
+                    end
+
+                    if #fields > 0 then
+                        embed.fields = fields
+                    end
+                end
+                if spec.footer and spec.footer ~= '' then
+                    embed.footer = {
+                        text = take(Embed.clip(spec.footer, MAX_FOOTER)),
+                    }
+                end
+                if spec.timestamp and string.match(spec.timestamp, '^%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%dZ$') then
+                    embed.timestamp = spec.timestamp
+                end
+
+                return embed
+            end
+            function Embed.username(name, fallback)
+                local value = if type(name) == 'string'then string.gsub(name, '[%c]', '')else''
+
+                value = string.match(value, '^%s*(.-)%s*$') or ''
+
+                local lower = string.lower(value)
+
+                if value == '' or string.find(lower, 'discord', 1, true) or string.find(lower, 'clyde', 1, true) then
+                    return fallback
+                end
+
+                return Embed.clip(value, MAX_USERNAME)
+            end
+            function Embed.payload(embeds, options)
+                local capped = {}
+
+                for index, embed in embeds do
+                    if index > MAX_EMBEDS then
+                        break
+                    end
+
+                    table.insert(capped, embed)
+                end
+
+                local payload = {
+                    embeds = capped,
+                    allowed_mentions = {parse = {}},
+                }
+
+                if options.username and options.username ~= '' then
+                    payload.username = Embed.username(options.username, 'ViperHub')
+                end
+                if options.avatarUrl and isHttps(options.avatarUrl) then
+                    payload.avatar_url = options.avatarUrl
+                end
+
+                local ping = options.pingUserId
+
+                if options.ping and type(ping) == 'string' and string.match(ping, '^%d+$') and #ping >= 15 and #ping <= 25 then
+                    payload.content = Embed.clip('<@' .. ping .. '>', MAX_CONTENT)
+                    payload.allowed_mentions = {
+                        parse = {},
+                        users = {ping},
+                    }
+                end
+
+                return payload
+            end
+
+            return Embed
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.C()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.C
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.C = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
+            local Embed = __DARKLUA_BUNDLE_MODULES.C()
+            local Events = {}
+            local GREEN = 0x2ecc71
+            local RED = 0xe74c3c
+            local BLUE = 0x3498db
+            local ORANGE = 0xe67e22
+            local TEAL = 0x1abc9c
+            local PURPLE = 0x9b59b6
+
+            Events.kinds = (table.freeze({
+                {
+                    id = 'matchEnd',
+                    label = 'Match result',
+                    desc =
+[[Victory or defeat with stage, time, waves, damage and rewards.]],
+                    default = true,
+                },
+                {
+                    id = 'unit',
+                    label = 'New unit obtained',
+                    desc =
+[[Every new unit at or above the minimum rarity (Secret, Exclusive and Vanguard can ping you).]],
+                    default = true,
+                },
+                {
+                    id = 'join',
+                    label = 'Joiner entered a stage',
+                    desc =
+[[A joiner created or entered a stage, challenge, rift or bounty.]],
+                    default = true,
+                },
+                {
+                    id = 'joinProblem',
+                    label = 'Joiner problems',
+                    desc = 'No server confirmation, locked stages and failed requests.',
+                    default = true,
+                },
+                {
+                    id = 'bounty',
+                    label = 'Boss Bounty progress',
+                    desc = "Remaining Boss Bounties and today's target.",
+                    default = true,
+                },
+                {
+                    id = 'rift',
+                    label = 'Rift opened',
+                    desc = 'The hourly Rift event opened.',
+                    default = true,
+                },
+                {
+                    id = 'equipper',
+                    label = 'Team and Macro Equipper',
+                    desc = 'Missing units, unavailable teams and equip failures.',
+                    default = true,
+                },
+                {
+                    id = 'autoPlay',
+                    label = 'Auto Play notices',
+                    desc = 'Native Auto Play enabled, preset switched or unavailable.',
+                    default = true,
+                },
+                {
+                    id = 'warning',
+                    label = 'Warnings and errors',
+                    desc = 'Anything the script flags as a problem.',
+                    default = true,
+                },
+                {
+                    id = 'session',
+                    label = 'Session started',
+                    desc = 'Sent once when ViperHub loads.',
+                    default = true,
+                },
+            }))
+
+            function Events.rarityRank(rarity, order)
+                if type(rarity) ~= 'string' then
+                    return 0
+                end
+
+                return table.find(order, rarity) or 0
+            end
+
+            local function field(name, value, inline)
+                local text = if type(value) == 'string'then value else tostring(value)
+
+                if text == '' or text == 'nil' then
+                    return nil
+                end
+
+                return {
+                    name = name,
+                    value = text,
+                    inline = inline ~= false,
+                }
+            end
+            local function addField(fields, name, value, inline)
+                local entry = field(name, value, inline)
+
+                if entry then
+                    table.insert(fields, entry)
+                end
+            end
+            local function modeText(data)
+                local parts = {}
+
+                for _, key in {
+                    'stageType',
+                    'stage',
+                    'act',
+                }do
+                    if type(data[key]) == 'string' and data[key] ~= '' then
+                        table.insert(parts, data[key])
+                    end
+                end
+
+                if type(data.difficulty) == 'string' and data.difficulty ~= '' then
+                    table.insert(parts, '(' .. data.difficulty .. ')')
+                end
+
+                return table.concat(parts, ' ')
+            end
+            local function rewardLines(rewards)
+                local lines = {}
+
+                if type(rewards) == 'table' then
+                    for _, reward in rewards do
+                        if type(reward) == 'table' and type(reward.name) == 'string' then
+                            local amount = if reward.amount ~= nil then' \u{d7}' .. tostring(reward.amount)else''
+
+                            table.insert(lines, '\u{2022} ' .. reward.name .. amount)
+                        end
+                        if #lines >= 12 then
+                            break
+                        end
+                    end
+                end
+
+                return table.concat(lines, '\n')
+            end
+
+            function Events.build(kind, data, ctx, config)
+                local info = if type(data) == 'table'then data else{}
+                local fields = {}
+                local spec = {
+                    color = BLUE,
+                    footer = config.footer,
+                    timestamp = ctx.timestamp,
+                }
+                local ping = false
+
+                if ctx.showPlayer and type(ctx.player) == 'string' and ctx.player ~= '' then
+                    spec.authorName = ctx.player
+
+                    if type(ctx.userId) == 'number' then
+                        spec.authorIcon = string.format(
+[[https://www.roblox.com/headshot-thumbnail/image?userId=%d&width=150&height=150&format=png]], ctx.userId)
+                    end
+                end
+                if kind == 'matchEnd' then
+                    local victory = info.result == 'Victory'
+                    local mode = modeText(info)
+
+                    spec.title = (if victory then'\u{1f3c6} Victory'else'\u{1f480} Defeat') .. (if type(info.stageName) == 'string' and info.stageName ~= ''then' \u{2014} ' .. info.stageName else'')
+                    spec.color = if victory then GREEN else RED
+                    spec.description = if mode ~= ''then'`' .. mode .. '`'else nil
+
+                    addField(fields, '\u{23f1}\u{fe0f} Time', if info.duration then Embed.duration(info.duration)else nil)
+                    addField(fields, '\u{1f30a} Waves', if info.waves then string.format('%s/%s', tostring(info.waves), tostring(info.maxWaves or info.waves))else nil)
+                    addField(fields, '\u{1f4a5} Damage', if info.damage then Embed.number(info.damage)else nil)
+                    addField(fields, '\u{1f480} Takedowns', if info.takedowns then Embed.number(info.takedowns)else nil)
+                    addField(fields, '\u{1fa99} Money', if info.money then Embed.number(info.money)else nil)
+                    addField(fields, '\u{1f9e9} Units placed', info.units)
+
+                    local lines = rewardLines(info.rewards)
+
+                    addField(fields, '\u{1f381} Rewards', lines, false)
+                elseif kind == 'unit' then
+                    local style = config.rarityStyle[info.rarity] or {
+                        emoji = '\u{1f195}',
+                        color = TEAL,
+                    }
+
+                    spec.title = string.format('%s New %s unit obtained!', style.emoji, tostring(info.rarity or 'unit'))
+                    spec.description = '**' .. tostring(info.name or 'Unknown unit') .. '**'
+                    spec.color = style.color
+
+                    addField(fields, 'Rarity', string.format('%s %s', style.emoji, tostring(info.rarity or '?')))
+                    addField(fields, 'Level', info.level)
+                    addField(fields, 'Trait', info.trait)
+
+                    if info.subTrait and info.subTrait ~= 'None' then
+                        addField(fields, 'Sub-trait', info.subTrait)
+                    end
+
+                    local rank = Events.rarityRank(info.rarity, config.rarityOrder)
+
+                    ping = rank > 0 and rank >= Events.rarityRank(config.pingMinRarity, config.rarityOrder)
+                elseif kind == 'join' then
+                    spec.title = '\u{1f6aa} ' .. tostring(info.name or 'Joiner') .. ' \u{2014} entered'
+                    spec.description = modeText(info)
+                    spec.color = TEAL
+
+                    addField(fields, 'Mode', info.name)
+                    addField(fields, 'Status', info.message, false)
+                elseif kind == 'joinProblem' then
+                    spec.title = '\u{26a0}\u{fe0f} Joiner problem'
+                    spec.description = tostring(info.message or 'A joiner request did not complete.')
+                    spec.color = ORANGE
+                    ping = true
+                elseif kind == 'bounty' then
+                    spec.title = string.format('\u{1f3af} Boss Bounties: %s left today', tostring(info.left or '?'))
+                    spec.color = PURPLE
+
+                    local target = modeText({
+                        stageType = info.mode,
+                        stage = info.stage,
+                        act = info.act,
+                    })
+
+                    spec.description = if target ~= ''then'Current target `' .. target .. '`' .. (if info.boss then' \u{2014} **' .. tostring(info.boss) .. '**'else'')else nil
+
+                    addField(fields, 'Remaining', info.left)
+                    addField(fields, 'Message', info.message, false)
+                elseif kind == 'rift' then
+                    spec.title = '\u{1f300} Rift is open'
+                    spec.description = tostring(info.message or 'The hourly Rift event just opened.')
+                    spec.color = PURPLE
+                elseif kind == 'equipper' then
+                    spec.title = '\u{1f9e9} Equipper notice'
+                    spec.description = tostring(info.message or '')
+                    spec.color = ORANGE
+                elseif kind == 'autoPlay' then
+                    spec.title = '\u{1f916} Auto Play'
+                    spec.description = tostring(info.message or '')
+                    spec.color = BLUE
+                elseif kind == 'warning' then
+                    spec.title = '\u{1f6a8} Warning'
+                    spec.description = tostring(info.message or '')
+                    spec.color = RED
+                    ping = true
+                elseif kind == 'session' then
+                    spec.title = '\u{1f7e2} ViperHub session started'
+                    spec.description = string.format('Running in the **%s**.', tostring(info.place or 'game'))
+                    spec.color = GREEN
+
+                    addField(fields, 'Version', ctx.version)
+                    addField(fields, 'Place', info.placeName)
+                elseif kind == 'test' then
+                    spec.title = '\u{2705} Webhook connected'
+                    spec.description =
+[[ViperHub can post to this channel. Event notifications you enabled will appear here.]]
+                    spec.color = GREEN
+
+                    addField(fields, 'Enabled events', info.enabledCount)
+                    addField(fields, 'Version', ctx.version)
+                else
+                    return nil, false
+                end
+                if #fields > 0 then
+                    spec.fields = fields
+                end
+
+                return spec, ping
+            end
+
+            return Events
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.D()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.D
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.D = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
+            local Style = __DARKLUA_BUNDLE_MODULES.d()
+            local Events = __DARKLUA_BUNDLE_MODULES.D()
+            local config = __DARKLUA_BUNDLE_MODULES.c()
+            local Page = {}
+            local WEBHOOK = (config).webhook
+            local ERRORS = {
+                INVALID_URL =
+[[That is not a Discord webhook URL (https://discord.com/api/webhooks/<id>/<token>).]],
+                NO_URL = 'Paste a webhook URL first.',
+                NOT_SENT = 'The message could not be queued; check the status above.',
+            }
+
+            function Page.mount(tab, runtime)
+                local status = tab:Paragraph({
+                    Title = 'Discord Webhook',
+                    Desc = if runtime then runtime.getStatus()else'Unavailable',
+                })
+
+                if not runtime then
+                    return
+                end
+
+                local function show(text)
+                    pcall(status.SetDesc, status, text)
+                end
+
+                runtime.onStatus = show
+
+                local settings = runtime.getSettings()
+                local connection = Style.section(tab, 'Connection', 'link', true)
+                local urlInput
+
+                urlInput = connection:Input({
+                    Title = 'Webhook URL',
+                    Desc = 'Channel settings \u{2192} Integrations \u{2192} Webhooks. The URL is stored on this device only and is never shown again after you enter it.',
+                    Value = '',
+                    Placeholder = if settings.hasUrl then settings.urlMasked else'https://discord.com/api/webhooks/\u{2026}',
+                    Callback = function(text)
+                        if type(text) ~= 'string' or text == '' then
+                            return
+                        end
+
+                        local ok, err = runtime.setUrl(text)
+
+                        if not ok then
+                            show(ERRORS[err or ''] or 'Webhook URL rejected.')
+                        end
+                        if type(urlInput.Set) == 'function' then
+                            pcall(urlInput.Set, urlInput, '', false)
+                        end
+                        if ok and type(urlInput.SetPlaceholder) == 'function' then
+                            pcall(urlInput.SetPlaceholder, urlInput, runtime.getSettings().urlMasked)
+                        end
+                    end,
+                })
+
+                connection:Toggle({
+                    Title = 'Send notifications',
+                    Desc = 'Master switch. Nothing is sent while this is off.',
+                    Value = settings.enabled,
+                    Callback = function(value)
+                        runtime.setEnabled(value)
+                    end,
+                })
+                connection:Button({
+                    Title = 'Send test message',
+                    Desc =
+[[Posts a connection check so you can see the look of the embeds.]],
+                    Callback = function()
+                        local ok, err = runtime.sendTest()
+
+                        show(if ok then'Test message queued'else(ERRORS[err or ''] or 'Test message failed'))
+                    end,
+                })
+                connection:Button({
+                    Title = 'Forget webhook URL',
+                    Desc = 'Removes the saved URL from this device.',
+                    Callback = function()
+                        runtime.clearUrl()
+
+                        if type(urlInput.SetPlaceholder) == 'function' then
+                            pcall(urlInput.SetPlaceholder, urlInput, 'https://discord.com/api/webhooks/\u{2026}')
+                        end
+                    end,
+                })
+
+                local appearance = Style.section(tab, 'Appearance', 'palette', false)
+
+                appearance:Input({
+                    Title = 'Bot name',
+                    Desc = 'Shown as the sender in Discord. Empty uses ViperHub.',
+                    Value = settings.username,
+                    Placeholder = WEBHOOK.defaultUsername,
+                    Callback = function(text)
+                        runtime.setUsername(text)
+                    end,
+                })
+                appearance:Input({
+                    Title = 'Bot avatar URL',
+                    Desc =
+[[Optional https image link. Empty uses the webhook's own avatar.]],
+                    Value = settings.avatarUrl,
+                    Placeholder = 'https://\u{2026}',
+                    Callback = function(text)
+                        if not runtime.setAvatar(text) then
+                            show('Avatar must be an https link.')
+                        end
+                    end,
+                })
+                appearance:Toggle({
+                    Title = 'Show my Roblox name and avatar',
+                    Desc =
+[[Adds your name and headshot to the top of every embed. Turn off to keep the account private in shared channels.]],
+                    Value = settings.showPlayer,
+                    Callback = function(value)
+                        runtime.setShowPlayer(value)
+                    end,
+                })
+                appearance:Input({
+                    Title = 'Ping my Discord user ID',
+                    Desc = 'Optional numeric ID (Discord \u{2192} Developer Mode \u{2192} Copy User ID). Used only for rare unit drops, joiner problems and warnings.',
+                    Value = settings.pingUserId,
+                    Placeholder = 'e.g. 123456789012345678',
+                    Callback = function(text)
+                        if not runtime.setPingUser(text) then
+                            show('Discord user ID must be 15 to 25 digits.')
+                        end
+                    end,
+                })
+
+                local drops = Style.section(tab, 'Unit drops', 'gem', false)
+
+                drops:Dropdown({
+                    Title = 'Minimum rarity to announce',
+                    Desc =
+[[New units below this rarity are ignored. Secret and above can ping you.]],
+                    Values = WEBHOOK.rarityOrder,
+                    Value = settings.minRarity,
+                    Callback = function(value)
+                        runtime.setMinRarity(value)
+                    end,
+                })
+
+                local events = Style.section(tab, 'Events', 'list-checks', true)
+
+                for _, kind in Events.kinds do
+                    events:Toggle({
+                        Title = kind.label,
+                        Desc = kind.desc,
+                        Value = settings.events[kind.id] == true,
+                        Callback = function(value)
+                            runtime.setEvent(kind.id, value)
+                        end,
+                    })
+                end
+            end
+
+            return Page
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.E()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.E
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.E = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
+            local Sender = {}
+            local SUCCESS_STATUSES = {
+                [200] = true,
+                [204] = true,
+            }
+            local MAX_RETRY_WAIT_SECONDS = 30
+
+            function Sender.new(options)
+                local self = {
+                    url = nil,
+                    state = 'idle',
+                    queue = {},
+                    running = false,
+                    lastSent = -math.huge,
+                    stats = {
+                        sent = 0,
+                        failed = 0,
+                        dropped = 0,
+                    },
+                    onState = nil,
+                    stopped = false,
+                }
+
+                local function setState(value)
+                    self.state = value
+
+                    if self.onState then
+                        pcall(self.onState, value)
+                    end
+                end
+                local function header(headers, name)
+                    if type(headers) ~= 'table' then
+                        return nil
+                    end
+
+                    for key, value in headers do
+                        if type(key) == 'string' and string.lower(key) == name then
+                            return value
+                        end
+                    end
+
+                    return nil
+                end
+                local function retryAfter(response)
+                    local waitSeconds = nil
+
+                    if options.decode and type(response.Body) == 'string' and #response.Body < 4096 then
+                        local ok, decoded = pcall(options.decode, response.Body)
+
+                        if ok and type(decoded) == 'table' and type(decoded.retry_after) == 'number' then
+                            waitSeconds = decoded.retry_after
+                        end
+                    end
+                    if waitSeconds == nil then
+                        waitSeconds = tonumber(header(response.Headers, 'retry-after'))
+                    end
+
+                    return math.clamp(waitSeconds or 2, 0.5, MAX_RETRY_WAIT_SECONDS)
+                end
+                local function deliver(payload)
+                    local okBody, body = pcall(options.encode, payload)
+
+                    if not okBody or type(body) ~= 'string' or #body > 100000 then
+                        return 'drop', nil
+                    end
+
+                    local ok, response = pcall(options.request, {
+                        Url = self.url,
+                        Method = 'POST',
+                        Headers = {
+                            ['Content-Type'] = 'application/json',
+                        },
+                        Body = body,
+                    })
+
+                    if not ok or type(response) ~= 'table' then
+                        return 'retry', 5
+                    end
+
+                    local status = response.StatusCode
+
+                    if type(status) ~= 'number' then
+                        status = response.Status
+                    end
+                    if SUCCESS_STATUSES[status] then
+                        return 'ok', nil
+                    elseif status == 429 then
+                        return 'retry', retryAfter(response)
+                    elseif type(status) == 'number' and status >= 500 then
+                        return 'retry', 4
+                    elseif status == 401 or status == 403 or status == 404 then
+                        return 'invalid', nil
+                    end
+
+                    return 'drop', nil
+                end
+                local function pump()
+                    while not self.stopped and #self.queue > 0 and self.url do
+                        local item = self.queue[1]
+                        local sinceLast = options.clock() - self.lastSent
+
+                        if sinceLast < options.minInterval then
+                            options.task.wait(options.minInterval - sinceLast)
+                        end
+                        if self.stopped or not self.url then
+                            break
+                        end
+
+                        setState('sending')
+
+                        local verdict, waitSeconds = deliver(item.payload)
+
+                        self.lastSent = options.clock()
+
+                        if verdict == 'ok' then
+                            table.remove(self.queue, 1)
+
+                            self.stats.sent += 1
+
+                            setState('idle')
+                        elseif verdict == 'retry' then
+                            item.attempts += 1
+
+                            if item.attempts > options.retryLimit then
+                                table.remove(self.queue, 1)
+
+                                self.stats.failed += 1
+
+                                setState('offline')
+                            else
+                                setState(if waitSeconds and waitSeconds >= 5 then'rate limited'else'retrying')
+                                options.task.wait(waitSeconds or 2)
+                            end
+                        elseif verdict == 'invalid' then
+                            table.clear(self.queue)
+
+                            self.stats.failed += 1
+
+                            self.url = nil
+
+                            setState('invalid')
+                        else
+                            table.remove(self.queue, 1)
+
+                            self.stats.dropped += 1
+
+                            setState('idle')
+                        end
+                    end
+
+                    self.running = false
+
+                    if #self.queue == 0 and self.state ~= 'invalid' and self.state ~= 'offline' then
+                        setState('idle')
+                    end
+                end
+
+                function self.setUrl(url)
+                    self.url = url
+
+                    table.clear(self.queue)
+                    setState('idle')
+                end
+                function self.isReady()
+                    return self.url ~= nil and self.state ~= 'invalid'
+                end
+                function self.enqueue(payload)
+                    if not self.url or self.stopped then
+                        return false
+                    end
+                    if #self.queue >= options.queueLimit then
+                        table.remove(self.queue, 1)
+
+                        self.stats.dropped += 1
+                    end
+
+                    table.insert(self.queue, {
+                        payload = payload,
+                        attempts = 0,
+                    })
+
+                    if not self.running then
+                        self.running = true
+
+                        local spawn = options.task.spawn
+                        local started = pcall(spawn, pump)
+
+                        if not started then
+                            self.running = false
+
+                            return false
+                        end
+                    end
+
+                    return true
+                end
+                function self.stop()
+                    self.stopped = true
+
+                    table.clear(self.queue)
+                end
+
+                return self
+            end
+
+            return Sender
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.F()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.F
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.F = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.k()
+            local config = __DARKLUA_BUNDLE_MODULES.c()
+            local metadata = __DARKLUA_BUNDLE_MODULES.b()
+            local Embed = __DARKLUA_BUNDLE_MODULES.C()
+            local Events = __DARKLUA_BUNDLE_MODULES.D()
+            local Sender = __DARKLUA_BUNDLE_MODULES.F()
+            local Runtime = {}
+            local STORAGE_KEY = 'AnimeVanguardsWebhook'
+            local SCHEMA_VERSION = 1
+            local WEBHOOK = (config).webhook
+            local THRESHOLDS = (config).thresholds
+            local TICK_SECONDS = 1
+            local SESSION_DELAY_SECONDS = 5
+            local END_SCREEN_DELAY_SECONDS = 3
+            local UNIT_DEDUP_LIMIT = 4000
+
+            local function resolve(root, path)
+                local value = root
+
+                for part in string.gmatch(path, '[^%.]+')do
+                    if not value then
+                        return nil
+                    end
+
+                    local ok, child = pcall(function()
+                        local v = value
+
+                        if type(v) == 'userdata' then
+                            return v:FindFirstChild(part)
+                        else
+                            return v[part]
+                        end
+                    end)
+
+                    value = if ok then child else nil
+                end
+
+                return value
+            end
+            local function optionalModule(root, path)
+                local ok, result = pcall(function()
+                    return (require)(resolve(root, path))
+                end)
+
+                return if ok then result else nil
+            end
+            local function defaults()
+                local events = {}
+
+                for _, kind in Events.kinds do
+                    events[kind.id] = kind.default
+                end
+
+                return {
+                    enabled = false,
+                    url = nil,
+                    username = '',
+                    avatarUrl = '',
+                    showPlayer = true,
+                    pingUserId = '',
+                    minRarity = WEBHOOK.rarityOrder[1],
+                    events = events,
+                }
+            end
+            local function readEndScreen(gameObject)
+                local ok, result = pcall(function()
+                    local players = gameObject:GetService('Players')
+                    local playerGui = players.LocalPlayer:FindFirstChildOfClass('PlayerGui')
+                    local screen = playerGui and playerGui:FindFirstChild('EndScreen')
+
+                    if not screen then
+                        return nil
+                    end
+
+                    local data = {rewards = {}}
+                    local keys = {
+                        ['Units Placed:'] = 'units',
+                        ['Total Damage:'] = 'damage',
+                        ['Play Time:'] = 'time',
+                        ['Money Earned:'] = 'money',
+                        ['Takedowns:'] = 'takedowns',
+                        ['Waves Completed:'] = 'waves',
+                    }
+
+                    for _, label in screen:GetDescendants()do
+                        if label:IsA('TextLabel') then
+                            local text = label.Text
+                            local lower = string.lower(text)
+
+                            if data.result == nil and (lower == 'victory' or lower == 'defeat') then
+                                data.result = if lower == 'victory'then'Victory'else'Defeat'
+                            end
+
+                            local key = keys[text]
+
+                            if key and label.Parent then
+                                for _, sibling in label.Parent:GetChildren()do
+                                    if sibling ~= label and sibling:IsA('TextLabel') and sibling.Text ~= text then
+                                        data[key] = sibling.Text
+                                    end
+                                end
+                            end
+                            if string.match(text, '^[xX]%d[%d,%.]*[KMB]?$') and label.Parent and #data.rewards < 12 then
+                                for _, sibling in label.Parent:GetChildren()do
+                                    if sibling ~= label and sibling:IsA('TextLabel') and not string.match(sibling.Text, '^[xX]?%d') then
+                                        table.insert(data.rewards, {
+                                            name = sibling.Text,
+                                            amount = string.gsub(text, '^[xX]', ''),
+                                        })
+
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    end
+
+                    return data
+                end)
+
+                return if ok then result else nil
+            end
+
+            function Runtime.new(injected)
+                local self = {
+                    deps = injected,
+                    settings = defaults(),
+                    sender = nil,
+                    context = nil,
+                    loaded = false,
+                    status = 'Not configured',
+                    onStatus = nil,
+                    storage = nil,
+                    cooldowns = {},
+                    seenUnits = {},
+                    seenCount = 0,
+                    unitReadyAt = math.huge,
+                    bountyLeft = nil,
+                    bountyChecked = -math.huge,
+                    riftWasOpen = nil,
+                    matchStartedAt = nil,
+                    connections = {},
+                    sources = {},
+                }
+
+                local function deps()
+                    return self.deps or {}
+                end
+                local function call(name, ...)
+                    local fn = deps()[name]
+
+                    if type(fn) == 'function' then
+                        return (fn)(...)
+                    end
+
+                    return nil
+                end
+                local function has(name)
+                    return type(deps()[name]) == 'function'
+                end
+                local function clock()
+                    local value = call('clock')
+
+                    return if type(value) == 'number'then value else os.clock()
+                end
+                local function setStatus(value)
+                    self.status = value
+
+                    if self.onStatus then
+                        pcall(self.onStatus, value)
+                    end
+                end
+                local function describeState()
+                    local sender = self.sender
+
+                    if not Embed.validUrl(self.settings.url, WEBHOOK.hosts) then
+                        return 'Not configured: paste a Discord webhook URL'
+                    end
+                    if sender and sender.state == 'invalid' then
+                        return
+[[Discord rejected the webhook URL (deleted or wrong); set it again]]
+                    end
+                    if not self.settings.enabled then
+                        return 'Configured; notifications are off'
+                    end
+
+                    local stats = if sender then sender.stats else{
+                        sent = 0,
+                        failed = 0,
+                        dropped = 0,
+                    }
+
+                    return string.format('On \u{2022} %s \u{2022} sent %d, failed %d, dropped %d', if sender then sender.state else'idle', stats.sent, stats.failed, stats.dropped)
+                end
+                local function refreshStatus()
+                    setStatus(describeState())
+                end
+                local function save()
+                    local storage = self.storage
+                    local d = deps()
+
+                    if not storage or not d.encode then
+                        return
+                    end
+
+                    local ok, body = pcall(d.encode, {
+                        schemaVersion = SCHEMA_VERSION,
+                        enabled = self.settings.enabled,
+                        url = self.settings.url,
+                        username = self.settings.username,
+                        avatarUrl = self.settings.avatarUrl,
+                        showPlayer = self.settings.showPlayer,
+                        pingUserId = self.settings.pingUserId,
+                        minRarity = self.settings.minRarity,
+                        events = self.settings.events,
+                    })
+
+                    if ok and type(body) == 'string' then
+                        pcall(storage.write, body)
+                    end
+                end
+                local function ensureSender()
+                    if self.sender then
+                        return
+                    end
+
+                    local d = deps()
+
+                    if not d.request or not d.encode or not d.task then
+                        return
+                    end
+
+                    local sender = Sender.new({
+                        request = d.request,
+                        encode = d.encode,
+                        decode = d.decode,
+                        task = d.task,
+                        clock = clock,
+                        minInterval = THRESHOLDS.webhookMinIntervalSeconds,
+                        queueLimit = THRESHOLDS.webhookQueueLimit,
+                        retryLimit = THRESHOLDS.webhookRetryLimit,
+                    })
+
+                    sender.onState = function()
+                        refreshStatus()
+                    end
+
+                    if Embed.validUrl(self.settings.url, WEBHOOK.hosts) then
+                        sender.setUrl(self.settings.url)
+                    end
+
+                    self.sender = sender
+                end
+                local function context()
+                    local d = deps()
+
+                    return {
+                        player = d.playerName,
+                        userId = d.userId,
+                        showPlayer = self.settings.showPlayer,
+                        timestamp = if has('timestamp')then call('timestamp')else os.date('!%Y-%m-%dT%H:%M:%SZ'),
+                        version = metadata.version,
+                    }
+                end
+                local function dispatch(kind, data)
+                    ensureSender()
+
+                    local sender = self.sender
+
+                    if not sender or not sender.isReady() then
+                        return false
+                    end
+
+                    local spec, ping = Events.build(kind, data, context(), WEBHOOK)
+
+                    if not spec then
+                        return false
+                    end
+
+                    local embed = Embed.build(spec)
+                    local payload = Embed.payload({embed}, {
+                        username = if self.settings.username ~= ''then self.settings.username else WEBHOOK.defaultUsername,
+                        avatarUrl = if self.settings.avatarUrl ~= ''then self.settings.avatarUrl else nil,
+                        pingUserId = self.settings.pingUserId,
+                        ping = ping,
+                    })
+
+                    return sender.enqueue(payload)
+                end
+
+                function self.getSettings()
+                    local copy = table.clone(self.settings)
+
+                    copy.events = table.clone(self.settings.events)
+                    copy.urlMasked = Embed.mask(self.settings.url, WEBHOOK.hosts)
+                    copy.hasUrl = Embed.validUrl(self.settings.url, WEBHOOK.hosts)
+                    copy.url = nil
+
+                    return copy
+                end
+                function self.getStatus()
+                    return self.status
+                end
+                function self.setEnabled(value)
+                    if type(value) ~= 'boolean' then
+                        return false
+                    end
+
+                    self.settings.enabled = value
+
+                    save()
+                    refreshStatus()
+
+                    return true
+                end
+                function self.setUrl(url)
+                    if not Embed.validUrl(url, WEBHOOK.hosts) then
+                        return false, 'INVALID_URL'
+                    end
+
+                    self.settings.url = url
+
+                    ensureSender()
+
+                    if self.sender then
+                        self.sender.setUrl(url)
+                    end
+
+                    save()
+                    refreshStatus()
+
+                    return true, nil
+                end
+                function self.clearUrl()
+                    self.settings.url = nil
+
+                    if self.sender then
+                        self.sender.setUrl(nil)
+                    end
+
+                    save()
+                    refreshStatus()
+                end
+                function self.setUsername(value)
+                    if type(value) ~= 'string' then
+                        return false
+                    end
+
+                    self.settings.username = if value == ''then''else Embed.username(value, WEBHOOK.defaultUsername)
+
+                    save()
+
+                    return true
+                end
+                function self.setAvatar(value)
+                    if type(value) ~= 'string' then
+                        return false
+                    end
+
+                    local trimmed = string.match(value, '^%s*(.-)%s*$') or ''
+
+                    if trimmed ~= '' and string.match(trimmed, '^https://[%w%.%-]+/') == nil then
+                        return false
+                    end
+
+                    self.settings.avatarUrl = Embed.clip(trimmed, 512)
+
+                    save()
+
+                    return true
+                end
+                function self.setShowPlayer(value)
+                    if type(value) ~= 'boolean' then
+                        return false
+                    end
+
+                    self.settings.showPlayer = value
+
+                    save()
+
+                    return true
+                end
+                function self.setPingUser(value)
+                    if type(value) ~= 'string' then
+                        return false
+                    end
+
+                    local trimmed = string.match(value, '^%s*(.-)%s*$') or ''
+
+                    if trimmed ~= '' and (string.match(trimmed, '^%d+$') == nil or #trimmed < 15 or #trimmed > 25) then
+                        return false
+                    end
+
+                    self.settings.pingUserId = trimmed
+
+                    save()
+
+                    return true
+                end
+                function self.setMinRarity(value)
+                    if type(value) ~= 'string' or table.find(WEBHOOK.rarityOrder, value) == nil then
+                        return false
+                    end
+
+                    self.settings.minRarity = value
+
+                    save()
+
+                    return true
+                end
+                function self.setEvent(kind, value)
+                    if type(kind) ~= 'string' or type(value) ~= 'boolean' or self.settings.events[kind] == nil then
+                        return false
+                    end
+
+                    self.settings.events[kind] = value
+
+                    save()
+
+                    return true
+                end
+                function self.notify(kind, data, key, cooldown)
+                    if not self.settings.enabled or self.settings.events[kind] ~= true then
+                        return false
+                    end
+                    if key then
+                        local now = clock()
+                        local last = self.cooldowns[key]
+
+                        if last and now - last < (cooldown or 0) then
+                            return false
+                        end
+
+                        self.cooldowns[key] = now
+                    end
+
+                    return dispatch(kind, data)
+                end
+                function self.sendTest()
+                    if not Embed.validUrl(self.settings.url, WEBHOOK.hosts) then
+                        return false, 'NO_URL'
+                    end
+
+                    local count = 0
+
+                    for _, value in self.settings.events do
+                        if value then
+                            count += 1
+                        end
+                    end
+
+                    if not dispatch('test', {enabledCount = count}) then
+                        return false, 'NOT_SENT'
+                    end
+
+                    return true, nil
+                end
+                function self.onUnitAdded(argument)
+                    if clock() < self.unitReadyAt then
+                        return
+                    end
+
+                    local guid = nil
+                    local unit = nil
+
+                    if type(argument) == 'string' then
+                        guid = argument
+                        unit = call('unitObject', argument)
+                    elseif type(argument) == 'table' then
+                        unit = argument
+                        guid = argument.UniqueIdentifier
+                    end
+                    if type(guid) ~= 'string' or self.seenUnits[guid] then
+                        return
+                    end
+                    if self.seenCount >= UNIT_DEDUP_LIMIT then
+                        table.clear(self.seenUnits)
+
+                        self.seenCount = 0
+                    end
+
+                    self.seenUnits[guid] = true
+
+                    self.seenCount += 1
+
+                    if type(unit) ~= 'table' or type(unit.UnitData) ~= 'table' then
+                        return
+                    end
+
+                    local rarity = unit.UnitData.Rarity
+
+                    if Events.rarityRank(rarity, WEBHOOK.rarityOrder) < Events.rarityRank(self.settings.minRarity, WEBHOOK.rarityOrder) then
+                        return
+                    end
+
+                    local trait = nil
+
+                    if type(unit.Trait) == 'table' and type(unit.Trait.Name) == 'string' then
+                        trait = unit.Trait.Name
+                    end
+
+                    self.notify('unit', {
+                        name = unit.UnitData.Name,
+                        rarity = rarity,
+                        level = unit.Level,
+                        trait = trait,
+                        subTrait = unit.SubTrait,
+                    })
+                end
+
+                local function classify(source, text)
+                    local lower = string.lower(text)
+
+                    local function has(...)
+                        for _, needle in {...}do
+                            if string.find(lower, needle, 1, true) then
+                                return true
+                            end
+                        end
+
+                        return false
+                    end
+
+                    if source == 'joiner' then
+                        if string.find(text, '^Team Equipper:') or string.find(text, '^Macro Equipper:') then
+                            if has('not available', 'no usable', 'not confirmed', 'could not', 'not loaded') then
+                                return 'equipper', 'equipper:' .. text, {message = text}
+                            end
+
+                            return nil, nil, nil
+                        end
+                        if has('confirmed by server', 'entered match') then
+                            local name = string.match(text, '^([^:]+):') or 'Joiner'
+
+                            return 'join', 'join:' .. name, {
+                                name = name,
+                                message = text,
+                            }
+                        end
+                        if has('none left today') then
+                            return 'bounty', 'bounty-none', {
+                                left = 0,
+                                message = text,
+                            }
+                        end
+                        if has('no server confirmation', 'request failed', 'locked or progress unavailable', 'host state not ready', 'start network unavailable', 'teleport not confirmed') then
+                            return 'joinProblem', 'joinProblem:' .. text, {message = text}
+                        end
+
+                        return nil, nil, nil
+                    end
+                    if has('preset rule cleared', 'preset switch not confirmed', 'request failed', 'timed out', 'auto play unavailable') then
+                        return 'autoPlay', 'autoPlay-problem:' .. text, {message = text}
+                    end
+                    if has('native auto play active') then
+                        return 'autoPlay', 'autoPlay-active', {message = text}
+                    end
+
+                    return nil, nil, nil
+                end
+                local function watchStatus(source, text)
+                    if type(text) ~= 'string' or text == '' then
+                        return
+                    end
+
+                    local kind, key, data = classify(source, text)
+
+                    if kind and key then
+                        local cooldown = THRESHOLDS.webhookProblemCooldownSeconds
+
+                        if kind == 'join' then
+                            cooldown = 20
+                        elseif key == 'autoPlay-active' then
+                            cooldown = 600
+                        end
+
+                        self.notify(kind, data, key, cooldown)
+                    end
+                end
+
+                function self.onStatusLine(source, text)
+                    watchStatus(source, text)
+                end
+
+                local function watchBounty(now)
+                    if not has('readBounty') or now - self.bountyChecked < THRESHOLDS.webhookBountyPollSeconds then
+                        return
+                    end
+
+                    self.bountyChecked = now
+
+                    local target = call('readBounty')
+
+                    if type(target) ~= 'table' or type(target.left) ~= 'number' then
+                        return
+                    end
+
+                    local left = target.left
+                    local previous = self.bountyLeft
+
+                    self.bountyLeft = left
+
+                    if previous ~= nil and left < previous then
+                        self.notify('bounty', {
+                            left = left,
+                            mode = target.mode,
+                            stage = target.stage,
+                            act = target.act,
+                            boss = target.boss,
+                            message = string.format('A Boss Bounty was cleared (%s \u{2192} %s).', tostring(previous), tostring(left)),
+                        })
+                    end
+                end
+                local function watchRift()
+                    local open = call('riftOpen')
+
+                    if type(open) ~= 'boolean' then
+                        return
+                    end
+                    if open and self.riftWasOpen == false then
+                        self.notify('rift', {
+                            message = 'The hourly Rift event just opened.',
+                        }, 'rift', 600)
+                    end
+
+                    self.riftWasOpen = open
+                end
+
+                function self.tick()
+                    local d = deps()
+
+                    watchBounty(clock())
+                    watchRift()
+
+                    if d.afterTick then
+                        pcall(d.afterTick)
+                    end
+                end
+                function self.onMatchStarted()
+                    self.matchStartedAt = clock()
+                end
+                function self.onMatchEnded()
+                    local d = deps()
+                    local startedAt = self.matchStartedAt
+
+                    self.matchStartedAt = nil
+
+                    local function send()
+                        local screen = call('readEndScreen')
+                        local game = call('gameData')
+                        local info = {rewards = {}}
+
+                        if type(game) == 'table' then
+                            info.stageType = game.StageType
+                            info.stage = game.Stage
+                            info.act = game.Act
+                            info.difficulty = game.Difficulty
+                        end
+                        if type(screen) == 'table' then
+                            info.result = screen.result
+                            info.damage = screen.damage
+                            info.takedowns = screen.takedowns
+                            info.money = screen.money
+                            info.units = screen.units
+                            info.waves = screen.waves
+                            info.rewards = screen.rewards
+                            info.durationText = screen.time
+                        end
+                        if startedAt then
+                            info.duration = clock() - startedAt
+                        end
+                        if info.result == nil then
+                            info.result = 'Defeat'
+                            info.unknownResult = true
+                        end
+
+                        self.notify('matchEnd', info)
+                    end
+
+                    local taskApi = d.task
+
+                    if type(taskApi) == 'table' and type(taskApi.spawn) == 'function' and type(taskApi.wait) == 'function' then
+                        local spawnTask = taskApi.spawn
+                        local waitTask = taskApi.wait
+
+                        spawnTask(function()
+                            waitTask(END_SCREEN_DELAY_SECONDS)
+                            send()
+                        end)
+                    else
+                        send()
+                    end
+                end
+                function self.start(ctx, sources)
+                    self.context = ctx
+                    self.sources = sources or {}
+
+                    local env = getfenv()
+                    local d = deps()
+
+                    if not self.deps then
+                        d = {}
+
+                        local gameObject = env.game
+
+                        if gameObject then
+                            local players = gameObject:GetService('Players')
+                            local replicated = gameObject:GetService('ReplicatedStorage')
+                            local starter = gameObject:GetService('StarterPlayer')
+                            local http = gameObject:GetService('HttpService')
+                            local requestFn = env.request or env.http_request
+                            local isLobby = gameObject.PlaceId == metadata.placeIds[1]
+                            local ownedUnits = optionalModule(starter, config.instancePaths.ownedUnits)
+                            local gameHandler = optionalModule(replicated, config.instancePaths.gameHandler)
+
+                            d = {
+                                encode = function(value)
+                                    return http:JSONEncode(value)
+                                end,
+                                decode = function(text)
+                                    return http:JSONDecode(text)
+                                end,
+                                request = requestFn,
+                                task = env.task,
+                                playerName = players.LocalPlayer.Name,
+                                userId = players.LocalPlayer.UserId,
+                                unitObject = if ownedUnits and ownedUnits.GetUnitObject then function(
+                                    guid
+                                )
+                                    local ok, unit = pcall(ownedUnits.GetUnitObject, guid)
+
+                                    return if ok then unit else nil
+                                end else nil,
+                                gameData = if gameHandler and gameHandler.GetGameData then function(
+                                )
+                                    if gameHandler.IsGameLoaded ~= true then
+                                        return nil
+                                    end
+
+                                    local ok, value = pcall(gameHandler.GetGameData, gameHandler)
+
+                                    return if ok then value else nil
+                                end else nil,
+                                readEndScreen = function()
+                                    return readEndScreen(gameObject)
+                                end,
+                                readBounty = function()
+                                    local joiner = self.sources.joiner
+
+                                    if joiner and type(joiner.readBounty) == 'function' then
+                                        return (joiner.readBounty)()
+                                    end
+
+                                    return nil
+                                end,
+                                riftOpen = function()
+                                    local ws = gameObject:GetService('Workspace')
+                                    local ok, value = pcall(ws.GetAttribute, ws, config.attributes.riftOpen)
+
+                                    return if ok and type(value) == 'boolean'then value else nil
+                                end,
+                                ownedUnitsModule = ownedUnits,
+                                gameHandlerModule = gameHandler,
+                                isLobby = isLobby,
+                            }
+                        end
+
+                        self.deps = d
+                    end
+                    if not self.storage and d.storage then
+                        self.storage = d.storage
+                    end
+                    if not self.storage and env.game then
+                        pcall(function()
+                            self.storage = FileStorage.new(env, STORAGE_KEY)
+                        end)
+                    end
+
+                    local storage = self.storage
+
+                    if storage and d.decode then
+                        local body = storage.read()
+
+                        if body then
+                            local ok, data = pcall(d.decode, body)
+
+                            if ok and type(data) == 'table' and data.schemaVersion == SCHEMA_VERSION then
+                                local settings = self.settings
+
+                                if type(data.enabled) == 'boolean' then
+                                    settings.enabled = data.enabled
+                                end
+                                if Embed.validUrl(data.url, WEBHOOK.hosts) then
+                                    settings.url = data.url
+                                end
+                                if type(data.username) == 'string' then
+                                    settings.username = Embed.clip(data.username, 80)
+                                end
+                                if type(data.avatarUrl) == 'string' and string.match(data.avatarUrl, '^https://[%w%.%-]+/') then
+                                    settings.avatarUrl = Embed.clip(data.avatarUrl, 512)
+                                end
+                                if type(data.showPlayer) == 'boolean' then
+                                    settings.showPlayer = data.showPlayer
+                                end
+                                if type(data.pingUserId) == 'string' and (data.pingUserId == '' or string.match(data.pingUserId, '^%d+$')) then
+                                    settings.pingUserId = Embed.clip(data.pingUserId, 25)
+                                end
+                                if type(data.minRarity) == 'string' and table.find(WEBHOOK.rarityOrder, data.minRarity) then
+                                    settings.minRarity = data.minRarity
+                                end
+                                if type(data.events) == 'table' then
+                                    for kind, value in data.events do
+                                        if settings.events[kind] ~= nil and type(value) == 'boolean' then
+                                            settings.events[kind] = value
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+
+                    self.loaded = true
+
+                    ensureSender()
+                    refreshStatus()
+
+                    if d.ownedUnitsModule and type(d.ownedUnitsModule.GetOwnedUnits) == 'function' then
+                        local ok, owned = pcall(d.ownedUnitsModule.GetOwnedUnits)
+
+                        if ok and type(owned) == 'table' then
+                            for guid in owned do
+                                if type(guid) == 'string' then
+                                    self.seenUnits[guid] = true
+
+                                    self.seenCount += 1
+                                end
+                            end
+                        end
+
+                        local signal = d.ownedUnitsModule.UnitAdded
+
+                        if type(signal) == 'table' and type(signal.Connect) == 'function' then
+                            local okConnect, connection = pcall(signal.Connect, signal, function(
+                                argument
+                            )
+                                self.onUnitAdded(argument)
+                            end)
+
+                            if okConnect and connection then
+                                table.insert(self.connections, connection)
+                            end
+                        end
+                    end
+
+                    self.unitReadyAt = clock() + THRESHOLDS.webhookUnitIgnoreSeconds
+
+                    if d.gameHandlerModule and not d.isLobby then
+                        for name, handler in {
+                            MatchStarted = self.onMatchStarted,
+                            MatchEnded = self.onMatchEnded,
+                        }do
+                            local signal = d.gameHandlerModule[name]
+
+                            if type(signal) == 'table' and type(signal.Connect) == 'function' then
+                                local fire = handler
+                                local okConnect, connection = pcall(signal.Connect, signal, function(
+                                )
+                                    fire()
+                                end)
+
+                                if okConnect and connection then
+                                    table.insert(self.connections, connection)
+                                end
+                            end
+                        end
+                    end
+
+                    for source, runtime in {
+                        joiner = self.sources.joiner,
+                        autoPlay = self.sources.autoPlay,
+                    }do
+                        if type(runtime) == 'table' and type(runtime.addStatusListener) == 'function' then
+                            local subscribe = runtime.addStatusListener
+                            local remove = subscribe(function(text)
+                                self.onStatusLine(source, text)
+                            end)
+
+                            table.insert(self.connections, remove)
+                        end
+                    end
+
+                    local taskApi = d.task
+
+                    if type(taskApi) == 'table' and type(taskApi.spawn) == 'function' and type(taskApi.wait) == 'function' then
+                        local spawnTask = taskApi.spawn
+                        local waitTask = taskApi.wait
+
+                        spawnTask(function()
+                            waitTask(SESSION_DELAY_SECONDS)
+
+                            if self.context == ctx and ctx.alive then
+                                self.notify('session', {
+                                    place = if d.isLobby then'Lobby'else'Match',
+                                    placeName = if env.game then tostring(env.game.PlaceId)else nil,
+                                })
+                            end
+
+                            while self.context == ctx and ctx.alive do
+                                pcall(self.tick)
+                                waitTask(TICK_SECONDS)
+                            end
+                        end)
+                    end
+                end
+                function self.stop()
+                    for _, connection in self.connections do
+                        local conn = connection
+                        local ok = pcall(function()
+                            conn:Disconnect()
+                        end)
+
+                        if not ok then
+                            pcall(conn)
+                        end
+                    end
+
+                    table.clear(self.connections)
+
+                    if self.sender then
+                        self.sender.stop()
+
+                        self.sender = nil
+                    end
+
+                    self.context = nil
+                end
+
+                return self
+            end
+
+            return Runtime
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.G()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.G
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.G = v
+            end
+
+            return v.c
+        end
+    end
 end
 
 local Types = __DARKLUA_BUNDLE_MODULES.a()
@@ -9701,11 +11674,14 @@ local GameAdapter = __DARKLUA_BUNDLE_MODULES.w()
 local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.x()
 local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.A()
 local StatusPage = __DARKLUA_BUNDLE_MODULES.B()
+local WebhookPage = __DARKLUA_BUNDLE_MODULES.E()
+local WebhookRuntime = __DARKLUA_BUNDLE_MODULES.G()
 local active = false
 local joiner = JoinerRuntime.new()
 local macro = MacroRuntime.new()
 local gameSettings = GameAdapter.new()
 local autoPlay = AutoPlayRuntime.new()
+local webhook = WebhookRuntime.new()
 local pages = {
     {
         title = 'Status',
@@ -9756,7 +11732,11 @@ local pages = {
     {
         title = 'Webhook',
         icon = 'bell',
-        description = 'Navigation only; no webhook actions yet.',
+        description =
+[[Discord notifications for units, matches, joiner and bounty events.]],
+        render = function(tab)
+            WebhookPage.mount(tab, webhook)
+        end,
     },
     {
         title = 'Misc',
@@ -9825,6 +11805,10 @@ function GameModule.start(context)
         macro.start(context)
         gameSettings.start(context)
         autoPlay.start(context)
+        webhook.start(context, {
+            joiner = joiner,
+            autoPlay = autoPlay,
+        })
         context.log('GAME_STARTED')
     end
 
@@ -9839,6 +11823,7 @@ function GameModule.stop()
     macro.stop()
     gameSettings.stop()
     autoPlay.stop()
+    webhook.stop()
 
     active = false
 end

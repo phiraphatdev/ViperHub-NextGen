@@ -84,6 +84,32 @@ return table.freeze({
     }),
     -- Game UI messages starting with this text are dropped right after this script loads a team.
     teamLoadMessagePrefix = "^Successfully ",
+    -- Discord webhook delivery and embed styling.
+    webhook = table.freeze({
+        hosts = table.freeze({ "discord.com", "discordapp.com", "ptb.discord.com", "canary.discord.com" }),
+        rarityOrder = table.freeze({
+            "Rare",
+            "Epic",
+            "Legendary",
+            "Mythic",
+            "Secret",
+            "Exclusive",
+            "Vanguard",
+        }),
+        -- Unicode emoji (the game's own custom emoji cannot be used in Discord) and embed colors per unit rarity.
+        rarityStyle = table.freeze({
+            Rare = table.freeze({ emoji = "🔹", color = 0x3498DB }),
+            Epic = table.freeze({ emoji = "🟣", color = 0x9B59B6 }),
+            Legendary = table.freeze({ emoji = "🟠", color = 0xE67E22 }),
+            Mythic = table.freeze({ emoji = "🔴", color = 0xE74C3C }),
+            Secret = table.freeze({ emoji = "🕶️", color = 0x6C3483 }),
+            Exclusive = table.freeze({ emoji = "💎", color = 0x1ABC9C }),
+            Vanguard = table.freeze({ emoji = "👑", color = 0xF1C40F }),
+        }),
+        footer = "ViperHub NextGen • Anime Vanguards",
+        defaultUsername = "ViperHub",
+        pingMinRarity = "Secret",
+    }),
     attributes = table.freeze({ riftOpen = "IsRiftOpen" }),
     thresholds = table.freeze({
         activitySnapshotSeconds = 7200,
@@ -94,6 +120,12 @@ return table.freeze({
         teamLoadAttempts = 3,
         teamLoadTimeoutSeconds = 8,
         teamMessageSuppressSeconds = 15,
+        webhookMinIntervalSeconds = 1.5,
+        webhookQueueLimit = 40,
+        webhookRetryLimit = 3,
+        webhookUnitIgnoreSeconds = 20,
+        webhookBountyPollSeconds = 15,
+        webhookProblemCooldownSeconds = 300,
         changeStageRetrySeconds = 6,
         changeStageAttempts = 2,
         joinerRunMaxAgeSeconds = 10800,

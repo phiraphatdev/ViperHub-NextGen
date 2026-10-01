@@ -164,10 +164,25 @@ function Runtime.new(dependencies: any?): any
         macroCache = nil,
         macroOptionsCache = nil,
     }
+    local statusListeners: { (string) -> () } = {}
     local function setStatus(value: string)
         self.status = value
         if self.onStatus then
             pcall(self.onStatus, value)
+        end
+        for _, listener in table.clone(statusListeners) do
+            pcall(listener, value)
+        end
+    end
+
+    --- Subscribes to every status change (used by the webhook); returns a function that unsubscribes.
+    function self.addStatusListener(listener: (string) -> ()): () -> ()
+        table.insert(statusListeners, listener)
+        return function()
+            local index = table.find(statusListeners, listener)
+            if index then
+                table.remove(statusListeners, index)
+            end
         end
     end
 
