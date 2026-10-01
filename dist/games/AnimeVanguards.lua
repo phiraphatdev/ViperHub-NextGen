@@ -197,6 +197,72 @@ do
     end
     do
         local function __modImpl()
+            local Style = {}
+            local HEADING_SIZE = 18
+            local SUB_HEADING_SIZE = 15
+            local SUB_HEADING_DIM = 0.35
+            local JOINER_ICONS = {
+                Stage = 'map',
+                ['Legend Stage'] = 'crown',
+                Raid = 'swords',
+                Dungeon = 'skull',
+                ['Boss Event'] = 'flame',
+                Worldline = 'globe',
+                ['Elemental Towers'] = 'castle',
+                Portal = 'door-open',
+                ['Boss Bounties'] = 'target',
+                ['Regular Challenge'] = 'trophy',
+                ['Daily Challenge'] = 'calendar',
+                ['Weekly Challenge'] = 'clock',
+                Rift = 'zap',
+            }
+
+            function Style.section(host, title, icon, opened, size)
+                return host:Section({
+                    Title = title,
+                    Icon = icon,
+                    Box = true,
+                    BoxBorder = true,
+                    TextSize = size or HEADING_SIZE,
+                    TextTransparency = 0,
+                    Opened = opened == true,
+                })
+            end
+            function Style.sub(host, title, icon, opened)
+                if type(host.Section) ~= 'function' then
+                    return host
+                end
+
+                return (host.Section)(host, {
+                    Title = title,
+                    Icon = icon,
+                    TextSize = SUB_HEADING_SIZE,
+                    TextTransparency = SUB_HEADING_DIM,
+                    Opened = opened ~= false,
+                })
+            end
+            function Style.joiner(host, name, opened)
+                return Style.section(host, name .. ' Joiner', JOINER_ICONS[name], opened)
+            end
+
+            return Style
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.d()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.d
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.d = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
             local Catalog = {}
             local SUPPORTED = {
                 Story = true,
@@ -262,14 +328,14 @@ do
             return Catalog
         end
 
-        function __DARKLUA_BUNDLE_MODULES.d()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.d
+        function __DARKLUA_BUNDLE_MODULES.e()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.e
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.d = v
+                __DARKLUA_BUNDLE_MODULES.cache.e = v
             end
 
             return v.c
@@ -294,14 +360,14 @@ do
             })
         end
 
-        function __DARKLUA_BUNDLE_MODULES.e()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.e
+        function __DARKLUA_BUNDLE_MODULES.f()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.f
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.e = v
+                __DARKLUA_BUNDLE_MODULES.cache.f = v
             end
 
             return v.c
@@ -427,14 +493,14 @@ do
             return TeamEquip
         end
 
-        function __DARKLUA_BUNDLE_MODULES.f()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.f
+        function __DARKLUA_BUNDLE_MODULES.g()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.g
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.f = v
+                __DARKLUA_BUNDLE_MODULES.cache.g = v
             end
 
             return v.c
@@ -533,14 +599,14 @@ do
             return MacroEquip
         end
 
-        function __DARKLUA_BUNDLE_MODULES.g()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.g
+        function __DARKLUA_BUNDLE_MODULES.h()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.h
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.g = v
+                __DARKLUA_BUNDLE_MODULES.cache.h = v
             end
 
             return v.c
@@ -565,14 +631,14 @@ do
             return Capabilities
         end
 
-        function __DARKLUA_BUNDLE_MODULES.h()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.h
+        function __DARKLUA_BUNDLE_MODULES.i()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.i
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.h = v
+                __DARKLUA_BUNDLE_MODULES.cache.i = v
             end
 
             return v.c
@@ -605,14 +671,14 @@ do
             return Validation
         end
 
-        function __DARKLUA_BUNDLE_MODULES.i()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.i
+        function __DARKLUA_BUNDLE_MODULES.j()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.j
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.i = v
+                __DARKLUA_BUNDLE_MODULES.cache.j = v
             end
 
             return v.c
@@ -620,8 +686,8 @@ do
     end
     do
         local function __modImpl()
-            local Capabilities = __DARKLUA_BUNDLE_MODULES.h()
-            local Validation = __DARKLUA_BUNDLE_MODULES.i()
+            local Capabilities = __DARKLUA_BUNDLE_MODULES.i()
+            local Validation = __DARKLUA_BUNDLE_MODULES.j()
             local FileStorage = {}
             local ROOT = 'ViperHubNextGen'
             local MAX_BYTES = 16384
@@ -680,14 +746,14 @@ do
             return FileStorage
         end
 
-        function __DARKLUA_BUNDLE_MODULES.j()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.j
+        function __DARKLUA_BUNDLE_MODULES.k()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.k
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.j = v
+                __DARKLUA_BUNDLE_MODULES.cache.k = v
             end
 
             return v.c
@@ -695,10 +761,10 @@ do
     end
     do
         local function __modImpl()
-            local definitions = __DARKLUA_BUNDLE_MODULES.e()
-            local TeamEquip = __DARKLUA_BUNDLE_MODULES.f()
-            local MacroEquip = __DARKLUA_BUNDLE_MODULES.g()
-            local FileStorage = __DARKLUA_BUNDLE_MODULES.j()
+            local definitions = __DARKLUA_BUNDLE_MODULES.f()
+            local TeamEquip = __DARKLUA_BUNDLE_MODULES.g()
+            local MacroEquip = __DARKLUA_BUNDLE_MODULES.h()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.k()
             local Settings = {}
             local DEFAULT_COOLDOWN = 0
             local MAX_COOLDOWN = 300
@@ -1187,14 +1253,14 @@ do
             return Settings
         end
 
-        function __DARKLUA_BUNDLE_MODULES.k()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.k
+        function __DARKLUA_BUNDLE_MODULES.l()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.l
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.k = v
+                __DARKLUA_BUNDLE_MODULES.cache.l = v
             end
 
             return v.c
@@ -1202,9 +1268,10 @@ do
     end
     do
         local function __modImpl()
-            local Catalog = __DARKLUA_BUNDLE_MODULES.d()
-            local definitions = __DARKLUA_BUNDLE_MODULES.e()
-            local Settings = __DARKLUA_BUNDLE_MODULES.k()
+            local Style = __DARKLUA_BUNDLE_MODULES.d()
+            local Catalog = __DARKLUA_BUNDLE_MODULES.e()
+            local definitions = __DARKLUA_BUNDLE_MODULES.f()
+            local Settings = __DARKLUA_BUNDLE_MODULES.l()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Page = {}
 
@@ -1352,10 +1419,7 @@ do
                 }
             end
             local function addSpecial(tab, name, rows, runtime)
-                local section = tab:Section({
-                    Title = name .. ' Joiner',
-                    Opened = false,
-                })
+                local section = Style.joiner(tab, name, false)
                 local worldline = name == 'Worldline'
                 local entries = if type(rows) == 'table'then(if worldline then rows.worldlines else rows.bosses)else nil
                 local values = {}
@@ -1643,10 +1707,7 @@ do
                 end
             end
             local function addRift(tab, runtime)
-                local section = tab:Section({
-                    Title = 'Rift Joiner',
-                    Opened = false,
-                })
+                local section = Style.joiner(tab, 'Rift', false)
                 local saved = Settings.get()
                 local previous = saved.selection['Rift'] or {}
                 local backToLobby = previous.backToLobby == true
@@ -1697,10 +1758,7 @@ do
                 return timerPara
             end
             local function addUnavailable(tab, name, description)
-                local section = tab:Section({
-                    Title = name .. ' Joiner',
-                    Opened = false,
-                })
+                local section = Style.joiner(tab, name, false)
 
                 section:Toggle({
                     Title = 'Auto Join ' .. name,
@@ -1714,10 +1772,7 @@ do
                 })
             end
             local function addBounty(tab, runtime)
-                local section = tab:Section({
-                    Title = 'Boss Bounties Joiner',
-                    Opened = false,
-                })
+                local section = Style.joiner(tab, 'Boss Bounties', false)
                 local saved = Settings.get()
 
                 section:Toggle({
@@ -1750,30 +1805,10 @@ do
                 end
             end
             local function addEquipper(tab, runtime)
-                local section = tab:Section({
-                    Title = 'Auto Join Equipper',
-                    Icon = 'layout-grid',
-                    Box = true,
-                    BoxBorder = true,
-                    TextSize = 20,
-                    TextTransparency = 0,
-                    Opened = true,
-                })
+                local section = Style.section(tab, 'Auto Join Equipper', 'layout-grid', true, 20)
 
                 local function subsection(title, icon)
-                    local host = section
-
-                    if type(host.Section) == 'function' then
-                        return (host.Section)(host, {
-                            Title = title,
-                            Icon = icon,
-                            TextSize = 15,
-                            TextTransparency = 0.35,
-                            Opened = true,
-                        })
-                    end
-
-                    return host
+                    return Style.sub(section, title, icon, true)
                 end
 
                 local nested = subsection('Team Equipper', 'users')
@@ -1962,10 +1997,7 @@ do
             end
             local function addChallenge(tab, kind, choices, runtime)
                 local name = kind .. ' Challenge'
-                local section = tab:Section({
-                    Title = name .. ' Joiner',
-                    Opened = false,
-                })
+                local section = Style.joiner(tab, name, false)
                 local values = if type(choices) == 'table' and type(choices[kind]) == 'table'then choices[kind]else{}
                 local saved = Settings.get()
                 local previous = saved.selection[name] or {}
@@ -2100,10 +2132,7 @@ do
 
                 pcall(updateEquipper)
 
-                local settings = tab:Section({
-                    Title = 'Auto Join Settings',
-                    Opened = true,
-                })
+                local settings = Style.section(tab, 'Auto Join Settings', 'settings', true)
 
                 settings:Paragraph({
                     Title = 'Storage',
@@ -2161,22 +2190,10 @@ do
                         priorityLabel:SetDesc(orderText())
                     end,
                 })
-                addStageSelector(tab:Section({
-                    Title = 'Stage Joiner',
-                    Opened = true,
-                }), stageData, 'Story', 'Stage', runtime)
-                addStageSelector(tab:Section({
-                    Title = 'Legend Stage Joiner',
-                    Opened = false,
-                }), stageData, 'LegendStage', 'Legend Stage', runtime)
-                addStageSelector(tab:Section({
-                    Title = 'Raid Joiner',
-                    Opened = false,
-                }), stageData, 'Raid', 'Raid', runtime)
-                addStageSelector(tab:Section({
-                    Title = 'Dungeon Joiner',
-                    Opened = false,
-                }), stageData, 'Dungeon', 'Dungeon', runtime)
+                addStageSelector(Style.joiner(tab, 'Stage', true), stageData, 'Story', 'Stage', runtime)
+                addStageSelector(Style.joiner(tab, 'Legend Stage', false), stageData, 'LegendStage', 'Legend Stage', runtime)
+                addStageSelector(Style.joiner(tab, 'Raid', false), stageData, 'Raid', 'Raid', runtime)
+                addStageSelector(Style.joiner(tab, 'Dungeon', false), stageData, 'Dungeon', 'Dungeon', runtime)
                 addSpecial(tab, 'Boss Event', specialChoices, runtime)
                 addSpecial(tab, 'Worldline', specialChoices, runtime)
 
@@ -2280,14 +2297,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.l()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.l
+        function __DARKLUA_BUNDLE_MODULES.m()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.m
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.l = v
+                __DARKLUA_BUNDLE_MODULES.cache.m = v
             end
 
             return v.c
@@ -2295,7 +2312,7 @@ do
     end
     do
         local function __modImpl()
-            local FileStorage = __DARKLUA_BUNDLE_MODULES.j()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.k()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local ActivityState = {}
             local STORAGE_KEY = 'AnimeVanguardsActivityState'
@@ -2496,14 +2513,14 @@ do
             return ActivityState
         end
 
-        function __DARKLUA_BUNDLE_MODULES.m()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.m
+        function __DARKLUA_BUNDLE_MODULES.n()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.n
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.m = v
+                __DARKLUA_BUNDLE_MODULES.cache.n = v
             end
 
             return v.c
@@ -2775,14 +2792,14 @@ do
             return Document
         end
 
-        function __DARKLUA_BUNDLE_MODULES.n()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.n
+        function __DARKLUA_BUNDLE_MODULES.o()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.o
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.n = v
+                __DARKLUA_BUNDLE_MODULES.cache.o = v
             end
 
             return v.c
@@ -2790,7 +2807,7 @@ do
     end
     do
         local function __modImpl()
-            local Document = __DARKLUA_BUNDLE_MODULES.n()
+            local Document = __DARKLUA_BUNDLE_MODULES.o()
             local Storage = {}
             local ROOT = 'ViperHubNextGen/macro/AnimeVanguards'
             local MAX_BYTES = 1024 * 1024
@@ -2950,14 +2967,14 @@ do
             return Storage
         end
 
-        function __DARKLUA_BUNDLE_MODULES.o()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.o
+        function __DARKLUA_BUNDLE_MODULES.p()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.p
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.o = v
+                __DARKLUA_BUNDLE_MODULES.cache.p = v
             end
 
             return v.c
@@ -2966,7 +2983,7 @@ do
     do
         local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local TeamEquip = __DARKLUA_BUNDLE_MODULES.f()
+            local TeamEquip = __DARKLUA_BUNDLE_MODULES.g()
             local Adapter = {}
 
             local function resolve(root, path)
@@ -3344,14 +3361,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.p()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.p
+        function __DARKLUA_BUNDLE_MODULES.q()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.q
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.p = v
+                __DARKLUA_BUNDLE_MODULES.cache.q = v
             end
 
             return v.c
@@ -3359,12 +3376,12 @@ do
     end
     do
         local function __modImpl()
-            local Settings = __DARKLUA_BUNDLE_MODULES.k()
-            local ActivityState = __DARKLUA_BUNDLE_MODULES.m()
-            local TeamEquip = __DARKLUA_BUNDLE_MODULES.f()
-            local MacroEquip = __DARKLUA_BUNDLE_MODULES.g()
-            local MacroStorage = __DARKLUA_BUNDLE_MODULES.o()
-            local TeamAdapter = __DARKLUA_BUNDLE_MODULES.p()
+            local Settings = __DARKLUA_BUNDLE_MODULES.l()
+            local ActivityState = __DARKLUA_BUNDLE_MODULES.n()
+            local TeamEquip = __DARKLUA_BUNDLE_MODULES.g()
+            local MacroEquip = __DARKLUA_BUNDLE_MODULES.h()
+            local MacroStorage = __DARKLUA_BUNDLE_MODULES.p()
+            local TeamAdapter = __DARKLUA_BUNDLE_MODULES.q()
             local metadata = __DARKLUA_BUNDLE_MODULES.b()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Runtime = {}
@@ -4847,14 +4864,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.q()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.q
+        function __DARKLUA_BUNDLE_MODULES.r()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.r
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.q = v
+                __DARKLUA_BUNDLE_MODULES.cache.r = v
             end
 
             return v.c
@@ -4862,8 +4879,9 @@ do
     end
     do
         local function __modImpl()
-            local Storage = __DARKLUA_BUNDLE_MODULES.o()
-            local Document = __DARKLUA_BUNDLE_MODULES.n()
+            local Style = __DARKLUA_BUNDLE_MODULES.d()
+            local Storage = __DARKLUA_BUNDLE_MODULES.p()
+            local Document = __DARKLUA_BUNDLE_MODULES.o()
             local Page = {}
 
             local function humanError(code)
@@ -4908,10 +4926,7 @@ do
 [[Record confirmed game actions; replay requires a live match. Advanced features are planned.]],
                 })
 
-                local files = tab:Section({
-                    Title = 'Macro Files',
-                    Opened = true,
-                })
+                local files = Style.section(tab, 'Macro Files', 'folder', true)
 
                 if not storage then
                     files:Paragraph({
@@ -5054,10 +5069,7 @@ do
                     end,
                 })
 
-                local operations = tab:Section({
-                    Title = 'Record & Play',
-                    Opened = true,
-                })
+                local operations = Style.section(tab, 'Record & Play', 'circle-play', true)
 
                 status = operations:Paragraph({
                     Title = 'Macro status',
@@ -5196,10 +5208,7 @@ do
 
                 runtime.onMode(runtime.mode)
 
-                local config = tab:Section({
-                    Title = 'Play Macro Config',
-                    Opened = true,
-                })
+                local config = Style.section(tab, 'Play Macro Config', 'sliders-horizontal', true)
 
                 config:Toggle({
                     Title = 'Ignore Timing',
@@ -5248,10 +5257,7 @@ do
                     end,
                 })
 
-                local misc = tab:Section({
-                    Title = 'Misc',
-                    Opened = false,
-                })
+                local misc = Style.section(tab, 'Misc', 'wrench', false)
 
                 misc:Button({
                     Title = "Check Macro's Unit",
@@ -5306,14 +5312,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.r()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.r
+        function __DARKLUA_BUNDLE_MODULES.s()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.s
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.r = v
+                __DARKLUA_BUNDLE_MODULES.cache.s = v
             end
 
             return v.c
@@ -5322,7 +5328,7 @@ do
     do
         local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Document = __DARKLUA_BUNDLE_MODULES.n()
+            local Document = __DARKLUA_BUNDLE_MODULES.o()
             local Adapter = {}
             local Vector3 = ((getfenv())).Vector3
             local task = ((getfenv())).task
@@ -6147,14 +6153,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.s()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.s
+        function __DARKLUA_BUNDLE_MODULES.t()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.t
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.s = v
+                __DARKLUA_BUNDLE_MODULES.cache.t = v
             end
 
             return v.c
@@ -6162,8 +6168,8 @@ do
     end
     do
         local function __modImpl()
-            local Document = __DARKLUA_BUNDLE_MODULES.n()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.s()
+            local Document = __DARKLUA_BUNDLE_MODULES.o()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.t()
             local Runtime = {}
             local POLL_SECONDS = 0.2
             local ACTION_TIMEOUT = 12
@@ -7222,14 +7228,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.t()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.t
+        function __DARKLUA_BUNDLE_MODULES.u()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.u
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.t = v
+                __DARKLUA_BUNDLE_MODULES.cache.u = v
             end
 
             return v.c
@@ -7237,6 +7243,7 @@ do
     end
     do
         local function __modImpl()
+            local Style = __DARKLUA_BUNDLE_MODULES.d()
             local Page = {}
             local SETTINGS = {
                 {
@@ -7268,10 +7275,7 @@ do
 [[Synchronized controls for Anime Vanguards in-game automation and match settings.]],
                 })
 
-                local section = tab:Section({
-                    Title = 'Match Automation',
-                    Opened = true,
-                })
+                local section = Style.section(tab, 'Match Automation', 'gamepad-2', true)
 
                 if not adapter or not adapter.isAvailable() then
                     section:Paragraph({
@@ -7371,14 +7375,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.u()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.u
+        function __DARKLUA_BUNDLE_MODULES.v()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.v
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.u = v
+                __DARKLUA_BUNDLE_MODULES.cache.v = v
             end
 
             return v.c
@@ -7387,7 +7391,7 @@ do
     do
         local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local FileStorage = __DARKLUA_BUNDLE_MODULES.j()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.k()
             local Adapter = {}
             local SETTINGS_STORAGE_KEY = 'AnimeVanguardsGameSettings'
             local SCHEMA_VERSION = 1
@@ -7788,14 +7792,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.v()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.v
+        function __DARKLUA_BUNDLE_MODULES.w()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.w
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.v = v
+                __DARKLUA_BUNDLE_MODULES.cache.w = v
             end
 
             return v.c
@@ -7803,6 +7807,7 @@ do
     end
     do
         local function __modImpl()
+            local Style = __DARKLUA_BUNDLE_MODULES.d()
             local Page = {}
             local RULES_ERRORS = {
                 AUTOPLAY_ENABLED = 'Turn off Auto play - ingame before changing presets.',
@@ -7907,10 +7912,7 @@ do
                     applyLock()
                 end
 
-                local section = tab:Section({
-                    Title = 'Preset per mode',
-                    Opened = true,
-                })
+                local section = Style.section(tab, 'Preset per mode', 'layers', true)
 
                 for _, mode in modes do
                     local row = {
@@ -7988,10 +7990,7 @@ do
                     end
                 end
 
-                local section = tab:Section({
-                    Title = 'In-Game Automation',
-                    Opened = true,
-                })
+                local section = Style.section(tab, 'In-Game Automation', 'play', true)
 
                 section:Paragraph({
                     Title = 'Native Auto Play',
@@ -8067,14 +8066,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.w()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.w
+        function __DARKLUA_BUNDLE_MODULES.x()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.x
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.w = v
+                __DARKLUA_BUNDLE_MODULES.cache.x = v
             end
 
             return v.c
@@ -8226,14 +8225,14 @@ do
             return Rules
         end
 
-        function __DARKLUA_BUNDLE_MODULES.x()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.x
+        function __DARKLUA_BUNDLE_MODULES.y()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.y
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.x = v
+                __DARKLUA_BUNDLE_MODULES.cache.y = v
             end
 
             return v.c
@@ -8242,7 +8241,7 @@ do
     do
         local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Rules = __DARKLUA_BUNDLE_MODULES.x()
+            local Rules = __DARKLUA_BUNDLE_MODULES.y()
             local Adapter = {}
 
             local function resolve(root, path)
@@ -8667,14 +8666,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.y()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.y
+        function __DARKLUA_BUNDLE_MODULES.z()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.z
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.y = v
+                __DARKLUA_BUNDLE_MODULES.cache.z = v
             end
 
             return v.c
@@ -8682,10 +8681,10 @@ do
     end
     do
         local function __modImpl()
-            local FileStorage = __DARKLUA_BUNDLE_MODULES.j()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.k()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.y()
-            local Rules = __DARKLUA_BUNDLE_MODULES.x()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.z()
+            local Rules = __DARKLUA_BUNDLE_MODULES.y()
             local Runtime = {}
             local STORAGE_KEY = 'AnimeVanguardsAutoPlay'
             local SCHEMA_VERSION = 3
@@ -9254,14 +9253,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.z()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.z
+        function __DARKLUA_BUNDLE_MODULES.A()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.A
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.z = v
+                __DARKLUA_BUNDLE_MODULES.cache.A = v
             end
 
             return v.c
@@ -9269,6 +9268,7 @@ do
     end
     do
         local function __modImpl()
+            local Style = __DARKLUA_BUNDLE_MODULES.d()
             local Page = {}
 
             local function safeCheck(fn)
@@ -9612,26 +9612,11 @@ do
                     Desc = 'Probing real-time game state...',
                 })
                 local sections = {
-                    platform = tab:Section({
-                        Title = 'Platform & Environment',
-                        Opened = true,
-                    }),
-                    settings = tab:Section({
-                        Title = 'Game Core & Settings Sync',
-                        Opened = true,
-                    }),
-                    macro = tab:Section({
-                        Title = 'Macro Subsystems',
-                        Opened = true,
-                    }),
-                    joiner = tab:Section({
-                        Title = 'Matchmaking & Joiner',
-                        Opened = true,
-                    }),
-                    pending = tab:Section({
-                        Title = 'Pending Features (In Development)',
-                        Opened = false,
-                    }),
+                    platform = Style.section(tab, 'Platform & Environment', 'cpu', true),
+                    settings = Style.section(tab, 'Game Core & Settings Sync', 'shield', true),
+                    macro = Style.section(tab, 'Macro Subsystems', 'puzzle', true),
+                    joiner = Style.section(tab, 'Matchmaking & Joiner', 'users', true),
+                    pending = Style.section(tab, 'Pending Features (In Development)', 'hammer', false),
                 }
                 local paragraphs = {}
 
@@ -9689,14 +9674,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.A()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.A
+        function __DARKLUA_BUNDLE_MODULES.B()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.B
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.A = v
+                __DARKLUA_BUNDLE_MODULES.cache.B = v
             end
 
             return v.c
@@ -9707,15 +9692,15 @@ end
 local Types = __DARKLUA_BUNDLE_MODULES.a()
 local metadata = __DARKLUA_BUNDLE_MODULES.b()
 local config = __DARKLUA_BUNDLE_MODULES.c()
-local JoinerPage = __DARKLUA_BUNDLE_MODULES.l()
-local JoinerRuntime = __DARKLUA_BUNDLE_MODULES.q()
-local MacroPage = __DARKLUA_BUNDLE_MODULES.r()
-local MacroRuntime = __DARKLUA_BUNDLE_MODULES.t()
-local GamePage = __DARKLUA_BUNDLE_MODULES.u()
-local GameAdapter = __DARKLUA_BUNDLE_MODULES.v()
-local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.w()
-local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.z()
-local StatusPage = __DARKLUA_BUNDLE_MODULES.A()
+local JoinerPage = __DARKLUA_BUNDLE_MODULES.m()
+local JoinerRuntime = __DARKLUA_BUNDLE_MODULES.r()
+local MacroPage = __DARKLUA_BUNDLE_MODULES.s()
+local MacroRuntime = __DARKLUA_BUNDLE_MODULES.u()
+local GamePage = __DARKLUA_BUNDLE_MODULES.v()
+local GameAdapter = __DARKLUA_BUNDLE_MODULES.w()
+local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.x()
+local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.A()
+local StatusPage = __DARKLUA_BUNDLE_MODULES.B()
 local active = false
 local joiner = JoinerRuntime.new()
 local macro = MacroRuntime.new()

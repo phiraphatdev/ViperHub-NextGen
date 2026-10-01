@@ -6,6 +6,7 @@ Output: UI controls and validated selection callbacks
 Dependencies: Catalog; Definitions; Settings; replicated StagesData
 ]]
 
+local Style = require("../Style")
 local Catalog = require("./Catalog")
 local definitions = require("./Definitions")
 local Settings = require("./Settings")
@@ -125,7 +126,7 @@ local function readSpecialChoices(): any
 end
 
 local function addSpecial(tab: any, name: string, rows: any, runtime: any?)
-    local section = tab:Section({ Title = name .. " Joiner", Opened = false })
+    local section = Style.joiner(tab, name, false)
     local worldline = name == "Worldline"
     local entries = if type(rows) == "table"
         then (if worldline then rows.worldlines else rows.bosses)
@@ -360,7 +361,7 @@ local function formatHMS(seconds: number): string
 end
 
 local function addRift(tab: any, runtime: any?): any
-    local section = tab:Section({ Title = "Rift Joiner", Opened = false })
+    local section = Style.joiner(tab, "Rift", false)
     local saved = Settings.get()
     local previous = saved.selection["Rift"] or {}
     local backToLobby = previous.backToLobby == true
@@ -407,7 +408,7 @@ local function addRift(tab: any, runtime: any?): any
 end
 
 local function addUnavailable(tab: any, name: string, description: string)
-    local section = tab:Section({ Title = name .. " Joiner", Opened = false })
+    local section = Style.joiner(tab, name, false)
     section:Toggle({
         Title = "Auto Join " .. name,
         Value = false,
@@ -418,7 +419,7 @@ local function addUnavailable(tab: any, name: string, description: string)
 end
 
 local function addBounty(tab: any, runtime: any?): () -> ()
-    local section = tab:Section({ Title = "Boss Bounties Joiner", Opened = false })
+    local section = Style.joiner(tab, "Boss Bounties", false)
     local saved = Settings.get()
     section:Toggle({
         Title = "Auto Join Boss Bounties",
@@ -460,28 +461,9 @@ end
 -- Auto Join Equipper: Team Equipper rows (one dropdown of owned saved teams per joiner) plus the locked
 -- Macro Equipper (macro file per joiner). Returns an update function the page loop calls to follow team changes.
 local function addEquipper(tab: any, runtime: any?): () -> ()
-    local section = tab:Section({
-        Title = "Auto Join Equipper",
-        Icon = "layout-grid",
-        Box = true,
-        BoxBorder = true,
-        TextSize = 20,
-        TextTransparency = 0,
-        Opened = true,
-    })
-    -- Sub-headings are smaller, dimmer and carry their own icon so they read as children of the boxed heading.
+    local section = Style.section(tab, "Auto Join Equipper", "layout-grid", true, 20)
     local function subsection(title: string, icon: string): any
-        local host: any = section
-        if type(host.Section) == "function" then
-            return (host.Section :: any)(host, {
-                Title = title,
-                Icon = icon,
-                TextSize = 15,
-                TextTransparency = 0.35,
-                Opened = true,
-            })
-        end
-        return host
+        return Style.sub(section, title, icon, true)
     end
     local nested: any = subsection("Team Equipper", "users")
     local saved = Settings.get()
@@ -619,7 +601,7 @@ end
 
 local function addChallenge(tab: any, kind: string, choices: any, runtime: any?): any
     local name = kind .. " Challenge"
-    local section = tab:Section({ Title = name .. " Joiner", Opened = false })
+    local section = Style.joiner(tab, name, false)
     local values = if type(choices) == "table" and type(choices[kind]) == "table" then choices[kind] else {}
     local saved = Settings.get()
     local previous = saved.selection[name] or {}
@@ -733,7 +715,7 @@ function Page.mount(tab: any, stageDataOverride: any?, runtime: any?, challengeC
     -- Equipper first so the Team and Macro Equipper controls are the first thing on the tab.
     local updateEquipper = addEquipper(tab, runtime)
     pcall(updateEquipper)
-    local settings = tab:Section({ Title = "Auto Join Settings", Opened = true })
+    local settings = Style.section(tab, "Auto Join Settings", "settings", true)
     settings:Paragraph({
         Title = "Storage",
         Desc = if state.persistent then "Autosaved to file" else "Session only: file APIs unavailable",
@@ -776,34 +758,16 @@ function Page.mount(tab: any, stageDataOverride: any?, runtime: any?, challengeC
             priorityLabel:SetDesc(orderText())
         end,
     })
+    addStageSelector(Style.joiner(tab, "Stage", true), stageData, "Story", "Stage", runtime)
     addStageSelector(
-        tab:Section({ Title = "Stage Joiner", Opened = true }),
-        stageData,
-        "Story",
-        "Stage",
-        runtime
-    )
-    addStageSelector(
-        tab:Section({ Title = "Legend Stage Joiner", Opened = false }),
+        Style.joiner(tab, "Legend Stage", false),
         stageData,
         "LegendStage",
         "Legend Stage",
         runtime
     )
-    addStageSelector(
-        tab:Section({ Title = "Raid Joiner", Opened = false }),
-        stageData,
-        "Raid",
-        "Raid",
-        runtime
-    )
-    addStageSelector(
-        tab:Section({ Title = "Dungeon Joiner", Opened = false }),
-        stageData,
-        "Dungeon",
-        "Dungeon",
-        runtime
-    )
+    addStageSelector(Style.joiner(tab, "Raid", false), stageData, "Raid", "Raid", runtime)
+    addStageSelector(Style.joiner(tab, "Dungeon", false), stageData, "Dungeon", "Dungeon", runtime)
     addSpecial(tab, "Boss Event", specialChoices, runtime)
     addSpecial(tab, "Worldline", specialChoices, runtime)
     local updateBounty = addBounty(tab, runtime)

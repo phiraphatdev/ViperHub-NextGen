@@ -5,6 +5,7 @@ Input: WindUI tab and macro runtime
 Output: Validated UI callbacks and status
 Dependencies: Storage; Runtime
 ]]
+local Style = require("../Style")
 local Storage = require("./Storage")
 local Document = require("./Document")
 local Page = {}
@@ -46,7 +47,7 @@ function Page.mount(tab: any, runtime: any, window: any?, autoPlay: any?)
         Title = "Macro Studio",
         Desc = "Record confirmed game actions; replay requires a live match. Advanced features are planned.",
     })
-    local files = tab:Section({ Title = "Macro Files", Opened = true })
+    local files = Style.section(tab, "Macro Files", "folder", true)
     if not storage then
         files:Paragraph({
             Title = "Storage",
@@ -146,7 +147,7 @@ function Page.mount(tab: any, runtime: any, window: any?, autoPlay: any?)
             end
         end,
     })
-    local operations = tab:Section({ Title = "Record & Play", Opened = true })
+    local operations = Style.section(tab, "Record & Play", "circle-play", true)
     status = operations:Paragraph({ Title = "Macro status", Desc = runtime.status })
     runtime.onStatus = function(value: string)
         status:SetDesc(value)
@@ -261,7 +262,7 @@ function Page.mount(tab: any, runtime: any, window: any?, autoPlay: any?)
         end)
     end
     runtime.onMode(runtime.mode)
-    local config = tab:Section({ Title = "Play Macro Config", Opened = true })
+    local config = Style.section(tab, "Play Macro Config", "sliders-horizontal", true)
     config:Toggle({
         Title = "Ignore Timing",
         Desc = "Use wave and live action price first; ability timing is retained.",
@@ -296,7 +297,7 @@ function Page.mount(tab: any, runtime: any, window: any?, autoPlay: any?)
             runtime.settings.placementFailure = value
         end,
     })
-    local misc = tab:Section({ Title = "Misc", Opened = false })
+    local misc = Style.section(tab, "Misc", "wrench", false)
     misc:Button({
         Title = "Check Macro's Unit",
         Callback = function()

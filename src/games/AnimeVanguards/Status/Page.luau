@@ -5,6 +5,7 @@ Input: WindUI tab handle
 Output: Mounted status indicators (✓ Working / ✗ Pending) based on actual game checks
 Dependencies: None
 ]]
+local Style = require("../Style")
 
 local Page = {}
 
@@ -403,11 +404,11 @@ function Page.mount(tab: any)
     })
 
     local sections: { [string]: any } = {
-        platform = tab:Section({ Title = "Platform & Environment", Opened = true }),
-        settings = tab:Section({ Title = "Game Core & Settings Sync", Opened = true }),
-        macro = tab:Section({ Title = "Macro Subsystems", Opened = true }),
-        joiner = tab:Section({ Title = "Matchmaking & Joiner", Opened = true }),
-        pending = tab:Section({ Title = "Pending Features (In Development)", Opened = false }),
+        platform = Style.section(tab, "Platform & Environment", "cpu", true),
+        settings = Style.section(tab, "Game Core & Settings Sync", "shield", true),
+        macro = Style.section(tab, "Macro Subsystems", "puzzle", true),
+        joiner = Style.section(tab, "Matchmaking & Joiner", "users", true),
+        pending = Style.section(tab, "Pending Features (In Development)", "hammer", false),
     }
 
     local paragraphs: { [string]: any } = {}

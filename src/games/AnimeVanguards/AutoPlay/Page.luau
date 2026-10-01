@@ -6,6 +6,7 @@ Output: Mounted WindUI controls for native in-game Auto Play
 Dependencies: Runtime
 ]]
 
+local Style = require("../Style")
 local Page = {}
 
 local RULES_ERRORS: { [string]: string } = {
@@ -96,7 +97,7 @@ local function mountRules(tab: any, runtime: any, macro: any?)
         applyLock()
     end
 
-    local section = tab:Section({ Title = "Preset per mode", Opened = true })
+    local section = Style.section(tab, "Preset per mode", "layers", true)
     for _, mode in modes do
         local row: any = { mode = mode, byLabel = {} }
         row.dropdown = section:Dropdown({
@@ -161,7 +162,7 @@ function Page.mount(tab: any, runtime: any, macro: any?)
         end
     end
 
-    local section = tab:Section({ Title = "In-Game Automation", Opened = true })
+    local section = Style.section(tab, "In-Game Automation", "play", true)
 
     section:Paragraph({
         Title = "Native Auto Play",

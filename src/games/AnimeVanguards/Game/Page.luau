@@ -6,6 +6,7 @@ Output: Mounted WindUI controls
 Dependencies: Adapter
 ]]
 
+local Style = require("../Style")
 local Page = {}
 
 type SettingSpec = {
@@ -44,7 +45,7 @@ function Page.mount(tab: any, adapter: any)
         Desc = "Synchronized controls for Anime Vanguards in-game automation and match settings.",
     })
 
-    local section = tab:Section({ Title = "Match Automation", Opened = true })
+    local section = Style.section(tab, "Match Automation", "gamepad-2", true)
 
     if not adapter or not adapter.isAvailable() then
         section:Paragraph({
