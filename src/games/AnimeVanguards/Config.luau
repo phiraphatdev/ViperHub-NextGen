@@ -164,8 +164,6 @@ return table.freeze({
         macroListCacheSeconds = 5,
         presetSwitchTimeoutSeconds = 8,
         presetRequestSeconds = 8,
-        -- Worldline progress that never turns Ready: after this wait, request the teleport anyway (the server validates).
-        worldlineProgressWaitSeconds = 45,
     }),
     remoteNames = table.freeze({
         worldlineProgress = "GetWorldlineProgress",
