@@ -3,7 +3,7 @@
 Purpose: Own Discord webhook settings, persistence and the event sources that feed notifications
 Input: Joiner and Auto Play runtimes (status text), game modules (units, match, bounty), executor request API and context lifetime
 Output: Queued Discord embeds for match results, new units, joiner/bounty/rift/equipper/autoplay notices and a test message
-Dependencies: Config; Embed; Events; Sender; FileStorage
+Dependencies: Config; Embed; Events; Sender; Session; FileStorage
 ]]
 
 local FileStorage = require("../../../platform/FileStorage")
@@ -12,6 +12,7 @@ local metadata = require("../Metadata")
 local Embed = require("./Embed")
 local Events = require("./Events")
 local Sender = require("./Sender")
+local Session = require("./Session")
 local Runtime = {}
 
 local STORAGE_KEY = "AnimeVanguardsWebhook"
@@ -20,7 +21,7 @@ local WEBHOOK: any = (config :: any).webhook
 local THRESHOLDS: any = (config :: any).thresholds
 local TICK_SECONDS = 1
 local SESSION_DELAY_SECONDS = 5
-local END_SCREEN_DELAY_SECONDS = 3
+local END_SCREEN_DELAY_SECONDS = 4
 local UNIT_DEDUP_LIMIT = 4000
 
 local function resolve(root: any, path: string): any
@@ -251,6 +252,8 @@ function Runtime.new(injected: any?): any
         local d = deps()
         return {
             player = d.playerName,
+            displayName = d.displayName,
+            level = call("readLevel"),
             userId = d.userId,
             showPlayer = self.settings.showPlayer,
             timestamp = if has("timestamp") then call("timestamp") else os.date("!%Y-%m-%dT%H:%M:%SZ"),
@@ -595,51 +598,153 @@ function Runtime.new(injected: any?): any
         self.riftWasOpen = open
     end
 
-    --- One polling step: bounty count and rift state (called every second while running).
+    --- One polling step: bounty count, rift state and the match wave (called every second while running).
     function self.tick()
         local d = deps()
         watchBounty(clock())
         watchRift()
+        if self.matchStartedAt then
+            local wave: any = call("readWave")
+            if type(wave) == "table" and type(wave.current) == "number" then
+                if wave.current > (self.lastWave or 0) then
+                    self.lastWave = wave.current
+                end
+                if type(wave.max) == "number" then
+                    self.maxWave = wave.max
+                end
+            end
+        end
         if d.afterTick then
             pcall(d.afterTick)
         end
     end
 
-    --- Records the match start and, when the match ends, sends the result from the end screen.
-    function self.onMatchStarted()
-        self.matchStartedAt = clock()
+    -- Reads every configured currency into {key = amount}; nil when the game does not expose them yet.
+    local function balances(): { [string]: number }?
+        local value: any = call("readCurrencies")
+        return if type(value) == "table" then value else nil
     end
 
-    function self.onMatchEnded()
+    --- Records the match start: the time and the currency balances the earnings are measured against.
+    function self.onMatchStarted()
+        self.matchStartedAt = clock()
+        self.matchBalances = balances()
+        self.lastWave = nil
+        self.maxWave = nil
+    end
+
+    -- Result from the MatchEnded arguments (a boolean, "Victory"/"Defeat" or a table with a flag), or nil when unknown.
+    local function resultFromArguments(arguments: { any }): string?
+        for _, value in arguments do
+            if type(value) == "boolean" then
+                return if value then "Victory" else "Defeat"
+            elseif type(value) == "string" then
+                local lower = string.lower(value)
+                if lower == "victory" or lower == "win" or lower == "won" then
+                    return "Victory"
+                elseif lower == "defeat" or lower == "loss" or lower == "lose" or lower == "lost" then
+                    return "Defeat"
+                end
+            elseif type(value) == "table" then
+                for _, key in WEBHOOK.resultKeys do
+                    local flag = value[key]
+                    if type(flag) == "boolean" then
+                        return if flag then "Victory" else "Defeat"
+                    elseif type(flag) == "string" then
+                        local lower = string.lower(flag)
+                        if lower == "victory" or lower == "win" or lower == "won" then
+                            return "Victory"
+                        elseif lower == "defeat" or lower == "loss" or lower == "lose" or lower == "lost" then
+                            return "Defeat"
+                        end
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
+    -- Builds the per-currency earnings and balance rows (labels and emoji come from the game config).
+    local function currencyRows(before: { [string]: number }?, after: { [string]: number }?): (any, any, any)
+        local earnings: { any } = {}
+        local rows: { any } = {}
+        local gains: { [string]: number } = {}
+        for _, currency in WEBHOOK.currencies do
+            local now = after and after[currency.key]
+            if type(now) == "number" then
+                table.insert(
+                    rows,
+                    { key = currency.key, label = currency.label, emoji = currency.emoji, value = now }
+                )
+                local was = before and before[currency.key]
+                if type(was) == "number" and now > was then
+                    gains[currency.key] = now - was
+                    table.insert(earnings, { label = currency.label, amount = now - was, balance = now })
+                end
+            end
+        end
+        return earnings, rows, gains
+    end
+
+    --- Sends the match result from the MatchEnded arguments, the end screen and the match data.
+    function self.onMatchEnded(...: any)
         local d = deps()
         local startedAt = self.matchStartedAt
+        local before = self.matchBalances or self.balanceBaseline
+        local wave, maxWave = self.lastWave, self.maxWave
+        local argumentResult = resultFromArguments({ ... })
         self.matchStartedAt = nil
+        self.matchBalances = nil
         local function send()
             local screen: any = call("readEndScreen")
             local game: any = call("gameData")
-            local info: any = { rewards = {} }
+            local info: any = { rewards = {}, currencies = WEBHOOK.currencies }
             if type(game) == "table" then
                 info.stageType = game.StageType
                 info.stage = game.Stage
                 info.act = game.Act
                 info.difficulty = game.Difficulty
+                for _, key in WEBHOOK.waveMaxKeys do
+                    if type(game[key]) == "number" then
+                        maxWave = maxWave or game[key]
+                        break
+                    end
+                end
             end
             if type(screen) == "table" then
                 info.result = screen.result
                 info.damage = screen.damage
                 info.takedowns = screen.takedowns
-                info.money = screen.money
-                info.units = screen.units
-                info.waves = screen.waves
                 info.rewards = screen.rewards
                 info.durationText = screen.time
+            end
+            info.result = argumentResult or info.result
+            if wave then
+                info.wave = wave
+                info.maxWave = maxWave
             end
             if startedAt then
                 info.duration = clock() - startedAt
             end
+            local after = balances()
+            local earnings, rows, gains = currencyRows(before, after)
+            info.earnings = earnings
+            info.balances = rows
+            if after then
+                self.balanceBaseline = after
+            end
+            local macro: any = call("macroInfo")
+            if type(macro) == "table" then
+                info.macro = macro
+            end
             if info.result == nil then
-                info.result = "Defeat"
                 info.unknownResult = true
+                info.result = "Defeat"
+            elseif self.session then
+                self.session.record(info.result == "Victory", info.duration, gains)
+            end
+            if self.session then
+                info.session = self.session.summary()
             end
             self.notify("matchEnd", info)
         end
@@ -678,6 +783,7 @@ function Runtime.new(injected: any?): any
                 local isLobby = gameObject.PlaceId == metadata.placeIds[1]
                 local ownedUnits = optionalModule(starter, config.instancePaths.ownedUnits)
                 local gameHandler = optionalModule(replicated, config.instancePaths.gameHandler)
+                local wavesHud = optionalModule(starter, config.instancePaths.wavesHud)
                 d = {
                     encode = function(value: any): string
                         return http:JSONEncode(value)
@@ -688,6 +794,43 @@ function Runtime.new(injected: any?): any
                     request = requestFn,
                     task = env.task,
                     playerName = players.LocalPlayer.Name,
+                    displayName = players.LocalPlayer.DisplayName,
+                    readCurrencies = function(): { [string]: number }?
+                        local values: { [string]: number } = {}
+                        for _, currency in WEBHOOK.currencies do
+                            local ok, value =
+                                pcall(players.LocalPlayer.GetAttribute, players.LocalPlayer, currency.key)
+                            if ok and type(value) == "number" then
+                                values[currency.key] = value
+                            end
+                        end
+                        return if next(values) then values else nil
+                    end,
+                    readLevel = function(): number?
+                        local ok, value = pcall(
+                            players.LocalPlayer.GetAttribute,
+                            players.LocalPlayer,
+                            WEBHOOK.levelAttribute
+                        )
+                        return if ok and type(value) == "number" then value else nil
+                    end,
+                    readWave = function(): any
+                        local current = if wavesHud then wavesHud.CurrentWave else nil
+                        local number = tonumber(current)
+                        return if number then { current = number } else nil
+                    end,
+                    macroInfo = function(): any
+                        local macro = self.sources.macro
+                        local document = if type(macro) == "table" then macro.activeDocument else nil
+                        if
+                            type(document) == "table"
+                            and macro.mode == "play"
+                            and type(document.name) == "string"
+                        then
+                            return { name = document.name, status = "Playing" }
+                        end
+                        return nil
+                    end,
                     userId = players.LocalPlayer.UserId,
                     unitObject = if ownedUnits and ownedUnits.GetUnitObject
                         then function(guid: string): any
@@ -781,6 +924,8 @@ function Runtime.new(injected: any?): any
             end
         end
         self.loaded = true
+        self.session = Session.new(clock)
+        self.balanceBaseline = balances()
         ensureSender()
         refreshStatus()
 
@@ -813,8 +958,8 @@ function Runtime.new(injected: any?): any
                 local signal = d.gameHandlerModule[name]
                 if type(signal) == "table" and type(signal.Connect) == "function" then
                     local fire: any = handler
-                    local okConnect, connection = pcall(signal.Connect, signal, function()
-                        fire()
+                    local okConnect, connection = pcall(signal.Connect, signal, function(...: any)
+                        fire(...)
                     end)
                     if okConnect and connection then
                         table.insert(self.connections, connection)

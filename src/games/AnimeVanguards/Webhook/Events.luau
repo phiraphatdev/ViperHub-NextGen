@@ -124,6 +124,55 @@ local function rewardLines(rewards: any): string
     return table.concat(lines, "\n")
 end
 
+local ESC = ""
+local RED_TAG = ESC .. "[2;31m"
+local GREEN_TAG = ESC .. "[2;32m"
+local RESET = ESC .. "[0m"
+
+-- Author line: "DisplayName (@name) • Lv. N" (or just the name).
+local function playerLine(ctx: any): string?
+    if not ctx.showPlayer or type(ctx.player) ~= "string" or ctx.player == "" then
+        return nil
+    end
+    local text = ctx.player
+    if type(ctx.displayName) == "string" and ctx.displayName ~= "" and ctx.displayName ~= ctx.player then
+        text = ctx.displayName .. " (@" .. ctx.player .. ")"
+    end
+    if type(ctx.level) == "number" then
+        text ..= " • Lv. " .. tostring(math.floor(ctx.level))
+    end
+    return text
+end
+
+-- Colored ANSI code block summarising the session (Discord renders the ansi language in embed fields).
+local function sessionBlock(session: any): string
+    local bar = string.rep("🟩", session.bar) .. string.rep("⬛", session.barSize - session.bar)
+    return table.concat({
+        "```ansi",
+        string.format(
+            "%s[Win Rate]%s %.1f%% (%d Wins / %d Loss / %d Total Runs)",
+            RED_TAG,
+            RESET,
+            session.winRate,
+            session.wins,
+            session.losses,
+            session.total
+        ),
+        string.format("%s[Progress]%s [%s]", RED_TAG, RESET, bar),
+        string.format(
+            "%s[Session]%s %s Uptime • Avg %s/run • %s%s runs/hr%s",
+            RED_TAG,
+            RESET,
+            Embed.duration(session.uptime),
+            Embed.duration(session.averageRun),
+            GREEN_TAG,
+            string.format("~%.1f", session.runsPerHour),
+            RESET
+        ),
+        "```",
+    }, "\n")
+end
+
 --- Builds the embed spec for an event; returns the spec and whether the event should ping the configured user.
 --- ctx: {player, userId, showPlayer, timestamp, version}; config: the game config's webhook table.
 function Events.build(kind: string, data: any, ctx: any, config: any): (Embed.Spec?, boolean)
@@ -136,7 +185,7 @@ function Events.build(kind: string, data: any, ctx: any, config: any): (Embed.Sp
     }
     local ping = false
     if ctx.showPlayer and type(ctx.player) == "string" and ctx.player ~= "" then
-        spec.authorName = ctx.player
+        spec.authorName = playerLine(ctx)
         if type(ctx.userId) == "number" then
             spec.authorIcon = string.format(
                 "https://www.roblox.com/headshot-thumbnail/image?userId=%d&width=150&height=150&format=png",
@@ -147,29 +196,139 @@ function Events.build(kind: string, data: any, ctx: any, config: any): (Embed.Sp
 
     if kind == "matchEnd" then
         local victory = info.result == "Victory"
-        local mode = modeText(info)
-        spec.title = (if victory then "🏆 Victory" else "💀 Defeat")
-            .. (
-                if type(info.stageName) == "string" and info.stageName ~= ""
-                    then " — " .. info.stageName
-                    else ""
-            )
         spec.color = if victory then GREEN else RED
-        spec.description = if mode ~= "" then "`" .. mode .. "`" else nil
-        addField(fields, "⏱️ Time", if info.duration then Embed.duration(info.duration) else nil)
+        spec.authorName = playerLine(ctx)
+        if type(info.session) == "table" then
+            spec.footer =
+                string.format("⏱️ Uptime: %s • %s", Embed.duration(info.session.uptime), config.footer)
+        end
+        local parts: { string } = {}
+        if type(info.stage) == "string" and info.stage ~= "" then
+            local stage = info.stage
+            if type(info.difficulty) == "string" and info.difficulty ~= "" then
+                stage ..= " (" .. info.difficulty .. ")"
+            end
+            if type(info.stageType) == "string" and info.stageType ~= "" then
+                stage ..= " (" .. info.stageType .. ")"
+            end
+            table.insert(parts, stage)
+        end
+        if type(info.act) == "string" and info.act ~= "" then
+            table.insert(parts, info.act)
+        end
+        local head = if victory then "🏆 VICTORY" else "💀 DEFEAT"
+        if info.unknownResult then
+            head = "🏁 MATCH ENDED"
+        end
+        spec.title = if #parts > 0 then head .. " • " .. table.concat(parts, " • ") else head
+
+        local lines: { string } = {}
+        local macro = info.macro
+        if type(macro) == "table" and type(macro.name) == "string" then
+            table.insert(
+                lines,
+                string.format(
+                    "> 🎮 **Macro**: `%s` • **Status**: `%s`",
+                    macro.name,
+                    tostring(macro.status or "Playing")
+                )
+            )
+        end
+        local stats: { string } = {}
+        if info.duration then
+            table.insert(stats, "⏱️ **Duration**: `" .. Embed.duration(info.duration) .. "`")
+        elseif info.durationText then
+            table.insert(stats, "⏱️ **Duration**: `" .. tostring(info.durationText) .. "`")
+        end
+        if info.wave then
+            table.insert(
+                stats,
+                string.format(
+                    "🌊 **Wave**: `%s/%s`",
+                    tostring(info.wave),
+                    tostring(info.maxWave or info.wave)
+                )
+            )
+        end
+        local session = info.session
+        if type(session) == "table" then
+            local streak = "`" .. session.streak .. "`"
+            if session.bestStreak ~= "-" then
+                streak ..= " (Best: " .. session.bestStreak .. ")"
+            end
+            table.insert(stats, "🔥 **Streak**: " .. streak)
+        end
+        if #stats > 0 then
+            table.insert(lines, "> " .. table.concat(stats, " • "))
+        end
+        local extra: { string } = {}
+        if info.damage then
+            table.insert(extra, "💥 **Damage**: `" .. tostring(info.damage) .. "`")
+        end
+        if info.takedowns then
+            table.insert(extra, "☠️ **Takedowns**: `" .. tostring(info.takedowns) .. "`")
+        end
+        if #extra > 0 then
+            table.insert(lines, "> " .. table.concat(extra, " • "))
+        end
+        if #lines > 0 then
+            spec.description = table.concat(lines, "\n")
+        end
+
+        local earned: { string } = {}
+        local earningRows: { any } = info.earnings or {}
+        for _, row in earningRows do
+            table.insert(
+                earned,
+                string.format(
+                    "+%s %s [%s]",
+                    Embed.commas(row.amount),
+                    tostring(row.label),
+                    Embed.commas(row.balance)
+                )
+            )
+        end
+        local rewards = rewardLines(info.rewards)
+        if rewards ~= "" and #earned == 0 then
+            table.insert(earned, rewards)
+        end
         addField(
             fields,
-            "🌊 Waves",
-            if info.waves
-                then string.format("%s/%s", tostring(info.waves), tostring(info.maxWaves or info.waves))
-                else nil
+            "💰 Match Earnings",
+            if #earned > 0 then table.concat(earned, "\n") else "No change detected",
+            true
         )
-        addField(fields, "💥 Damage", if info.damage then Embed.number(info.damage) else nil)
-        addField(fields, "💀 Takedowns", if info.takedowns then Embed.number(info.takedowns) else nil)
-        addField(fields, "🪙 Money", if info.money then Embed.number(info.money) else nil)
-        addField(fields, "🧩 Units placed", info.units)
-        local lines = rewardLines(info.rewards)
-        addField(fields, "🎁 Rewards", lines, false)
+        local balances: { string } = {}
+        local balanceRows: { any } = info.balances or {}
+        for _, row in balanceRows do
+            table.insert(
+                balances,
+                string.format("%s `%s` %s", tostring(row.emoji), Embed.commas(row.value), tostring(row.label))
+            )
+        end
+        if #balances > 0 then
+            addField(fields, "🏦 Current Balance", table.concat(balances, "\n"), true)
+        end
+        if type(session) == "table" then
+            addField(fields, "📊 Session Overview", sessionBlock(session), false)
+            local rates: { string } = {}
+            local currencyRows: { any } = info.currencies or {}
+            for _, row in currencyRows do
+                local rate = session.rates[row.key]
+                if rate then
+                    table.insert(
+                        rates,
+                        string.format("%s %s +%s/hr", row.emoji, row.label, Embed.number(rate))
+                    )
+                end
+            end
+            addField(
+                fields,
+                "📈 Farming Rates (/hr)",
+                if #rates > 0 then table.concat(rates, "\n") else "```No session rewards reported yet```",
+                false
+            )
+        end
     elseif kind == "unit" then
         local style = config.rarityStyle[info.rarity] or { emoji = "🆕", color = TEAL }
         spec.title = string.format("%s New %s unit obtained!", style.emoji, tostring(info.rarity or "unit"))

@@ -72,6 +72,7 @@ do
                     autoPlayHandler = 'Modules.Gameplay.AutoPlay.AutoPlayHandler',
                     autoPlayClient = 'NetworkCode.GameAutoPlayClient',
                     wavesClient = 'NetworkCode.GameWavesClient',
+                    wavesHud = 'Modules.Interface.Loader.HUD.Waves',
                     stagesData = 'Modules.Data.StagesData',
                     bountyData = 'Modules.Data.BountyData',
                     ownedUnits = 'Modules.Gameplay.Units.OwnedUnitsHandler',
@@ -186,6 +187,42 @@ do
                     footer = 'ViperHub NextGen \u{2022} Anime Vanguards',
                     defaultUsername = 'ViperHub',
                     pingMinRarity = 'Secret',
+                    currencies = table.freeze({
+                        table.freeze({
+                            key = 'Gems',
+                            label = 'Gems',
+                            emoji = '\u{1f48e}',
+                        }),
+                        table.freeze({
+                            key = 'Gold',
+                            label = 'Gold',
+                            emoji = '\u{1fa99}',
+                        }),
+                        table.freeze({
+                            key = 'TraitRerolls',
+                            label = 'Rerolls',
+                            emoji = '\u{1f3b2}',
+                        }),
+                        table.freeze({
+                            key = 'Trophies',
+                            label = 'Trophies',
+                            emoji = '\u{1f3c6}',
+                        }),
+                    }),
+                    levelAttribute = 'Level',
+                    waveMaxKeys = table.freeze({
+                        'MaxWave',
+                        'WaveCount',
+                        'TotalWaves',
+                        'Waves',
+                    }),
+                    resultKeys = table.freeze({
+                        'Victory',
+                        'Won',
+                        'Win',
+                        'Success',
+                        'Result',
+                    }),
                 }),
                 attributes = table.freeze({
                     riftOpen = 'IsRiftOpen',
@@ -9861,6 +9898,28 @@ do
 
                 return out
             end
+            function Embed.commas(value)
+                local n = tonumber(value)
+
+                if n == nil or n ~= n or math.abs(n) == math.huge then
+                    return '0'
+                end
+
+                local text = tostring(math.floor(math.abs(n) + 0.5))
+                local out = text
+
+                while true do
+                    local replaced, count = string.gsub(out, '^(%d+)(%d%d%d)', '%1,%2')
+
+                    out = replaced
+
+                    if count == 0 then
+                        break
+                    end
+                end
+
+                return (if n < 0 then'-'else'') .. out
+            end
             function Embed.duration(seconds)
                 local total = math.max(0, math.floor(tonumber(seconds) or 0))
                 local h = total // 3600
@@ -10163,6 +10222,39 @@ do
                 return table.concat(lines, '\n')
             end
 
+            local ESC = '\23'
+            local RED_TAG = ESC .. '[2;31m'
+            local GREEN_TAG = ESC .. '[2;32m'
+            local RESET = ESC .. '[0m'
+
+            local function playerLine(ctx)
+                if not ctx.showPlayer or type(ctx.player) ~= 'string' or ctx.player == '' then
+                    return nil
+                end
+
+                local text = ctx.player
+
+                if type(ctx.displayName) == 'string' and ctx.displayName ~= '' and ctx.displayName ~= ctx.player then
+                    text = ctx.displayName .. ' (@' .. ctx.player .. ')'
+                end
+                if type(ctx.level) == 'number' then
+                    text ..= ' \u{2022} Lv. ' .. tostring(math.floor(ctx.level))
+                end
+
+                return text
+            end
+            local function sessionBlock(session)
+                local bar = string.rep('\u{1f7e9}', session.bar) .. string.rep('\u{2b1b}', session.barSize - session.bar)
+
+                return table.concat({
+                    '```ansi',
+                    string.format('%s[Win Rate]%s %.1f%% (%d Wins / %d Loss / %d Total Runs)', RED_TAG, RESET, session.winRate, session.wins, session.losses, session.total),
+                    string.format('%s[Progress]%s [%s]', RED_TAG, RESET, bar),
+                    string.format('%s[Session]%s %s Uptime \u{2022} Avg %s/run \u{2022} %s%s runs/hr%s', RED_TAG, RESET, Embed.duration(session.uptime), Embed.duration(session.averageRun), GREEN_TAG, string.format('~%.1f', session.runsPerHour), RESET),
+                    '```',
+                }, '\n')
+            end
+
             function Events.build(kind, data, ctx, config)
                 local info = if type(data) == 'table'then data else{}
                 local fields = {}
@@ -10174,7 +10266,7 @@ do
                 local ping = false
 
                 if ctx.showPlayer and type(ctx.player) == 'string' and ctx.player ~= '' then
-                    spec.authorName = ctx.player
+                    spec.authorName = playerLine(ctx)
 
                     if type(ctx.userId) == 'number' then
                         spec.authorIcon = string.format(
@@ -10183,22 +10275,129 @@ do
                 end
                 if kind == 'matchEnd' then
                     local victory = info.result == 'Victory'
-                    local mode = modeText(info)
 
-                    spec.title = (if victory then'\u{1f3c6} Victory'else'\u{1f480} Defeat') .. (if type(info.stageName) == 'string' and info.stageName ~= ''then' \u{2014} ' .. info.stageName else'')
                     spec.color = if victory then GREEN else RED
-                    spec.description = if mode ~= ''then'`' .. mode .. '`'else nil
+                    spec.authorName = playerLine(ctx)
 
-                    addField(fields, '\u{23f1}\u{fe0f} Time', if info.duration then Embed.duration(info.duration)else nil)
-                    addField(fields, '\u{1f30a} Waves', if info.waves then string.format('%s/%s', tostring(info.waves), tostring(info.maxWaves or info.waves))else nil)
-                    addField(fields, '\u{1f4a5} Damage', if info.damage then Embed.number(info.damage)else nil)
-                    addField(fields, '\u{1f480} Takedowns', if info.takedowns then Embed.number(info.takedowns)else nil)
-                    addField(fields, '\u{1fa99} Money', if info.money then Embed.number(info.money)else nil)
-                    addField(fields, '\u{1f9e9} Units placed', info.units)
+                    if type(info.session) == 'table' then
+                        spec.footer = string.format('\u{23f1}\u{fe0f} Uptime: %s \u{2022} %s', Embed.duration(info.session.uptime), config.footer)
+                    end
 
-                    local lines = rewardLines(info.rewards)
+                    local parts = {}
 
-                    addField(fields, '\u{1f381} Rewards', lines, false)
+                    if type(info.stage) == 'string' and info.stage ~= '' then
+                        local stage = info.stage
+
+                        if type(info.difficulty) == 'string' and info.difficulty ~= '' then
+                            stage ..= ' (' .. info.difficulty .. ')'
+                        end
+                        if type(info.stageType) == 'string' and info.stageType ~= '' then
+                            stage ..= ' (' .. info.stageType .. ')'
+                        end
+
+                        table.insert(parts, stage)
+                    end
+                    if type(info.act) == 'string' and info.act ~= '' then
+                        table.insert(parts, info.act)
+                    end
+
+                    local head = if victory then'\u{1f3c6} VICTORY'else'\u{1f480} DEFEAT'
+
+                    if info.unknownResult then
+                        head = '\u{1f3c1} MATCH ENDED'
+                    end
+
+                    spec.title = if#parts > 0 then head .. ' \u{2022} ' .. table.concat(parts, ' \u{2022} ')else head
+
+                    local lines = {}
+                    local macro = info.macro
+
+                    if type(macro) == 'table' and type(macro.name) == 'string' then
+                        table.insert(lines, string.format('> \u{1f3ae} **Macro**: `%s` \u{2022} **Status**: `%s`', macro.name, tostring(macro.status or 'Playing')))
+                    end
+
+                    local stats = {}
+
+                    if info.duration then
+                        table.insert(stats, '\u{23f1}\u{fe0f} **Duration**: `' .. Embed.duration(info.duration) .. '`')
+                    elseif info.durationText then
+                        table.insert(stats, '\u{23f1}\u{fe0f} **Duration**: `' .. tostring(info.durationText) .. '`')
+                    end
+                    if info.wave then
+                        table.insert(stats, string.format('\u{1f30a} **Wave**: `%s/%s`', tostring(info.wave), tostring(info.maxWave or info.wave)))
+                    end
+
+                    local session = info.session
+
+                    if type(session) == 'table' then
+                        local streak = '`' .. session.streak .. '`'
+
+                        if session.bestStreak ~= '-' then
+                            streak ..= ' (Best: ' .. session.bestStreak .. ')'
+                        end
+
+                        table.insert(stats, '\u{1f525} **Streak**: ' .. streak)
+                    end
+                    if #stats > 0 then
+                        table.insert(lines, '> ' .. table.concat(stats, ' \u{2022} '))
+                    end
+
+                    local extra = {}
+
+                    if info.damage then
+                        table.insert(extra, '\u{1f4a5} **Damage**: `' .. tostring(info.damage) .. '`')
+                    end
+                    if info.takedowns then
+                        table.insert(extra, '\u{2620}\u{fe0f} **Takedowns**: `' .. tostring(info.takedowns) .. '`')
+                    end
+                    if #extra > 0 then
+                        table.insert(lines, '> ' .. table.concat(extra, ' \u{2022} '))
+                    end
+                    if #lines > 0 then
+                        spec.description = table.concat(lines, '\n')
+                    end
+
+                    local earned = {}
+                    local earningRows = info.earnings or {}
+
+                    for _, row in earningRows do
+                        table.insert(earned, string.format('+%s %s [%s]', Embed.commas(row.amount), tostring(row.label), Embed.commas(row.balance)))
+                    end
+
+                    local rewards = rewardLines(info.rewards)
+
+                    if rewards ~= '' and #earned == 0 then
+                        table.insert(earned, rewards)
+                    end
+
+                    addField(fields, '\u{1f4b0} Match Earnings', if#earned > 0 then table.concat(earned, '\n')else'No change detected', true)
+
+                    local balances = {}
+                    local balanceRows = info.balances or {}
+
+                    for _, row in balanceRows do
+                        table.insert(balances, string.format('%s `%s` %s', tostring(row.emoji), Embed.commas(row.value), tostring(row.label)))
+                    end
+
+                    if #balances > 0 then
+                        addField(fields, '\u{1f3e6} Current Balance', table.concat(balances, '\n'), true)
+                    end
+                    if type(session) == 'table' then
+                        addField(fields, '\u{1f4ca} Session Overview', sessionBlock(session), false)
+
+                        local rates = {}
+                        local currencyRows = info.currencies or {}
+
+                        for _, row in currencyRows do
+                            local rate = session.rates[row.key]
+
+                            if rate then
+                                table.insert(rates, string.format('%s %s +%s/hr', row.emoji, row.label, Embed.number(rate)))
+                            end
+                        end
+
+                        addField(fields, '\u{1f4c8} Farming Rates (/hr)', if#rates > 0 then table.concat(rates, '\n')else'```No session rewards reported yet```', false)
+                    end
                 elseif kind == 'unit' then
                     local style = config.rarityStyle[info.rarity] or {
                         emoji = '\u{1f195}',
@@ -10704,12 +10903,108 @@ do
     end
     do
         local function __modImpl()
+            local Session = {}
+            local BAR_SEGMENTS = 10
+            local MIN_RATE_SECONDS = 60
+
+            function Session.new(clock)
+                local self = {
+                    startedAt = clock(),
+                    wins = 0,
+                    losses = 0,
+                    streakKind = '',
+                    streakCount = 0,
+                    bestWinStreak = 0,
+                    runSeconds = 0,
+                    gains = {},
+                }
+
+                function self.record(won, duration, gains)
+                    if won then
+                        self.wins += 1
+                    else
+                        self.losses += 1
+                    end
+
+                    local kind = if won then'W'else'L'
+
+                    if self.streakKind == kind then
+                        self.streakCount += 1
+                    else
+                        self.streakKind = kind
+                        self.streakCount = 1
+                    end
+                    if won and self.streakCount > self.bestWinStreak then
+                        self.bestWinStreak = self.streakCount
+                    end
+                    if type(duration) == 'number' and duration > 0 then
+                        self.runSeconds += duration
+                    end
+
+                    for key, amount in gains or {}do
+                        if type(amount) == 'number' and amount > 0 then
+                            self.gains[key] = (self.gains[key] or 0) + amount
+                        end
+                    end
+                end
+                function self.summary()
+                    local total = self.wins + self.losses
+                    local uptime = math.max(0, clock() - self.startedAt)
+                    local winRate = if total > 0 then self.wins / total * 100 else 0
+                    local filled = math.floor(winRate / 100 * BAR_SEGMENTS + 0.5)
+                    local rates = {}
+
+                    if uptime >= MIN_RATE_SECONDS then
+                        for key, amount in self.gains do
+                            rates[key] = amount / uptime * 3600
+                        end
+                    end
+
+                    return {
+                        wins = self.wins,
+                        losses = self.losses,
+                        total = total,
+                        winRate = winRate,
+                        bar = filled,
+                        barSize = BAR_SEGMENTS,
+                        streak = if self.streakCount > 0 then tostring(self.streakCount) .. self.streakKind else'-',
+                        bestStreak = if self.bestWinStreak > 0 then tostring(self.bestWinStreak) .. 'W'else'-',
+                        uptime = uptime,
+                        averageRun = if total > 0 then uptime / total else 0,
+                        runsPerHour = if total > 0 and uptime >= MIN_RATE_SECONDS then total / uptime * 3600 else 0,
+                        gains = table.clone(self.gains),
+                        rates = rates,
+                    }
+                end
+
+                return self
+            end
+
+            return Session
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.G()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.G
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.G = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
             local FileStorage = __DARKLUA_BUNDLE_MODULES.k()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local metadata = __DARKLUA_BUNDLE_MODULES.b()
             local Embed = __DARKLUA_BUNDLE_MODULES.C()
             local Events = __DARKLUA_BUNDLE_MODULES.D()
             local Sender = __DARKLUA_BUNDLE_MODULES.F()
+            local Session = __DARKLUA_BUNDLE_MODULES.G()
             local Runtime = {}
             local STORAGE_KEY = 'AnimeVanguardsWebhook'
             local SCHEMA_VERSION = 1
@@ -10717,7 +11012,7 @@ do
             local THRESHOLDS = (config).thresholds
             local TICK_SECONDS = 1
             local SESSION_DELAY_SECONDS = 5
-            local END_SCREEN_DELAY_SECONDS = 3
+            local END_SCREEN_DELAY_SECONDS = 4
             local UNIT_DEDUP_LIMIT = 4000
 
             local function resolve(root, path)
@@ -10962,6 +11257,8 @@ do
 
                     return {
                         player = d.playerName,
+                        displayName = d.displayName,
+                        level = call('readLevel'),
                         userId = d.userId,
                         showPlayer = self.settings.showPlayer,
                         timestamp = if has('timestamp')then call('timestamp')else os.date('!%Y-%m-%dT%H:%M:%SZ'),
@@ -11338,46 +11635,175 @@ do
                     watchBounty(clock())
                     watchRift()
 
+                    if self.matchStartedAt then
+                        local wave = call('readWave')
+
+                        if type(wave) == 'table' and type(wave.current) == 'number' then
+                            if wave.current > (self.lastWave or 0) then
+                                self.lastWave = wave.current
+                            end
+                            if type(wave.max) == 'number' then
+                                self.maxWave = wave.max
+                            end
+                        end
+                    end
                     if d.afterTick then
                         pcall(d.afterTick)
                     end
                 end
+
+                local function balances()
+                    local value = call('readCurrencies')
+
+                    return if type(value) == 'table'then value else nil
+                end
+
                 function self.onMatchStarted()
                     self.matchStartedAt = clock()
+                    self.matchBalances = balances()
+                    self.lastWave = nil
+                    self.maxWave = nil
                 end
-                function self.onMatchEnded()
+
+                local function resultFromArguments(arguments)
+                    for _, value in arguments do
+                        if type(value) == 'boolean' then
+                            return if value then'Victory'else'Defeat'
+                        elseif type(value) == 'string' then
+                            local lower = string.lower(value)
+
+                            if lower == 'victory' or lower == 'win' or lower == 'won' then
+                                return 'Victory'
+                            elseif lower == 'defeat' or lower == 'loss' or lower == 'lose' or lower == 'lost' then
+                                return 'Defeat'
+                            end
+                        elseif type(value) == 'table' then
+                            for _, key in WEBHOOK.resultKeys do
+                                local flag = value[key]
+
+                                if type(flag) == 'boolean' then
+                                    return if flag then'Victory'else'Defeat'
+                                elseif type(flag) == 'string' then
+                                    local lower = string.lower(flag)
+
+                                    if lower == 'victory' or lower == 'win' or lower == 'won' then
+                                        return 'Victory'
+                                    elseif lower == 'defeat' or lower == 'loss' or lower == 'lose' or lower == 'lost' then
+                                        return 'Defeat'
+                                    end
+                                end
+                            end
+                        end
+                    end
+
+                    return nil
+                end
+                local function currencyRows(before, after)
+                    local earnings = {}
+                    local rows = {}
+                    local gains = {}
+
+                    for _, currency in WEBHOOK.currencies do
+                        local now = after and after[currency.key]
+
+                        if type(now) == 'number' then
+                            table.insert(rows, {
+                                key = currency.key,
+                                label = currency.label,
+                                emoji = currency.emoji,
+                                value = now,
+                            })
+
+                            local was = before and before[currency.key]
+
+                            if type(was) == 'number' and now > was then
+                                gains[currency.key] = now - was
+
+                                table.insert(earnings, {
+                                    label = currency.label,
+                                    amount = now - was,
+                                    balance = now,
+                                })
+                            end
+                        end
+                    end
+
+                    return earnings, rows, gains
+                end
+
+                function self.onMatchEnded(...)
                     local d = deps()
                     local startedAt = self.matchStartedAt
+                    local before = self.matchBalances or self.balanceBaseline
+                    local wave, maxWave = self.lastWave, self.maxWave
+                    local argumentResult = resultFromArguments({...})
 
                     self.matchStartedAt = nil
+                    self.matchBalances = nil
 
                     local function send()
                         local screen = call('readEndScreen')
                         local game = call('gameData')
-                        local info = {rewards = {}}
+                        local info = {
+                            rewards = {},
+                            currencies = WEBHOOK.currencies,
+                        }
 
                         if type(game) == 'table' then
                             info.stageType = game.StageType
                             info.stage = game.Stage
                             info.act = game.Act
                             info.difficulty = game.Difficulty
+
+                            for _, key in WEBHOOK.waveMaxKeys do
+                                if type(game[key]) == 'number' then
+                                    maxWave = maxWave or game[key]
+
+                                    break
+                                end
+                            end
                         end
                         if type(screen) == 'table' then
                             info.result = screen.result
                             info.damage = screen.damage
                             info.takedowns = screen.takedowns
-                            info.money = screen.money
-                            info.units = screen.units
-                            info.waves = screen.waves
                             info.rewards = screen.rewards
                             info.durationText = screen.time
+                        end
+
+                        info.result = argumentResult or info.result
+
+                        if wave then
+                            info.wave = wave
+                            info.maxWave = maxWave
                         end
                         if startedAt then
                             info.duration = clock() - startedAt
                         end
+
+                        local after = balances()
+                        local earnings, rows, gains = currencyRows(before, after)
+
+                        info.earnings = earnings
+                        info.balances = rows
+
+                        if after then
+                            self.balanceBaseline = after
+                        end
+
+                        local macro = call('macroInfo')
+
+                        if type(macro) == 'table' then
+                            info.macro = macro
+                        end
                         if info.result == nil then
-                            info.result = 'Defeat'
                             info.unknownResult = true
+                            info.result = 'Defeat'
+                        elseif self.session then
+                            self.session.record(info.result == 'Victory', info.duration, gains)
+                        end
+                        if self.session then
+                            info.session = self.session.summary()
                         end
 
                         self.notify('matchEnd', info)
@@ -11418,6 +11844,7 @@ do
                             local isLobby = gameObject.PlaceId == metadata.placeIds[1]
                             local ownedUnits = optionalModule(starter, config.instancePaths.ownedUnits)
                             local gameHandler = optionalModule(replicated, config.instancePaths.gameHandler)
+                            local wavesHud = optionalModule(starter, config.instancePaths.wavesHud)
 
                             d = {
                                 encode = function(value)
@@ -11429,6 +11856,44 @@ do
                                 request = requestFn,
                                 task = env.task,
                                 playerName = players.LocalPlayer.Name,
+                                displayName = players.LocalPlayer.DisplayName,
+                                readCurrencies = function()
+                                    local values = {}
+
+                                    for _, currency in WEBHOOK.currencies do
+                                        local ok, value = pcall(players.LocalPlayer.GetAttribute, players.LocalPlayer, currency.key)
+
+                                        if ok and type(value) == 'number' then
+                                            values[currency.key] = value
+                                        end
+                                    end
+
+                                    return if next(values)then values else nil
+                                end,
+                                readLevel = function()
+                                    local ok, value = pcall(players.LocalPlayer.GetAttribute, players.LocalPlayer, WEBHOOK.levelAttribute)
+
+                                    return if ok and type(value) == 'number'then value else nil
+                                end,
+                                readWave = function()
+                                    local current = if wavesHud then wavesHud.CurrentWave else nil
+                                    local number = tonumber(current)
+
+                                    return if number then{current = number}else nil
+                                end,
+                                macroInfo = function()
+                                    local macro = self.sources.macro
+                                    local document = if type(macro) == 'table'then macro.activeDocument else nil
+
+                                    if type(document) == 'table' and macro.mode == 'play' and type(document.name) == 'string' then
+                                        return {
+                                            name = document.name,
+                                            status = 'Playing',
+                                        }
+                                    end
+
+                                    return nil
+                                end,
                                 userId = players.LocalPlayer.UserId,
                                 unitObject = if ownedUnits and ownedUnits.GetUnitObject then function(
                                     guid
@@ -11526,6 +11991,8 @@ do
                     end
 
                     self.loaded = true
+                    self.session = Session.new(clock)
+                    self.balanceBaseline = balances()
 
                     ensureSender()
                     refreshStatus()
@@ -11570,8 +12037,9 @@ do
                             if type(signal) == 'table' and type(signal.Connect) == 'function' then
                                 local fire = handler
                                 local okConnect, connection = pcall(signal.Connect, signal, function(
+                                    ...
                                 )
-                                    fire()
+                                    fire(...)
                                 end)
 
                                 if okConnect and connection then
@@ -11647,14 +12115,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.G()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.G
+        function __DARKLUA_BUNDLE_MODULES.H()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.H
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.G = v
+                __DARKLUA_BUNDLE_MODULES.cache.H = v
             end
 
             return v.c
@@ -11675,7 +12143,7 @@ local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.x()
 local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.A()
 local StatusPage = __DARKLUA_BUNDLE_MODULES.B()
 local WebhookPage = __DARKLUA_BUNDLE_MODULES.E()
-local WebhookRuntime = __DARKLUA_BUNDLE_MODULES.G()
+local WebhookRuntime = __DARKLUA_BUNDLE_MODULES.H()
 local active = false
 local joiner = JoinerRuntime.new()
 local macro = MacroRuntime.new()
@@ -11808,6 +12276,7 @@ function GameModule.start(context)
         webhook.start(context, {
             joiner = joiner,
             autoPlay = autoPlay,
+            macro = macro,
         })
         context.log('GAME_STARTED')
     end

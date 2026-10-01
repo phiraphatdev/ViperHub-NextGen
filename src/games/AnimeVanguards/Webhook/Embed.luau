@@ -102,6 +102,24 @@ function Embed.number(value: any): string
     return out
 end
 
+--- Whole number with thousands separators: 18,486,565.
+function Embed.commas(value: any): string
+    local n = tonumber(value)
+    if n == nil or n ~= n or math.abs(n) == math.huge then
+        return "0"
+    end
+    local text = tostring(math.floor(math.abs(n) + 0.5))
+    local out = text
+    while true do
+        local replaced, count = string.gsub(out, "^(%d+)(%d%d%d)", "%1,%2")
+        out = replaced
+        if count == 0 then
+            break
+        end
+    end
+    return (if n < 0 then "-" else "") .. out
+end
+
 --- Formats seconds as 1h 02m 03s / 4m 05s / 6s.
 function Embed.duration(seconds: any): string
     local total = math.max(0, math.floor(tonumber(seconds) or 0))

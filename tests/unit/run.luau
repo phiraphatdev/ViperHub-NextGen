@@ -39,6 +39,7 @@ local AutoPlayAdapter = require("../../src/games/AnimeVanguards/AutoPlay/Adapter
 local StatusPage = require("../../src/games/AnimeVanguards/Status/Page")
 local WebhookEmbed = require("../../src/games/AnimeVanguards/Webhook/Embed")
 local WebhookSender = require("../../src/games/AnimeVanguards/Webhook/Sender")
+local WebhookSession = require("../../src/games/AnimeVanguards/Webhook/Session")
 local WebhookEvents = require("../../src/games/AnimeVanguards/Webhook/Events")
 local WebhookRuntime = require("../../src/games/AnimeVanguards/Webhook/Runtime")
 local WebhookPage = require("../../src/games/AnimeVanguards/Webhook/Page")
@@ -5418,7 +5419,7 @@ test("Webhook events build for every kind and ping only when it matters", functi
     ) :: any
     local loss = WebhookEvents.build("matchEnd", { result = "Defeat" }, ctx, WEBHOOK_CONFIG) :: any
     assert(
-        win.color ~= loss.color and string.find(win.title, "Victory") and string.find(loss.title, "Defeat")
+        win.color ~= loss.color and string.find(win.title, "VICTORY") and string.find(loss.title, "DEFEAT")
     )
     assert(win.authorName == "Tester" and string.find(win.authorIcon, "userId=42", 1, true))
     ctx.showPlayer = false
@@ -5614,18 +5615,113 @@ test("Webhook runtime reports bounty progress, rift openings and match results",
     rt.onMatchEnded()
     assert(#h.sent == 3)
     local embed = h.sent[3].embeds[1]
-    assert(string.find(embed.title, "Victory") and string.find(embed.description, "Planet Namak", 1, true))
+    assert(string.find(embed.title, "VICTORY") and string.find(embed.title, "Planet Namak", 1, true))
+    assert(string.find(embed.description, "1m 3", 1, true) ~= nil)
     local text = ""
     for _, field in embed.fields do
         text ..= field.name .. field.value
     end
-    assert(string.find(text, "1m 3", 1, true) and string.find(text, "Gems", 1, true))
+    assert(string.find(text, "Gems", 1, true), "end-screen rewards used when balances are unavailable")
     screen = nil
     rt.onMatchEnded()
     assert(
-        #h.sent == 4 and string.find(h.sent[4].embeds[1].title, "Defeat"),
-        "unreadable end screen still reports"
+        #h.sent == 4 and string.find(h.sent[4].embeds[1].title, "MATCH ENDED"),
+        "unknown result is labelled"
     )
+end)
+test("Webhook match embed shows earnings, balances, streak and session overview", function()
+    local balances: any = { Gems = 100, Gold = 1000, TraitRerolls = 5, Trophies = 10 }
+    local wave = 3
+    local h = newWebhook({
+        readCurrencies = function()
+            return table.clone(balances)
+        end,
+        readLevel = function()
+            return 295
+        end,
+        displayName = "ToonDiWa",
+        readWave = function()
+            return { current = wave }
+        end,
+        gameData = function()
+            return {
+                StageType = "LegendStage",
+                Stage = "Golden Castle",
+                Act = "Act 2",
+                Difficulty = "Nightmare",
+                MaxWave = 15,
+            }
+        end,
+        macroInfo = function()
+            return { name = "S1", status = "Playing" }
+        end,
+    })
+    local rt = h.runtime
+    rt.start({ alive = false }, {})
+    rt.setUrl(HOOK_URL)
+    rt.setEnabled(true)
+    local function finish(result: any, seconds: number, gold: number)
+        rt.onMatchStarted()
+        wave = 15
+        rt.tick()
+        h.clk.now += seconds
+        balances.Gold += gold
+        rt.onMatchEnded(result)
+    end
+    local function textOf(embed: any): string
+        local text = embed.title
+            .. "\n"
+            .. (embed.description or "")
+            .. "\n"
+            .. (embed.footer and embed.footer.text or "")
+        for _, field in embed.fields or {} do
+            text ..= "\n" .. field.name .. "\n" .. field.value
+        end
+        return text
+    end
+    finish(true, 285, 2000)
+    local first = textOf(h.sent[#h.sent].embeds[1])
+    assert(
+        string.find(first, "VICTORY", 1, true)
+            and string.find(first, "Golden Castle (Nightmare) (LegendStage) • Act 2", 1, true)
+    )
+    assert(
+        string.find(first, "`S1`", 1, true) and string.find(first, "`4m 49s`", 1, true)
+            or string.find(first, "`4m 4", 1, true)
+    )
+    assert(string.find(first, "`15/15`", 1, true), "wave from the HUD, maximum from GameData")
+    assert(string.find(first, "`1W` (Best: 1W)", 1, true) ~= nil)
+    assert(string.find(first, "+2,000 Gold [3,000]", 1, true), "earnings measured from the match start")
+    assert(string.find(first, "`3,000` Gold", 1, true) and string.find(first, "`100` Gems", 1, true))
+    assert(string.find(first, "100.0% (1 Wins / 0 Loss / 1 Total Runs)", 1, true) ~= nil)
+    assert(h.sent[#h.sent].embeds[1].author.name == "ToonDiWa (@Tester) • Lv. 295")
+    finish(false, 100, 0)
+    local second = textOf(h.sent[#h.sent].embeds[1])
+    assert(string.find(second, "DEFEAT", 1, true) and string.find(second, "`1L`", 1, true))
+    assert(string.find(second, "50.0% (1 Wins / 1 Loss / 2 Total Runs)", 1, true) ~= nil)
+    assert(string.find(second, "No change detected", 1, true) ~= nil)
+    assert(
+        string.find(second, "Gold +", 1, true),
+        "hourly farming rate shown once the session is long enough"
+    )
+end)
+test("Webhook session tracker counts runs, streaks and rates", function()
+    local now = 0
+    local session = WebhookSession.new(function()
+        return now
+    end)
+    assert(session.summary().streak == "-" and session.summary().winRate == 0)
+    session.record(true, 100, { Gold = 500 })
+    session.record(true, 100, { Gold = 500, Gems = -5 })
+    session.record(false, 100, nil)
+    session.record(true, 100, nil)
+    now = 3600
+    local summary = session.summary()
+    assert(summary.wins == 3 and summary.losses == 1 and summary.total == 4)
+    assert(summary.winRate == 75 and summary.bar == 8 and summary.barSize == 10)
+    assert(summary.streak == "1W" and summary.bestStreak == "2W")
+    assert(summary.runsPerHour == 4 and summary.rates.Gold == 1000 and summary.rates.Gems == nil)
+    assert(WebhookEmbed.commas(18486565) == "18,486,565" and WebhookEmbed.commas(-1234) == "-1,234")
 end)
 test("Webhook runtime start sends one session notice and stops its loop", function()
     local h = newWebhook()

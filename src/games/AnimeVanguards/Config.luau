@@ -24,6 +24,7 @@ return table.freeze({
         autoPlayHandler = "Modules.Gameplay.AutoPlay.AutoPlayHandler",
         autoPlayClient = "NetworkCode.GameAutoPlayClient",
         wavesClient = "NetworkCode.GameWavesClient",
+        wavesHud = "Modules.Interface.Loader.HUD.Waves",
         stagesData = "Modules.Data.StagesData",
         bountyData = "Modules.Data.BountyData",
         ownedUnits = "Modules.Gameplay.Units.OwnedUnitsHandler",
@@ -109,6 +110,18 @@ return table.freeze({
         footer = "ViperHub NextGen • Anime Vanguards",
         defaultUsername = "ViperHub",
         pingMinRarity = "Secret",
+        -- Player attributes holding balances, shown in match embeds (key, label, emoji).
+        currencies = table.freeze({
+            table.freeze({ key = "Gems", label = "Gems", emoji = "💎" }),
+            table.freeze({ key = "Gold", label = "Gold", emoji = "🪙" }),
+            table.freeze({ key = "TraitRerolls", label = "Rerolls", emoji = "🎲" }),
+            table.freeze({ key = "Trophies", label = "Trophies", emoji = "🏆" }),
+        }),
+        levelAttribute = "Level",
+        -- Possible GameData fields for the stage's wave count, tried in order.
+        waveMaxKeys = table.freeze({ "MaxWave", "WaveCount", "TotalWaves", "Waves" }),
+        -- Possible fields in a MatchEnded argument table that say whether the match was won.
+        resultKeys = table.freeze({ "Victory", "Won", "Win", "Success", "Result" }),
     }),
     attributes = table.freeze({ riftOpen = "IsRiftOpen" }),
     thresholds = table.freeze({

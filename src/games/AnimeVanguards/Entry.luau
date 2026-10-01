@@ -135,7 +135,7 @@ function GameModule.start(context: Types.Context)
         macro.start(context)
         gameSettings.start(context)
         autoPlay.start(context)
-        webhook.start(context, { joiner = joiner, autoPlay = autoPlay })
+        webhook.start(context, { joiner = joiner, autoPlay = autoPlay, macro = macro })
         context.log("GAME_STARTED")
     end
 
