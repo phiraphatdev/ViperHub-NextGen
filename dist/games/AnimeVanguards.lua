@@ -265,6 +265,7 @@ do
                     macroListCacheSeconds = 5,
                     presetSwitchTimeoutSeconds = 8,
                     presetRequestSeconds = 8,
+                    worldlineProgressWaitSeconds = 45,
                 }),
                 remoteNames = table.freeze({
                     worldlineProgress = 'GetWorldlineProgress',
@@ -4730,9 +4731,25 @@ do
                                             end
                                         end
                                     end
+
+                                    local progressReady = okProgress and type(progress) == 'table' and progress.Ready == true
+
+                                    if progressReady then
+                                        self.worldlineUnreadySince = nil
+                                    elseif self.worldlineUnreadySince == nil then
+                                        self.worldlineUnreadySince = now
+                                    end
+
+                                    local waitedLong = not progressReady and self.worldlineUnreadySince ~= nil and now - self.worldlineUnreadySince >= config.thresholds.worldlineProgressWaitSeconds
+
                                     if completed then
                                         setStatus('Worldline: selected worldline already completed')
-                                    elseif okProgress and type(progress) == 'table' and progress.Ready == true then
+                                    elseif progressReady or waitedLong then
+                                        if waitedLong then
+                                            note(name,
+[[progress never became ready; requesting without the completed check]])
+                                        end
+
                                         local teamState = equipStep(name, now, false)
 
                                         if teamState == 'wait' then
