@@ -20,6 +20,8 @@ local VanguardsEntry = require("../../src/games/AnimeVanguards/Entry")
 local JoinerSettings = require("../../src/games/AnimeVanguards/Joiner/Settings")
 local JoinerPage = require("../../src/games/AnimeVanguards/Joiner/Page")
 local JoinerCatalog = require("../../src/games/AnimeVanguards/Joiner/Catalog")
+local TeamEquip = require("../../src/games/AnimeVanguards/Joiner/TeamEquip")
+local TeamAdapter = require("../../src/games/AnimeVanguards/Joiner/TeamAdapter")
 local JoinerRuntime = require("../../src/games/AnimeVanguards/Joiner/Runtime")
 local ActivityState = require("../../src/games/AnimeVanguards/Joiner/ActivityState")
 local MacroDocument = require("../../src/games/AnimeVanguards/Macro/Document")
@@ -555,7 +557,11 @@ test("Joiner page exposes settings but no action button", function()
     assert(table.find(sections, "Worldline Joiner") ~= nil)
     assert(table.find(sections, "Regular Challenge Joiner") ~= nil)
     assert(table.find(sections, "Priority") == nil)
-    assert(locked == 13)
+    assert(table.find(sections, "Auto Join Equipper") ~= nil)
+    assert(table.find(sections, "Team Equipper") ~= nil and table.find(sections, "Macro Equipper") ~= nil)
+    assert(table.find(titles, "Auto Join Team Equipper") ~= nil)
+    assert(table.find(titles, "Stage Joiner") ~= nil and table.find(titles, "Boss Bounties Joiner") ~= nil)
+    assert(locked == 15, "13 unavailable joiners plus the Team and Macro Equipper toggles")
 end)
 test("Joiner requests one unlocked private match and requires matching server ACK", function()
     local sent: any = nil
@@ -3351,6 +3357,403 @@ test("Joiner in match switches to the current bounty or stage target before Vote
     runtime.setEnabled("Stage", false)
     runtime.setEnabled("Boss Bounties", false)
     JoinerSettings.setPaused(true)
+end)
+test("Team Equipper rules validate keys, list owned teams and compare equipped units", function()
+    assert(TeamEquip.number("Team1") == 1 and TeamEquip.number("Team18") == 18)
+    assert(
+        TeamEquip.number("Team0") == nil and TeamEquip.number("team1") == nil and TeamEquip.number(5) == nil
+    )
+    assert(
+        TeamEquip.number("Team100") == nil and TeamEquip.validKey("Team12") and not TeamEquip.validKey("Team")
+    )
+    local teams: any = {
+        Team2 = { Name = "Raid squad", Units = { "g1", "g2" } },
+        Team1 = { Name = "", Units = { "g3" } },
+        Team13 = { Name = "Owned extra", Units = {} },
+        Team14 = { Name = "Not owned", Units = {} },
+        Bogus = {},
+    }
+    local options = TeamEquip.options(teams, function(number: number)
+        return number ~= 14
+    end)
+    assert(#options == 3 and options[1].key == "Team1" and options[1].label == "Team1")
+    assert(options[2].label == "Team2 - Raid squad" and options[3].key == "Team13")
+    local owned: { [string]: boolean } = { g1 = true, g2 = true, g3 = true }
+    local function ownsUnit(guid: string): boolean
+        return owned[guid] == true
+    end
+    local team: any = { Units = { "g1", "g2" } }
+    assert(TeamEquip.evaluate(team, ownsUnit, { "g1", "g2" }) == "match")
+    assert(TeamEquip.evaluate(team, ownsUnit, { "g2", "g1" }) == "mismatch")
+    assert(
+        TeamEquip.evaluate(team, ownsUnit, { "g1", "g2", "g3" }) == "mismatch",
+        "extra equipped units differ"
+    )
+    owned.g2 = false
+    assert(TeamEquip.evaluate(team, ownsUnit, { "g1" }) == "match", "sold units are ignored")
+    owned.g1 = false
+    assert(TeamEquip.evaluate(team, ownsUnit, {}) == "unusable")
+    assert(TeamEquip.evaluate({ Units = {} }, ownsUnit, {}) == "unusable")
+    assert(TeamEquip.evaluate(nil, ownsUnit, {}) == "unusable")
+    assert(TeamEquip.rowFor({ StageType = "Story" }, false) == "Stage")
+    assert(TeamEquip.rowFor({ StageType = "LegendStage" }, false) == "Legend Stage")
+    assert(TeamEquip.rowFor({ StageType = "Story" }, true) == "Boss Bounties")
+    assert(TeamEquip.rowFor({ StageType = "Challenge", ChallengeType = "Daily" }, false) == "Daily Challenge")
+    assert(TeamEquip.rowFor({ StageType = "Rift" }, false) == "Rift")
+    assert(TeamEquip.rowFor({ StageType = "ElementalTowers" }, false) == "Elemental Towers")
+    assert(TeamEquip.rowFor({ StageType = "Portals" }, false) == "Portal")
+    assert(TeamEquip.rowFor({ StageType = "PVP" }, false) == nil and TeamEquip.rowFor(nil, false) == nil)
+end)
+test(
+    "Team Equipper adapter reads teams, ownership and equipped units and sends the observed payload",
+    function()
+        local sentLobby: any = nil
+        local sentMatch: any = nil
+        local changed = 0
+        local deps: any = {
+            teamsData = {
+                GetTeams = function()
+                    return { Team1 = { Units = { "g1" } } }
+                end,
+                IsSlotOwned = function(n: number)
+                    return n <= 12
+                end,
+                TeamUpdated = {
+                    Connect = function(_s: any, cb: any)
+                        changed += 1
+                        return {
+                            Disconnect = function() end,
+                        }
+                    end,
+                },
+            },
+            ownedUnits = {
+                GetUnitObject = function(guid: string)
+                    return if guid == "g1" then {} else nil
+                end,
+                GetEquippedUnits = function()
+                    return { "g1" }
+                end,
+            },
+            lobbyTeams = {
+                LoadTeam = {
+                    Fire = function(payload: any)
+                        sentLobby = payload
+                    end,
+                },
+            },
+            gameUnits = {
+                RequestLoadTeam = {
+                    Fire = function(payload: any)
+                        sentMatch = payload
+                    end,
+                },
+            },
+        }
+        local lobby = TeamAdapter.new(deps, false)
+        assert(lobby.getTeams().Team1 ~= nil and lobby.isSlotOwned(12) and not lobby.isSlotOwned(13))
+        assert(lobby.ownsUnit("g1") and not lobby.ownsUnit("zzz") and lobby.getEquipped()[1] == "g1")
+        assert(lobby.loadTeam("Team5") and sentLobby.TeamKey == "Team5" and sentMatch == nil)
+        assert(not lobby.loadTeam("Bad") and not lobby.loadTeam("Team0"))
+        local match = TeamAdapter.new(deps, true)
+        assert(match.loadTeam("Team2") and sentMatch.TeamKey == "Team2")
+        local stop = lobby.onChanged(function() end)
+        assert(changed == 1 and stop ~= nil)
+        local stopFn: any = stop
+        stopFn()
+        assert(TeamAdapter.new({}, false).getTeams() == nil)
+        assert(TeamAdapter.new({}, false).loadTeam("Team1") == false)
+    end
+)
+test("Team Equipper settings persist per joiner and reject invalid keys", function()
+    JoinerSettings.setTeamEquipEnabled(false)
+    assert(JoinerSettings.setTeamForJoiner("Stage", "Team5"))
+    assert(
+        not JoinerSettings.setTeamForJoiner("Stage", "Team0")
+            and not JoinerSettings.setTeamForJoiner("Nope", "Team1")
+    )
+    assert(
+        JoinerSettings.get().teamEquip.teams.Stage == "Team5"
+            and JoinerSettings.get().teamEquip.enabled == false
+    )
+    assert(JoinerSettings.setTeamEquipEnabled(true) and JoinerSettings.get().teamEquip.enabled == true)
+    assert(not JoinerSettings.setTeamEquipEnabled("yes" :: any))
+    assert(
+        JoinerSettings.setTeamForJoiner("Stage", nil) and JoinerSettings.get().teamEquip.teams.Stage == nil
+    )
+    JoinerSettings.setTeamEquipEnabled(false)
+end)
+local function teamHarness(inMatch: boolean): any
+    local h: any = {
+        loads = {} :: { string },
+        equipped = { "g9" } :: any,
+        creates = {} :: { any },
+        started = false,
+        ownedSlot = true,
+    }
+    local teams: any = {
+        Team1 = { Name = "Main", Units = { "g1", "g2" } },
+        Team2 = { Name = "Empty", Units = { "sold" } },
+    }
+    local owned: { [string]: boolean } = { g1 = true, g2 = true, g9 = true }
+    h.adapter = {
+        getTeams = function()
+            return teams
+        end,
+        isSlotOwned = function()
+            return h.ownedSlot
+        end,
+        ownsUnit = function(guid: string)
+            return owned[guid] == true
+        end,
+        getEquipped = function()
+            return h.equipped
+        end,
+        loadTeam = function(key: string)
+            table.insert(h.loads, key)
+            return true
+        end,
+    }
+    local matchData: any = { StageType = "Story", Stage = "Stage1", Act = "Act1", Host = 42 }
+    h.matchData = matchData
+    local deps: any = {
+        game = {
+            PlaceId = if inMatch then 16277809958 else 16146832113,
+            GetService = function(): any
+                return {
+                    GetAttribute = function(): any
+                        return false
+                    end,
+                }
+            end,
+        },
+        task = { spawn = function() end, wait = function() end },
+        clock = function()
+            return 100
+        end,
+        userId = 42,
+        teamAdapter = h.adapter,
+    }
+    if inMatch then
+        h.gameHandler = { IsGameLoaded = true, IsMatchStarted = false, GameData = matchData }
+        deps.gameHandler = h.gameHandler
+    else
+        deps.lobby = { IsHosting = false, IsInLobby = false }
+        deps.progress = {
+            GetActData = function()
+                return {}
+            end,
+        }
+        deps.network = {
+            CreateMatch = {
+                Fire = function(payload: any)
+                    table.insert(h.creates, payload)
+                end,
+            },
+            StartMatch = { Fire = function() end },
+            MatchConfirmed = {
+                On = function()
+                    return function() end
+                end,
+            },
+        }
+    end
+    h.runtime = JoinerRuntime.new(deps)
+    return h
+end
+test("Team Equipper loads the set team before the lobby join and skips unusable teams", function()
+    local h = teamHarness(false)
+    for _, other in { "Stage", "Legend Stage", "Raid", "Dungeon", "Worldline", "Boss Event", "Boss Bounties" } do
+        JoinerSettings.setEnabled(other, false)
+    end
+    JoinerSettings.setPaused(false)
+    JoinerSettings.setCooldown(0)
+    JoinerSettings.setTeamEquipEnabled(true)
+    JoinerSettings.setTeamForJoiner("Stage", "Team1")
+    h.runtime.setSelection("Stage", "Stage1", "Act1", "Normal")
+    h.runtime.setEnabled("Stage", true)
+    h.runtime.start({ alive = true })
+
+    h.runtime.step(100)
+    assert(#h.loads == 1 and h.loads[1] == "Team1" and #h.creates == 0, "load first, join only once equipped")
+    h.runtime.step(103)
+    assert(#h.loads == 1 and #h.creates == 0, "no resend inside the confirmation window")
+    h.equipped = { "g1", "g2" }
+    h.runtime.step(104)
+    assert(#h.creates == 1 and h.creates[1].Stage == "Stage1", "joins after the readback matches")
+
+    -- Not confirmed after three attempts: skip this joiner and fall through to the next priority.
+    h = teamHarness(false)
+    h.runtime.setSelection("Stage", "Stage1", "Act1", "Normal")
+    h.runtime.setEnabled("Stage", true)
+    h.runtime.setSelection("Legend Stage", "Stage2", "Act1", "Nightmare")
+    h.runtime.setEnabled("Legend Stage", true)
+    h.runtime.start({ alive = true })
+    h.runtime.step(100)
+    h.runtime.step(109)
+    h.runtime.step(118)
+    assert(#h.loads == 3 and #h.creates == 0)
+    h.runtime.step(127)
+    assert(
+        #h.creates == 1 and h.creates[1].StageType == "LegendStage",
+        "unconfirmed team skips to the next joiner"
+    )
+    assert(#h.loads == 3, "no extra load while backing off")
+
+    -- Unusable team (only sold units) and unowned slot are skipped without loading.
+    JoinerSettings.setTeamForJoiner("Stage", "Team2")
+    h = teamHarness(false)
+    h.runtime.setSelection("Stage", "Stage1", "Act1", "Normal")
+    h.runtime.setEnabled("Stage", true)
+    h.runtime.setEnabled("Legend Stage", false)
+    h.runtime.start({ alive = true })
+    h.runtime.step(100)
+    assert(#h.loads == 0 and #h.creates == 0 and h.runtime.status:find("no usable units") ~= nil)
+    JoinerSettings.setTeamForJoiner("Stage", "Team1")
+    h.ownedSlot = false
+    h.runtime.step(101)
+    assert(#h.loads == 0 and #h.creates == 0 and h.runtime.status:find("not available") ~= nil)
+
+    -- Master switch off or no team chosen: the joiner behaves as before.
+    h.ownedSlot = true
+    JoinerSettings.setTeamEquipEnabled(false)
+    h.runtime.step(102)
+    assert(#h.loads == 0 and #h.creates == 1)
+    JoinerSettings.setTeamEquipEnabled(true)
+    JoinerSettings.setTeamForJoiner("Stage", nil)
+    h = teamHarness(false)
+    h.runtime.setEnabled("Stage", true)
+    h.runtime.start({ alive = true })
+    h.runtime.step(100)
+    assert(#h.loads == 0 and #h.creates == 1)
+    h.runtime.stop()
+
+    -- Disable Auto Joiners: nothing at all.
+    JoinerSettings.setTeamForJoiner("Stage", "Team1")
+    JoinerSettings.setPaused(true)
+    h = teamHarness(false)
+    h.runtime.setEnabled("Stage", true)
+    h.runtime.start({ alive = true })
+    h.runtime.step(100)
+    assert(#h.loads == 0 and #h.creates == 0)
+    h.runtime.stop()
+    JoinerSettings.setTeamForJoiner("Stage", nil)
+    JoinerSettings.setTeamEquipEnabled(false)
+    JoinerSettings.setEnabled("Stage", false)
+    JoinerSettings.setEnabled("Legend Stage", false)
+end)
+test("Team Equipper loads the team in the match before Vote Start only", function()
+    local h = teamHarness(true)
+    for _, other in { "Stage", "Legend Stage", "Raid", "Dungeon", "Worldline", "Boss Event", "Boss Bounties" } do
+        JoinerSettings.setEnabled(other, false)
+    end
+    JoinerSettings.setPaused(false)
+    JoinerSettings.setTeamEquipEnabled(true)
+    JoinerSettings.setTeamForJoiner("Stage", "Team1")
+    JoinerSettings.setBountyRun(nil)
+    h.runtime.start({ alive = true })
+    h.runtime.step(100)
+    assert(#h.loads == 1 and h.loads[1] == "Team1")
+    h.runtime.step(101)
+    assert(#h.loads == 1, "waits for the readback")
+    h.equipped = { "g1", "g2" }
+    h.runtime.step(102)
+    assert(#h.loads == 1)
+    -- A new restart with a different equipped team loads again; after Vote Start nothing is sent.
+    h.equipped = { "g9" }
+    h.gameHandler.IsMatchStarted = true
+    h.runtime.step(120)
+    assert(#h.loads == 1, "no team change after Vote Start")
+    h.gameHandler.IsMatchStarted = false
+    h.runtime.step(130)
+    assert(#h.loads == 2)
+    -- Unconfirmed loads give up after three attempts and the match is played with the current team.
+    h.runtime.step(139)
+    h.runtime.step(148)
+    assert(#h.loads == 4, "three attempts after the restart")
+    h.runtime.step(157)
+    h.runtime.step(158)
+    assert(#h.loads == 4 and h.runtime.status:find("not confirmed") ~= nil)
+    h.runtime.stop()
+    JoinerSettings.setTeamForJoiner("Stage", nil)
+    JoinerSettings.setTeamEquipEnabled(false)
+    JoinerSettings.setPaused(true)
+end)
+test("Team Equipper page lists owned teams per joiner and saves the choice without echo loops", function()
+    JoinerSettings.setTeamEquipEnabled(false)
+    for _, name in { "Stage", "Legend Stage", "Raid" } do
+        JoinerSettings.setTeamForJoiner(name, nil)
+    end
+    JoinerSettings.setTeamForJoiner("Raid", "Team9")
+    local options: any = {
+        { key = "Team1", label = "Team1 - Main" },
+        { key = "Team2", label = "Team2" },
+    }
+    local runtime: any = {
+        getTeamOptions = function()
+            return options
+        end,
+        readBounty = function()
+            return nil
+        end,
+    }
+    local dropdowns: any = {}
+    local toggles: any = {}
+    local sections: { string } = {}
+    local function control(): any
+        return { SetDesc = function() end, Set = function() end }
+    end
+    local tab: any = {}
+    local host: any = {}
+    host.Section = function(_s: any, opt: any)
+        table.insert(sections, opt.Title)
+        return host
+    end
+    host.Paragraph = function()
+        return control()
+    end
+    host.Toggle = function(_s: any, opt: any)
+        toggles[opt.Title] = opt
+        return control()
+    end
+    host.Button = function() end
+    host.Slider = function()
+        return control()
+    end
+    host.Dropdown = function(_s: any, opt: any)
+        local d = control()
+        d.Selected = opt.Value
+        d.Callback = opt.Callback
+        -- Like WindUI, Refresh and Select echo the selected value through the callback.
+        d.Refresh = function(self: any, values: any)
+            self.Values = values
+            self.Callback(self.Selected)
+        end
+        d.Select = function(self: any, value: string)
+            self.Selected = value
+            self.Callback(self.Selected)
+        end
+        dropdowns[opt.Title] = d
+        return d
+    end
+    tab.Section = host.Section
+    tab.Paragraph = host.Paragraph
+    JoinerPage.mount(host, nil, runtime)
+    assert(table.find(sections, "Team Equipper") ~= nil and table.find(sections, "Macro Equipper") ~= nil)
+    assert(
+        toggles["Auto Join Team Equipper"].Locked == false
+            and toggles["Auto Join Macro Equipper"].Locked == true
+    )
+    assert(dropdowns["Stage Joiner"] ~= nil and dropdowns["Boss Bounties Joiner"] ~= nil)
+    toggles["Auto Join Team Equipper"].Callback(true)
+    assert(JoinerSettings.get().teamEquip.enabled == true)
+    toggles["Auto Join Team Equipper"].Callback(false)
+    local stage = dropdowns["Stage Joiner"]
+    stage.Callback("Team2")
+    assert(JoinerSettings.get().teamEquip.teams.Stage == "Team2")
+    stage.Callback("None")
+    assert(JoinerSettings.get().teamEquip.teams.Stage == nil)
+    JoinerSettings.setTeamForJoiner("Raid", nil)
 end)
 test("ActivityState evaluates game-recorded challenge seeds and rift attempts", function()
     -- Case 1: stored < current -> available (not played yet in this period)

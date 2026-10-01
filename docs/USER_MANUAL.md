@@ -100,6 +100,7 @@ loadstring(game:HttpGet("http://127.0.0.1:8766/runtime-smoke.lua"))()
 - **Boss Bounties:** เข้า bounty ประจำวันที่เกมสุ่มให้ตราบที่ยังเหลือรอบ (Legend Stage ใช้ Nightmare, Story ใช้ Normal) ถ้าเปิด Auto Replay ของเกมไว้ รอบถัดไปจะเปลี่ยนไป bounty ใหม่ก่อน vote start ถ้าไม่เปิด จะกลับ lobby หลังจบแมตช์
 - **Change Stage in Match:** เมื่อเป็น host และยังไม่ vote start ใน Story, Legend Stage, Raid, Dungeon จะเปลี่ยนเป็นด่านของ joiner ที่ priority สูงสุดที่เปิดอยู่ (โหมดที่เกมไม่อนุญาตให้เปลี่ยนในแมตช์ เช่น Challenge ไม่ถูกแตะ)
 - **Worldline:** ข้าม worldline ที่เกมรายงานว่าจบแล้ว
+- **Auto Join Equipper > Team Equipper:** เปิดสวิตช์ "Auto Join Team Equipper" แล้วเลือกทีม (เฉพาะทีมที่เป็นเจ้าของ) ต่อ joiner ระบบจะโหลดทีมให้ก่อนเข้าด่าน และในแมตช์ก่อน vote start (หลังสลับด่านถ้ามี) ถ้าโหลดไม่สำเร็จ ข้าม joiner นั้นใน lobby หรือเล่นต่อด้วยทีมที่ใส่อยู่ในแมตช์ ไม่ทำงานเมื่อเปิด "Disable Auto Joiners" ส่วน Macro Equipper ยังไม่เปิดใช้
 
 ### Diagnostics
 

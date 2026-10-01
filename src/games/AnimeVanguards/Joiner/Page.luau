@@ -457,6 +457,97 @@ local function addBounty(tab: any, runtime: any?): () -> ()
     end
 end
 
+-- Auto Join Equipper: Team Equipper rows (one dropdown of owned saved teams per joiner) plus the locked
+-- Macro Equipper placeholder. Returns an update function the page loop calls to follow team changes.
+local function addEquipper(tab: any, runtime: any?): () -> ()
+    local section = tab:Section({ Title = "Auto Join Equipper", Opened = false })
+    local function subsection(title: string): any
+        local host: any = section
+        if type(host.Section) == "function" then
+            return (host.Section :: any)(host, { Title = title })
+        end
+        return host
+    end
+    local nested: any = subsection("Team Equipper")
+    local saved = Settings.get()
+    nested:Toggle({
+        Title = "Auto Join Team Equipper",
+        Desc = "Automatically equip the set team before joining a stage",
+        Value = saved.teamEquip.enabled == true,
+        Locked = runtime == nil or type(runtime.getTeamOptions) ~= "function",
+        Callback = Settings.setTeamEquipEnabled,
+    })
+    local rows: { any } = {}
+    local syncing = false
+    for _, name in definitions do
+        local row: any = { name = name, byLabel = {}, signature = nil, current = "None" }
+        row.dropdown = nested:Dropdown({
+            Title = name .. " Joiner",
+            Values = { "None" },
+            Value = "None",
+            Callback = function(label: string)
+                if syncing or label == row.current then
+                    return
+                end
+                local key = row.byLabel[label]
+                if Settings.setTeamForJoiner(row.name, key) then
+                    row.current = label
+                    row.signature = nil
+                end
+            end,
+        })
+        table.insert(rows, row)
+    end
+    local macro: any = subsection("Macro Equipper")
+    macro:Toggle({
+        Title = "Auto Join Macro Equipper",
+        Desc = "Coming soon: equip the units a recorded macro needs before joining a stage",
+        Value = false,
+        Locked = true,
+    })
+    local function refresh()
+        local options: any = if runtime and type(runtime.getTeamOptions) == "function"
+            then (runtime.getTeamOptions :: any)()
+            else nil
+        if not options then
+            return
+        end
+        local current = Settings.get().teamEquip.teams
+        for _, row in rows do
+            local labels: { string } = { "None" }
+            local byLabel: { [string]: string? } = {}
+            local selected = "None"
+            for _, option in options do
+                table.insert(labels, option.label)
+                byLabel[option.label] = option.key
+                if current[row.name] == option.key then
+                    selected = option.label
+                end
+            end
+            if current[row.name] and selected == "None" then
+                -- The saved team is gone or no longer owned: fall back to None.
+                Settings.setTeamForJoiner(row.name, nil)
+            end
+            row.byLabel = byLabel
+            local signature = selected .. "|" .. table.concat(labels, "|")
+            if row.signature ~= signature then
+                row.signature = signature
+                row.current = selected
+                syncing = true
+                local dropdown = row.dropdown
+                if type(dropdown.Select) == "function" then
+                    pcall(dropdown.Select :: any, dropdown, selected)
+                end
+                if type(dropdown.Refresh) == "function" then
+                    pcall(dropdown.Refresh :: any, dropdown, labels)
+                end
+                syncing = false
+            end
+        end
+    end
+    return refresh
+end
+
 local function addChallenge(tab: any, kind: string, choices: any, runtime: any?): any
     local name = kind .. " Challenge"
     local section = tab:Section({ Title = name .. " Joiner", Opened = false })
@@ -644,6 +735,8 @@ function Page.mount(tab: any, stageDataOverride: any?, runtime: any?, challengeC
     addSpecial(tab, "Boss Event", specialChoices, runtime)
     addSpecial(tab, "Worldline", specialChoices, runtime)
     local updateBounty = addBounty(tab, runtime)
+    local updateEquipper = addEquipper(tab, runtime)
+    pcall(updateEquipper)
     local riftTimer = addRift(tab, runtime)
     local regTimer = addChallenge(tab, "Regular", challengeChoices, runtime)
     local dailyTimer = addChallenge(tab, "Daily", challengeChoices, runtime)
@@ -735,6 +828,7 @@ function Page.mount(tab: any, stageDataOverride: any?, runtime: any?, challengeC
                     updateTimer(weeklyTimer, "Weekly")
                 end
                 pcall(updateBounty)
+                pcall(updateEquipper)
                 local waitFn: any = taskApi.wait
                 waitFn(1)
             end

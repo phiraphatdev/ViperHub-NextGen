@@ -8,6 +8,8 @@ Dependencies: Settings; replicated matchmaking, challenge and stage-progress mod
 
 local Settings = require("./Settings")
 local ActivityState = require("./ActivityState")
+local TeamEquip = require("./TeamEquip")
+local TeamAdapter = require("./TeamAdapter")
 local metadata = require("../Metadata")
 local config = require("../Config")
 local Runtime = {}
@@ -16,6 +18,8 @@ local RETRY_SECONDS = 30
 local POLL_SECONDS = 1
 local RIFT_POLL_SECONDS = 2
 local ACK_TIMEOUT_SECONDS = 10
+local TEAM_LOAD_TIMEOUT_SECONDS: number = (config :: any).thresholds.teamLoadTimeoutSeconds
+local TEAM_LOAD_ATTEMPTS: number = (config :: any).thresholds.teamLoadAttempts
 local BOUNTY_RUN_MAX_AGE_SECONDS = 10800
 local CHANGE_STAGE_RETRY_SECONDS = 6
 local CHANGE_STAGE_ATTEMPTS = 2
@@ -98,6 +102,7 @@ local function liveDependencies(): any
             starterPlayer,
             "Modules.Gameplay.Challenges.ChallengesAttemptsHandler"
         ),
+        teamAdapter = TeamAdapter.new(nil, not isLobby),
         bountyData = optionalModule(replicated, config.instancePaths.bountyData),
         bountyState = optionalModule(
             starterPlayer,
@@ -149,6 +154,7 @@ function Runtime.new(dependencies: any?): any
         macro = nil,
         gameSettings = nil,
         changeAttempt = nil,
+        teamAttempt = nil,
     }
     local function setStatus(value: string)
         self.status = value
@@ -163,6 +169,99 @@ function Runtime.new(dependencies: any?): any
 
     function self.setGameSettings(gs: any)
         self.gameSettings = gs
+    end
+
+    --- Returns the saved-team dropdown options (owned teams only), or nil when team data is unavailable.
+    function self.getTeamOptions(): any
+        local adapter = self.dependencies and self.dependencies.teamAdapter
+        if not adapter then
+            local ok, created = pcall(TeamAdapter.new)
+            if not ok then
+                return nil
+            end
+            adapter = created
+            if self.dependencies then
+                self.dependencies.teamAdapter = created
+            end
+        end
+        local teams = adapter.getTeams()
+        if not teams then
+            return nil
+        end
+        return TeamEquip.options(teams, adapter.isSlotOwned)
+    end
+
+    -- Team Equipper step for one joiner row: "go" (nothing to do or already equipped), "wait" (a load is being
+    -- confirmed) or "skip" (team unusable or not confirmed in time; the caller moves on / plays on).
+    local function teamStep(name: string, now: number): string
+        local deps = self.dependencies
+        local settings = Settings.get()
+        local key = settings.teamEquip.teams[name]
+        local adapter = deps and deps.teamAdapter
+        if not settings.teamEquip.enabled or not key or not adapter then
+            return "go"
+        end
+        local teams = adapter.getTeams()
+        local team = if teams then teams[key] else nil
+        local number = TeamEquip.number(key)
+        if not team or not number or not adapter.isSlotOwned(number) then
+            setStatus(string.format("Team Equipper: %s is not available (%s)", key, name))
+            return "skip"
+        end
+        local verdict = TeamEquip.evaluate(team, adapter.ownsUnit, adapter.getEquipped())
+        if verdict == "unusable" then
+            setStatus(string.format("Team Equipper: %s has no usable units (%s)", key, name))
+            return "skip"
+        end
+        if verdict == "match" then
+            self.teamAttempt = nil
+            return "go"
+        end
+        local attempt: any = self.teamAttempt
+        if not attempt or attempt.key ~= key then
+            attempt = { key = key, sent = 0, last = -math.huge, backoff = -math.huge }
+            self.teamAttempt = attempt
+        end
+        if now < attempt.backoff then
+            return "skip"
+        end
+        if attempt.sent > 0 and now - attempt.last < TEAM_LOAD_TIMEOUT_SECONDS then
+            setStatus(string.format("Team Equipper: waiting for %s to equip", key))
+            return "wait"
+        end
+        if attempt.sent >= TEAM_LOAD_ATTEMPTS then
+            attempt.sent = 0
+            attempt.backoff = now + RETRY_SECONDS
+            setStatus(string.format("Team Equipper: %s was not confirmed; skipping %s", key, name))
+            return "skip"
+        end
+        attempt.sent += 1
+        attempt.last = now
+        local sent = adapter.loadTeam(key)
+        setStatus(
+            if sent
+                then string.format(
+                    "Team Equipper: loading %s (%d/%d)",
+                    key :: any,
+                    attempt.sent :: any,
+                    TEAM_LOAD_ATTEMPTS
+                )
+                else "Team Equipper: load request failed"
+        )
+        return "wait"
+    end
+
+    -- True while a team change for the current match is in progress (before Vote Start only).
+    local function inMatchTeam(settings: any, matchData: any, now: number, bounty: boolean): boolean
+        local deps = self.dependencies
+        if not deps or not deps.gameHandler or deps.gameHandler.IsMatchStarted ~= false then
+            return false
+        end
+        local row = TeamEquip.rowFor(matchData, bounty)
+        if not row then
+            return false
+        end
+        return teamStep(row, now) == "wait"
     end
 
     -- True when the current match is the Boss Bounty match this joiner entered recently.
@@ -418,6 +517,7 @@ function Runtime.new(dependencies: any?): any
 
         -- Never interrupt while actively playing ANY Challenge or Rift match!
         if isAnyChallenge or currentRift then
+            inMatchTeam(settings, matchData, now, false)
             return
         end
 
@@ -446,6 +546,9 @@ function Runtime.new(dependencies: any?): any
         end
 
         if tryChangeStage(settings, matchData, now) then
+            return
+        end
+        if inMatchTeam(settings, matchData, now, isBountyMatch(Settings.get(), matchData)) then
             return
         end
         if isBountyMatch(Settings.get(), matchData) then
@@ -683,6 +786,13 @@ function Runtime.new(dependencies: any?): any
                                 end
                             end
                             if targetGuid then
+                                local teamState = teamStep(name, now)
+                                if teamState == "wait" then
+                                    return
+                                end
+                                if teamState == "skip" then
+                                    continue
+                                end
                                 self.confirmed = {
                                     name = name,
                                     mode = "Rift",
@@ -728,6 +838,13 @@ function Runtime.new(dependencies: any?): any
                     and current == choice.eventName
                     and type(deps.bossNetwork[config.remoteNames.bossEventStart]) == "table"
                 then
+                    local teamState = teamStep(name, now)
+                    if teamState == "wait" then
+                        return
+                    end
+                    if teamState == "skip" then
+                        continue
+                    end
                     self.pending = { name = name, mode = "BossEvent", stage = current, started = now }
                     self.lastAttempt = now
                     local ok = pcall(
@@ -783,6 +900,13 @@ function Runtime.new(dependencies: any?): any
                         if completed then
                             setStatus("Worldline: selected worldline already completed")
                         elseif okProgress and type(progress) == "table" and progress.Ready == true then
+                            local teamState = teamStep(name, now)
+                            if teamState == "wait" then
+                                return
+                            end
+                            if teamState == "skip" then
+                                continue
+                            end
                             self.lastAttempt = now
                             local ok = pcall(
                                 teleportRemote.Fire,
@@ -820,6 +944,13 @@ function Runtime.new(dependencies: any?): any
                     if okProgress and unlocked ~= nil then
                         -- The game's bounty panel has no difficulty choice: Legend Stage is Nightmare-only, others Normal.
                         local difficulty = if bounty.mode == "LegendStage" then "Nightmare" else "Normal"
+                        local teamState = teamStep(name, now)
+                        if teamState == "wait" then
+                            return
+                        end
+                        if teamState == "skip" then
+                            continue
+                        end
                         self.pending = {
                             name = name,
                             mode = bounty.mode,
@@ -892,6 +1023,13 @@ function Runtime.new(dependencies: any?): any
                             and type(stage.Stage) == "string"
                             and type(stage.Act) == "string"
                         then
+                            local teamState = teamStep(name, now)
+                            if teamState == "wait" then
+                                return
+                            end
+                            if teamState == "skip" then
+                                continue
+                            end
                             self.pending = {
                                 name = name,
                                 challengeName = targetChallengeName,
@@ -935,6 +1073,13 @@ function Runtime.new(dependencies: any?): any
             then
                 local okProgress, unlocked = pcall(deps.progress.GetActData, mode, choice.stage, choice.act)
                 if okProgress and unlocked ~= nil then
+                    local teamState = teamStep(name, now)
+                    if teamState == "wait" then
+                        return
+                    end
+                    if teamState == "skip" then
+                        continue
+                    end
                     local pending = {
                         name = name,
                         mode = mode,

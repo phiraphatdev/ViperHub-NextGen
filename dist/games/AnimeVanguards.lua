@@ -74,6 +74,10 @@ do
                     wavesClient = 'NetworkCode.GameWavesClient',
                     stagesData = 'Modules.Data.StagesData',
                     bountyData = 'Modules.Data.BountyData',
+                    ownedUnits = 'Modules.Gameplay.Units.OwnedUnitsHandler',
+                    teamsData = 'Modules.Interface.Loader.Gameplay.Teams.TeamsDataHandler',
+                    lobbyTeamsClient = 'NetworkCode.LobbyTeamsClient',
+                    gameUnitsClient = 'NetworkCode.GameUnitsClient',
                     bountyState = 'Modules.Gameplay.Bounty.PlayerBountyDataHandler',
                     bountyStateMatch = 'Modules.Gameplay.Bounties.PlayerBountyDataHandler',
                     autoPlayModeBlocklist = 'Modules.Shared.AutoPlayModeBlocklist',
@@ -112,6 +116,8 @@ do
                     returnRetrySeconds = 12,
                     returnRetryLimit = 3,
                     presetSwitchAttempts = 3,
+                    teamLoadAttempts = 3,
+                    teamLoadTimeoutSeconds = 8,
                     presetSwitchTimeoutSeconds = 8,
                     presetRequestSeconds = 8,
                 }),
@@ -131,6 +137,8 @@ do
                     toggleAutoPlay = 'ToggleAutoPlay',
                     castWaveSkipVote = 'CastWaveSkipVote',
                     switchAutoPlayPreset = 'SwitchAutoPlayPreset',
+                    loadTeam = 'LoadTeam',
+                    requestLoadTeam = 'RequestLoadTeam',
                     requestAutoPlayData = 'RequestAutoPlayData',
                     autoPlayPresetsUpdated = 'AutoPlayPresetsUpdated',
                 }),
@@ -264,6 +272,147 @@ do
     end
     do
         local function __modImpl()
+            local TeamEquip = {}
+            local SLOT_COUNT = 6
+            local MAX_TEAM_NUMBER = 99
+
+            function TeamEquip.number(key)
+                if type(key) ~= 'string' or #key > 8 then
+                    return nil
+                end
+
+                local digits = string.match(key, '^Team(%d+)$')
+                local value = if digits then tonumber(digits)else nil
+
+                if value == nil or value < 1 or value > MAX_TEAM_NUMBER then
+                    return nil
+                end
+
+                return value
+            end
+            function TeamEquip.validKey(key)
+                return TeamEquip.number(key) ~= nil
+            end
+            function TeamEquip.options(teams, isOwned)
+                local numbers = {}
+
+                if type(teams) == 'table' then
+                    for key in teams do
+                        local number = TeamEquip.number(key)
+
+                        if number and isOwned(number) then
+                            table.insert(numbers, number)
+                        end
+                    end
+                end
+
+                table.sort(numbers)
+
+                local options = {}
+
+                for _, number in numbers do
+                    local key = 'Team' .. number
+                    local team = (teams)[key]
+                    local name = if type(team) == 'table'then team.Name else nil
+                    local label = if type(name) == 'string' and name ~= ''then key .. ' - ' .. name else key
+
+                    table.insert(options, {
+                        key = key,
+                        label = label,
+                    })
+                end
+
+                return options
+            end
+            function TeamEquip.evaluate(team, ownsUnit, equipped)
+                if type(team) ~= 'table' or type(team.Units) ~= 'table' then
+                    return 'unusable'
+                end
+
+                local usable = 0
+                local mismatch = false
+
+                for slot = 1, SLOT_COUNT do
+                    local guid = team.Units[slot]
+                    local current = if type(equipped) == 'table'then equipped[slot]else nil
+
+                    if type(guid) == 'string' and guid ~= '' then
+                        if ownsUnit(guid) then
+                            usable += 1
+
+                            if current ~= guid then
+                                mismatch = true
+                            end
+                        end
+                    elseif current ~= nil then
+                        mismatch = true
+                    end
+                end
+
+                if usable == 0 then
+                    return 'unusable'
+                end
+
+                return if mismatch then'mismatch'else'match'
+            end
+
+            local STAGE_TYPE_ROWS = {
+                Story = 'Stage',
+                LegendStage = 'Legend Stage',
+                Raid = 'Raid',
+                Dungeon = 'Dungeon',
+                ElementalTowers = 'Elemental Towers',
+                BossEvent = 'Boss Event',
+                Worldline = 'Worldline',
+                Portals = 'Portal',
+                Rift = 'Rift',
+            }
+            local CHALLENGE_ROWS = {
+                Regular = 'Regular Challenge',
+                Daily = 'Daily Challenge',
+                Weekly = 'Weekly Challenge',
+            }
+
+            function TeamEquip.rowFor(matchData, isBountyMatch)
+                if type(matchData) ~= 'table' then
+                    return nil
+                end
+
+                local challenge = matchData.ChallengeType or matchData.Challenge
+
+                if type(challenge) == 'string' and CHALLENGE_ROWS[challenge] then
+                    return CHALLENGE_ROWS[challenge]
+                end
+                if matchData.Rift ~= nil or matchData.StageType == 'Rift' then
+                    return 'Rift'
+                end
+                if isBountyMatch then
+                    return 'Boss Bounties'
+                end
+
+                local stageType = matchData.StageType
+
+                return if type(stageType) == 'string'then STAGE_TYPE_ROWS[stageType]else nil
+            end
+
+            return TeamEquip
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.f()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.f
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.f = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
             local Capabilities = {}
 
             function Capabilities.detect(env)
@@ -281,14 +430,14 @@ do
             return Capabilities
         end
 
-        function __DARKLUA_BUNDLE_MODULES.f()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.f
+        function __DARKLUA_BUNDLE_MODULES.g()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.g
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.f = v
+                __DARKLUA_BUNDLE_MODULES.cache.g = v
             end
 
             return v.c
@@ -321,14 +470,14 @@ do
             return Validation
         end
 
-        function __DARKLUA_BUNDLE_MODULES.g()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.g
+        function __DARKLUA_BUNDLE_MODULES.h()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.h
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.g = v
+                __DARKLUA_BUNDLE_MODULES.cache.h = v
             end
 
             return v.c
@@ -336,8 +485,8 @@ do
     end
     do
         local function __modImpl()
-            local Capabilities = __DARKLUA_BUNDLE_MODULES.f()
-            local Validation = __DARKLUA_BUNDLE_MODULES.g()
+            local Capabilities = __DARKLUA_BUNDLE_MODULES.g()
+            local Validation = __DARKLUA_BUNDLE_MODULES.h()
             local FileStorage = {}
             local ROOT = 'ViperHubNextGen'
             local MAX_BYTES = 16384
@@ -396,14 +545,14 @@ do
             return FileStorage
         end
 
-        function __DARKLUA_BUNDLE_MODULES.h()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.h
+        function __DARKLUA_BUNDLE_MODULES.i()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.i
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.h = v
+                __DARKLUA_BUNDLE_MODULES.cache.i = v
             end
 
             return v.c
@@ -412,7 +561,8 @@ do
     do
         local function __modImpl()
             local definitions = __DARKLUA_BUNDLE_MODULES.e()
-            local FileStorage = __DARKLUA_BUNDLE_MODULES.h()
+            local TeamEquip = __DARKLUA_BUNDLE_MODULES.f()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.i()
             local Settings = {}
             local DEFAULT_COOLDOWN = 0
             local MAX_COOLDOWN = 300
@@ -452,6 +602,8 @@ do
             local enabled = {}
             local selection = {}
             local changeStageInMatch = true
+            local teamEquipEnabled = false
+            local teamEquipTeams = {}
             local bountyRun = nil
             local storage = nil
             local encode = nil
@@ -476,6 +628,10 @@ do
                     selection = selection,
                     changeStageInMatch = changeStageInMatch,
                     bountyRun = bountyRun,
+                    teamEquip = {
+                        enabled = teamEquipEnabled,
+                        teams = teamEquipTeams,
+                    },
                 })
 
                 if ok and type(body) == 'string' then
@@ -545,6 +701,18 @@ do
                         end
 
                         priority = retained
+                    end
+                end
+                if type(data.teamEquip) == 'table' then
+                    if type(data.teamEquip.enabled) == 'boolean' then
+                        teamEquipEnabled = data.teamEquip.enabled
+                    end
+                    if type(data.teamEquip.teams) == 'table' then
+                        for name, key in data.teamEquip.teams do
+                            if type(name) == 'string' and known(name) and TeamEquip.validKey(key) then
+                                teamEquipTeams[name] = key
+                            end
+                        end
                     end
                 end
                 if type(data.changeStageInMatch) == 'boolean' then
@@ -630,8 +798,39 @@ do
                     selection = table.clone(selection),
                     changeStageInMatch = changeStageInMatch,
                     bountyRun = bountyRun,
+                    teamEquip = {
+                        enabled = teamEquipEnabled,
+                        teams = table.clone(teamEquipTeams),
+                    },
                     persistent = storage ~= nil,
                 }
+            end
+            function Settings.setTeamEquipEnabled(value)
+                if type(value) ~= 'boolean' then
+                    return false
+                end
+
+                teamEquipEnabled = value
+
+                save()
+
+                return true
+            end
+            function Settings.setTeamForJoiner(name, key)
+                if type(name) ~= 'string' or not known(name) then
+                    return false
+                end
+                if key == nil then
+                    teamEquipTeams[name] = nil
+                elseif TeamEquip.validKey(key) then
+                    teamEquipTeams[name] = key
+                else
+                    return false
+                end
+
+                save()
+
+                return true
             end
             function Settings.setChangeStageInMatch(value)
                 if type(value) ~= 'boolean' then
@@ -774,14 +973,14 @@ do
             return Settings
         end
 
-        function __DARKLUA_BUNDLE_MODULES.i()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.i
+        function __DARKLUA_BUNDLE_MODULES.j()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.j
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.i = v
+                __DARKLUA_BUNDLE_MODULES.cache.j = v
             end
 
             return v.c
@@ -791,7 +990,7 @@ do
         local function __modImpl()
             local Catalog = __DARKLUA_BUNDLE_MODULES.d()
             local definitions = __DARKLUA_BUNDLE_MODULES.e()
-            local Settings = __DARKLUA_BUNDLE_MODULES.i()
+            local Settings = __DARKLUA_BUNDLE_MODULES.j()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Page = {}
 
@@ -1336,6 +1535,132 @@ do
                     pcall(info.SetDesc, info, text)
                 end
             end
+            local function addEquipper(tab, runtime)
+                local section = tab:Section({
+                    Title = 'Auto Join Equipper',
+                    Opened = false,
+                })
+
+                local function subsection(title)
+                    local host = section
+
+                    if type(host.Section) == 'function' then
+                        return (host.Section)(host, {Title = title})
+                    end
+
+                    return host
+                end
+
+                local nested = subsection('Team Equipper')
+                local saved = Settings.get()
+
+                nested:Toggle({
+                    Title = 'Auto Join Team Equipper',
+                    Desc = 'Automatically equip the set team before joining a stage',
+                    Value = saved.teamEquip.enabled == true,
+                    Locked = runtime == nil or type(runtime.getTeamOptions) ~= 'function',
+                    Callback = Settings.setTeamEquipEnabled,
+                })
+
+                local rows = {}
+                local syncing = false
+
+                for _, name in definitions do
+                    local row = {
+                        name = name,
+                        byLabel = {},
+                        signature = nil,
+                        current = 'None',
+                    }
+
+                    row.dropdown = nested:Dropdown({
+                        Title = name .. ' Joiner',
+                        Values = {
+                            'None',
+                        },
+                        Value = 'None',
+                        Callback = function(label)
+                            if syncing or label == row.current then
+                                return
+                            end
+
+                            local key = row.byLabel[label]
+
+                            if Settings.setTeamForJoiner(row.name, key) then
+                                row.current = label
+                                row.signature = nil
+                            end
+                        end,
+                    })
+
+                    table.insert(rows, row)
+                end
+
+                local macro = subsection('Macro Equipper')
+
+                macro:Toggle({
+                    Title = 'Auto Join Macro Equipper',
+                    Desc =
+[[Coming soon: equip the units a recorded macro needs before joining a stage]],
+                    Value = false,
+                    Locked = true,
+                })
+
+                local function refresh()
+                    local options = if runtime and type(runtime.getTeamOptions) == 'function'then(runtime.getTeamOptions)()else nil
+
+                    if not options then
+                        return
+                    end
+
+                    local current = Settings.get().teamEquip.teams
+
+                    for _, row in rows do
+                        local labels = {
+                            'None',
+                        }
+                        local byLabel = {}
+                        local selected = 'None'
+
+                        for _, option in options do
+                            table.insert(labels, option.label)
+
+                            byLabel[option.label] = option.key
+
+                            if current[row.name] == option.key then
+                                selected = option.label
+                            end
+                        end
+
+                        if current[row.name] and selected == 'None' then
+                            Settings.setTeamForJoiner(row.name, nil)
+                        end
+
+                        row.byLabel = byLabel
+
+                        local signature = selected .. '|' .. table.concat(labels, '|')
+
+                        if row.signature ~= signature then
+                            row.signature = signature
+                            row.current = selected
+                            syncing = true
+
+                            local dropdown = row.dropdown
+
+                            if type(dropdown.Select) == 'function' then
+                                pcall(dropdown.Select, dropdown, selected)
+                            end
+                            if type(dropdown.Refresh) == 'function' then
+                                pcall(dropdown.Refresh, dropdown, labels)
+                            end
+
+                            syncing = false
+                        end
+                    end
+                end
+
+                return refresh
+            end
             local function addChallenge(tab, kind, choices, runtime)
                 local name = kind .. ' Challenge'
                 local section = tab:Section({
@@ -1553,6 +1878,10 @@ do
                 addSpecial(tab, 'Worldline', specialChoices, runtime)
 
                 local updateBounty = addBounty(tab, runtime)
+                local updateEquipper = addEquipper(tab, runtime)
+
+                pcall(updateEquipper)
+
                 local riftTimer = addRift(tab, runtime)
                 local regTimer = addChallenge(tab, 'Regular', challengeChoices, runtime)
                 local dailyTimer = addChallenge(tab, 'Daily', challengeChoices, runtime)
@@ -1639,6 +1968,7 @@ do
                             end
 
                             pcall(updateBounty)
+                            pcall(updateEquipper)
 
                             local waitFn = taskApi.wait
 
@@ -1651,14 +1981,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.j()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.j
+        function __DARKLUA_BUNDLE_MODULES.k()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.k
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.j = v
+                __DARKLUA_BUNDLE_MODULES.cache.k = v
             end
 
             return v.c
@@ -1666,7 +1996,7 @@ do
     end
     do
         local function __modImpl()
-            local FileStorage = __DARKLUA_BUNDLE_MODULES.h()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.i()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local ActivityState = {}
             local STORAGE_KEY = 'AnimeVanguardsActivityState'
@@ -1867,14 +2197,14 @@ do
             return ActivityState
         end
 
-        function __DARKLUA_BUNDLE_MODULES.k()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.k
+        function __DARKLUA_BUNDLE_MODULES.l()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.l
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.k = v
+                __DARKLUA_BUNDLE_MODULES.cache.l = v
             end
 
             return v.c
@@ -1882,8 +2212,198 @@ do
     end
     do
         local function __modImpl()
-            local Settings = __DARKLUA_BUNDLE_MODULES.i()
-            local ActivityState = __DARKLUA_BUNDLE_MODULES.k()
+            local config = __DARKLUA_BUNDLE_MODULES.c()
+            local TeamEquip = __DARKLUA_BUNDLE_MODULES.f()
+            local Adapter = {}
+
+            local function resolve(root, path)
+                local value = root
+
+                for part in string.gmatch(path, '[^%.]+')do
+                    if not value then
+                        return nil
+                    end
+
+                    local ok, child = pcall(function()
+                        local v = value
+
+                        if type(v) == 'userdata' then
+                            return v:FindFirstChild(part)
+                        else
+                            return v[part]
+                        end
+                    end)
+
+                    value = if ok then child else nil
+                end
+
+                return value
+            end
+            local function optionalModule(root, path)
+                local ok, result = pcall(function()
+                    return (require)(resolve(root, path))
+                end)
+
+                return if ok then result else nil
+            end
+            local function liveDependencies()
+                local env = getfenv()
+                local gameObject = env.game
+
+                if not gameObject then
+                    return nil
+                end
+
+                local replicated = gameObject:GetService('ReplicatedStorage')
+                local starter = gameObject:GetService('StarterPlayer')
+
+                return {
+                    ownedUnits = optionalModule(starter, config.instancePaths.ownedUnits),
+                    teamsData = optionalModule(starter, config.instancePaths.teamsData),
+                    lobbyTeams = optionalModule(replicated, config.instancePaths.lobbyTeamsClient),
+                    gameUnits = optionalModule(replicated, config.instancePaths.gameUnitsClient),
+                }
+            end
+
+            function Adapter.new(injected, inMatch)
+                local self = {dependencies = injected}
+
+                local function deps()
+                    if not self.dependencies then
+                        local ok, result = pcall(liveDependencies)
+
+                        if ok then
+                            self.dependencies = result
+                        end
+                    end
+
+                    return self.dependencies
+                end
+
+                function self.getTeams()
+                    local d = deps()
+                    local data = d and d.teamsData
+
+                    if not data or type(data.GetTeams) ~= 'function' then
+                        return nil
+                    end
+
+                    local ok, teams = pcall(data.GetTeams)
+
+                    return if ok and type(teams) == 'table'then teams else nil
+                end
+                function self.isSlotOwned(number)
+                    local d = deps()
+                    local data = d and d.teamsData
+
+                    if not data or type(data.IsSlotOwned) ~= 'function' then
+                        return false
+                    end
+
+                    local ok, owned = pcall(data.IsSlotOwned, number)
+
+                    return ok and owned == true
+                end
+                function self.ownsUnit(guid)
+                    local d = deps()
+                    local owned = d and d.ownedUnits
+
+                    if not owned or type(owned.GetUnitObject) ~= 'function' then
+                        return false
+                    end
+
+                    local ok, unit = pcall(owned.GetUnitObject, guid)
+
+                    return ok and unit ~= nil
+                end
+                function self.getEquipped()
+                    local d = deps()
+                    local owned = d and d.ownedUnits
+
+                    if not owned or type(owned.GetEquippedUnits) ~= 'function' then
+                        return {}
+                    end
+
+                    local ok, equipped = pcall(owned.GetEquippedUnits)
+
+                    return if ok and type(equipped) == 'table'then equipped else{}
+                end
+                function self.onChanged(callback)
+                    local d = deps()
+                    local data = d and d.teamsData
+
+                    if not data then
+                        return nil
+                    end
+
+                    local connections = {}
+
+                    for _, name in {
+                        'TeamUpdated',
+                        'SlotPurchased',
+                        'TeamsLoaded',
+                    }do
+                        local signal = data[name]
+
+                        if type(signal) == 'table' and type(signal.Connect) == 'function' then
+                            local ok, connection = pcall(signal.Connect, signal, callback)
+
+                            if ok and connection then
+                                table.insert(connections, connection)
+                            end
+                        end
+                    end
+
+                    return function()
+                        for _, connection in connections do
+                            pcall(function()
+                                (connection):Disconnect()
+                            end)
+                        end
+
+                        table.clear(connections)
+                    end
+                end
+                function self.loadTeam(key)
+                    if not TeamEquip.validKey(key) then
+                        return false
+                    end
+
+                    local d = deps()
+                    local remote = if inMatch then(d and d.gameUnits and d.gameUnits[config.remoteNames.requestLoadTeam])else(d and d.lobbyTeams and d.lobbyTeams[config.remoteNames.loadTeam])
+
+                    if not remote or type(remote.Fire) ~= 'function' then
+                        return false
+                    end
+
+                    return (pcall(remote.Fire, {TeamKey = key}))
+                end
+
+                return self
+            end
+
+            return Adapter
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.m()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.m
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.m = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
+            local Settings = __DARKLUA_BUNDLE_MODULES.j()
+            local ActivityState = __DARKLUA_BUNDLE_MODULES.l()
+            local TeamEquip = __DARKLUA_BUNDLE_MODULES.f()
+            local TeamAdapter = __DARKLUA_BUNDLE_MODULES.m()
             local metadata = __DARKLUA_BUNDLE_MODULES.b()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Runtime = {}
@@ -1892,6 +2412,8 @@ do
             local POLL_SECONDS = 1
             local RIFT_POLL_SECONDS = 2
             local ACK_TIMEOUT_SECONDS = 10
+            local TEAM_LOAD_TIMEOUT_SECONDS = (config).thresholds.teamLoadTimeoutSeconds
+            local TEAM_LOAD_ATTEMPTS = (config).thresholds.teamLoadAttempts
             local BOUNTY_RUN_MAX_AGE_SECONDS = 10800
             local CHANGE_STAGE_RETRY_SECONDS = 6
             local CHANGE_STAGE_ATTEMPTS = 2
@@ -1984,6 +2506,7 @@ do
                     challengeData = optionalModule(replicated, 'Modules.Data.Challenges.ChallengesData'),
                     challengeStages = if isLobby then optionalModule(starterPlayer, 'Modules.Gameplay.Challenges.ChallengesDataHandler')else nil,
                     challengeAttempts = optionalModule(starterPlayer, 'Modules.Gameplay.Challenges.ChallengesAttemptsHandler'),
+                    teamAdapter = TeamAdapter.new(nil, not isLobby),
                     bountyData = optionalModule(replicated, config.instancePaths.bountyData),
                     bountyState = optionalModule(starterPlayer, if isLobby then config.instancePaths.bountyState else config.instancePaths.bountyStateMatch),
                     worldlines = optionalModule(replicated, config.instancePaths.worldlinesData),
@@ -2021,6 +2544,7 @@ do
                     macro = nil,
                     gameSettings = nil,
                     changeAttempt = nil,
+                    teamAttempt = nil,
                 }
 
                 local function setStatus(value)
@@ -2037,7 +2561,118 @@ do
                 function self.setGameSettings(gs)
                     self.gameSettings = gs
                 end
+                function self.getTeamOptions()
+                    local adapter = self.dependencies and self.dependencies.teamAdapter
 
+                    if not adapter then
+                        local ok, created = pcall(TeamAdapter.new)
+
+                        if not ok then
+                            return nil
+                        end
+
+                        adapter = created
+
+                        if self.dependencies then
+                            self.dependencies.teamAdapter = created
+                        end
+                    end
+
+                    local teams = adapter.getTeams()
+
+                    if not teams then
+                        return nil
+                    end
+
+                    return TeamEquip.options(teams, adapter.isSlotOwned)
+                end
+
+                local function teamStep(name, now)
+                    local deps = self.dependencies
+                    local settings = Settings.get()
+                    local key = settings.teamEquip.teams[name]
+                    local adapter = deps and deps.teamAdapter
+
+                    if not settings.teamEquip.enabled or not key or not adapter then
+                        return 'go'
+                    end
+
+                    local teams = adapter.getTeams()
+                    local team = if teams then teams[key]else nil
+                    local number = TeamEquip.number(key)
+
+                    if not team or not number or not adapter.isSlotOwned(number) then
+                        setStatus(string.format('Team Equipper: %s is not available (%s)', key, name))
+
+                        return 'skip'
+                    end
+
+                    local verdict = TeamEquip.evaluate(team, adapter.ownsUnit, adapter.getEquipped())
+
+                    if verdict == 'unusable' then
+                        setStatus(string.format('Team Equipper: %s has no usable units (%s)', key, name))
+
+                        return 'skip'
+                    end
+                    if verdict == 'match' then
+                        self.teamAttempt = nil
+
+                        return 'go'
+                    end
+
+                    local attempt = self.teamAttempt
+
+                    if not attempt or attempt.key ~= key then
+                        attempt = {
+                            key = key,
+                            sent = 0,
+                            last = -math.huge,
+                            backoff = -math.huge,
+                        }
+                        self.teamAttempt = attempt
+                    end
+                    if now < attempt.backoff then
+                        return 'skip'
+                    end
+                    if attempt.sent > 0 and now - attempt.last < TEAM_LOAD_TIMEOUT_SECONDS then
+                        setStatus(string.format('Team Equipper: waiting for %s to equip', key))
+
+                        return 'wait'
+                    end
+                    if attempt.sent >= TEAM_LOAD_ATTEMPTS then
+                        attempt.sent = 0
+                        attempt.backoff = now + RETRY_SECONDS
+
+                        setStatus(string.format('Team Equipper: %s was not confirmed; skipping %s', key, name))
+
+                        return 'skip'
+                    end
+
+                    attempt.sent += 1
+
+                    attempt.last = now
+
+                    local sent = adapter.loadTeam(key)
+
+                    setStatus(if sent then string.format('Team Equipper: loading %s (%d/%d)', key, attempt.sent, TEAM_LOAD_ATTEMPTS)else'Team Equipper: load request failed')
+
+                    return 'wait'
+                end
+                local function inMatchTeam(settings, matchData, now, bounty)
+                    local deps = self.dependencies
+
+                    if not deps or not deps.gameHandler or deps.gameHandler.IsMatchStarted ~= false then
+                        return false
+                    end
+
+                    local row = TeamEquip.rowFor(matchData, bounty)
+
+                    if not row then
+                        return false
+                    end
+
+                    return teamStep(row, now) == 'wait'
+                end
                 local function isBountyMatch(settings, matchData)
                     local run = settings.bountyRun
 
@@ -2268,6 +2903,8 @@ do
                     local isAnyChallenge = currentChallenge ~= nil or (type(matchData) == 'table' and matchData.StageType == 'Challenge')
 
                     if isAnyChallenge or currentRift then
+                        inMatchTeam(settings, matchData, now, false)
+
                         return
                     end
                     if self.currentJoinedName and (CHALLENGES[self.currentJoinedName] or self.currentJoinedName == 'Rift') then
@@ -2285,6 +2922,9 @@ do
                         return
                     end
                     if tryChangeStage(settings, matchData, now) then
+                        return
+                    end
+                    if inMatchTeam(settings, matchData, now, isBountyMatch(Settings.get(), matchData)) then
                         return
                     end
                     if isBountyMatch(Settings.get(), matchData) then
@@ -2533,6 +3173,15 @@ do
                                             end
                                         end
                                         if targetGuid then
+                                            local teamState = teamStep(name, now)
+
+                                            if teamState == 'wait' then
+                                                return
+                                            end
+                                            if teamState == 'skip' then
+                                                continue
+                                            end
+
                                             self.confirmed = {
                                                 name = name,
                                                 mode = 'Rift',
@@ -2565,6 +3214,15 @@ do
                             local okCurrent, current = pcall(deps.bossRotation.GetCurrentBossEvent)
 
                             if okCurrent and current == choice.eventName and type(deps.bossNetwork[config.remoteNames.bossEventStart]) == 'table' then
+                                local teamState = teamStep(name, now)
+
+                                if teamState == 'wait' then
+                                    return
+                                end
+                                if teamState == 'skip' then
+                                    continue
+                                end
+
                                 self.pending = {
                                     name = name,
                                     mode = 'BossEvent',
@@ -2610,6 +3268,15 @@ do
                                     if completed then
                                         setStatus('Worldline: selected worldline already completed')
                                     elseif okProgress and type(progress) == 'table' and progress.Ready == true then
+                                        local teamState = teamStep(name, now)
+
+                                        if teamState == 'wait' then
+                                            return
+                                        end
+                                        if teamState == 'skip' then
+                                            continue
+                                        end
+
                                         self.lastAttempt = now
 
                                         local ok = pcall(teleportRemote.Fire, {
@@ -2647,6 +3314,14 @@ do
 
                                 if okProgress and unlocked ~= nil then
                                     local difficulty = if bounty.mode == 'LegendStage'then'Nightmare'else'Normal'
+                                    local teamState = teamStep(name, now)
+
+                                    if teamState == 'wait' then
+                                        return
+                                    end
+                                    if teamState == 'skip' then
+                                        continue
+                                    end
 
                                     self.pending = {
                                         name = name,
@@ -2718,6 +3393,15 @@ do
                                     local okStage, stage = pcall(deps.challengeStages.GetChallengeStage, targetChallengeName)
 
                                     if okStage and type(stage) == 'table' and type(stage.StageType) == 'string' and type(stage.Stage) == 'string' and type(stage.Act) == 'string' then
+                                        local teamState = teamStep(name, now)
+
+                                        if teamState == 'wait' then
+                                            return
+                                        end
+                                        if teamState == 'skip' then
+                                            continue
+                                        end
+
                                         self.pending = {
                                             name = name,
                                             challengeName = targetChallengeName,
@@ -2755,6 +3439,15 @@ do
                             local okProgress, unlocked = pcall(deps.progress.GetActData, mode, choice.stage, choice.act)
 
                             if okProgress and unlocked ~= nil then
+                                local teamState = teamStep(name, now)
+
+                                if teamState == 'wait' then
+                                    return
+                                end
+                                if teamState == 'skip' then
+                                    continue
+                                end
+
                                 local pending = {
                                     name = name,
                                     mode = mode,
@@ -2988,14 +3681,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.l()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.l
+        function __DARKLUA_BUNDLE_MODULES.n()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.n
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.l = v
+                __DARKLUA_BUNDLE_MODULES.cache.n = v
             end
 
             return v.c
@@ -3267,14 +3960,14 @@ do
             return Document
         end
 
-        function __DARKLUA_BUNDLE_MODULES.m()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.m
+        function __DARKLUA_BUNDLE_MODULES.o()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.o
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.m = v
+                __DARKLUA_BUNDLE_MODULES.cache.o = v
             end
 
             return v.c
@@ -3282,7 +3975,7 @@ do
     end
     do
         local function __modImpl()
-            local Document = __DARKLUA_BUNDLE_MODULES.m()
+            local Document = __DARKLUA_BUNDLE_MODULES.o()
             local Storage = {}
             local ROOT = 'ViperHubNextGen/macro/AnimeVanguards'
             local MAX_BYTES = 1024 * 1024
@@ -3442,14 +4135,14 @@ do
             return Storage
         end
 
-        function __DARKLUA_BUNDLE_MODULES.n()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.n
+        function __DARKLUA_BUNDLE_MODULES.p()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.p
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.n = v
+                __DARKLUA_BUNDLE_MODULES.cache.p = v
             end
 
             return v.c
@@ -3457,8 +4150,8 @@ do
     end
     do
         local function __modImpl()
-            local Storage = __DARKLUA_BUNDLE_MODULES.n()
-            local Document = __DARKLUA_BUNDLE_MODULES.m()
+            local Storage = __DARKLUA_BUNDLE_MODULES.p()
+            local Document = __DARKLUA_BUNDLE_MODULES.o()
             local Page = {}
 
             local function humanError(code)
@@ -3901,14 +4594,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.o()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.o
+        function __DARKLUA_BUNDLE_MODULES.q()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.q
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.o = v
+                __DARKLUA_BUNDLE_MODULES.cache.q = v
             end
 
             return v.c
@@ -3917,7 +4610,7 @@ do
     do
         local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Document = __DARKLUA_BUNDLE_MODULES.m()
+            local Document = __DARKLUA_BUNDLE_MODULES.o()
             local Adapter = {}
             local Vector3 = ((getfenv())).Vector3
             local task = ((getfenv())).task
@@ -4742,14 +5435,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.p()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.p
+        function __DARKLUA_BUNDLE_MODULES.r()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.r
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.p = v
+                __DARKLUA_BUNDLE_MODULES.cache.r = v
             end
 
             return v.c
@@ -4757,8 +5450,8 @@ do
     end
     do
         local function __modImpl()
-            local Document = __DARKLUA_BUNDLE_MODULES.m()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.p()
+            local Document = __DARKLUA_BUNDLE_MODULES.o()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.r()
             local Runtime = {}
             local POLL_SECONDS = 0.2
             local ACTION_TIMEOUT = 12
@@ -5817,14 +6510,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.q()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.q
+        function __DARKLUA_BUNDLE_MODULES.s()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.s
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.q = v
+                __DARKLUA_BUNDLE_MODULES.cache.s = v
             end
 
             return v.c
@@ -5966,14 +6659,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.r()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.r
+        function __DARKLUA_BUNDLE_MODULES.t()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.t
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.r = v
+                __DARKLUA_BUNDLE_MODULES.cache.t = v
             end
 
             return v.c
@@ -5982,7 +6675,7 @@ do
     do
         local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local FileStorage = __DARKLUA_BUNDLE_MODULES.h()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.i()
             local Adapter = {}
             local SETTINGS_STORAGE_KEY = 'AnimeVanguardsGameSettings'
             local SCHEMA_VERSION = 1
@@ -6383,14 +7076,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.s()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.s
+        function __DARKLUA_BUNDLE_MODULES.u()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.u
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.s = v
+                __DARKLUA_BUNDLE_MODULES.cache.u = v
             end
 
             return v.c
@@ -6662,14 +7355,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.t()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.t
+        function __DARKLUA_BUNDLE_MODULES.v()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.v
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.t = v
+                __DARKLUA_BUNDLE_MODULES.cache.v = v
             end
 
             return v.c
@@ -6821,14 +7514,14 @@ do
             return Rules
         end
 
-        function __DARKLUA_BUNDLE_MODULES.u()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.u
+        function __DARKLUA_BUNDLE_MODULES.w()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.w
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.u = v
+                __DARKLUA_BUNDLE_MODULES.cache.w = v
             end
 
             return v.c
@@ -6837,7 +7530,7 @@ do
     do
         local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Rules = __DARKLUA_BUNDLE_MODULES.u()
+            local Rules = __DARKLUA_BUNDLE_MODULES.w()
             local Adapter = {}
 
             local function resolve(root, path)
@@ -7262,14 +7955,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.v()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.v
+        function __DARKLUA_BUNDLE_MODULES.x()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.x
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.v = v
+                __DARKLUA_BUNDLE_MODULES.cache.x = v
             end
 
             return v.c
@@ -7277,10 +7970,10 @@ do
     end
     do
         local function __modImpl()
-            local FileStorage = __DARKLUA_BUNDLE_MODULES.h()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.i()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.v()
-            local Rules = __DARKLUA_BUNDLE_MODULES.u()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.x()
+            local Rules = __DARKLUA_BUNDLE_MODULES.w()
             local Runtime = {}
             local STORAGE_KEY = 'AnimeVanguardsAutoPlay'
             local SCHEMA_VERSION = 3
@@ -7849,14 +8542,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.w()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.w
+        function __DARKLUA_BUNDLE_MODULES.y()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.y
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.w = v
+                __DARKLUA_BUNDLE_MODULES.cache.y = v
             end
 
             return v.c
@@ -8284,14 +8977,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.x()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.x
+        function __DARKLUA_BUNDLE_MODULES.z()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.z
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.x = v
+                __DARKLUA_BUNDLE_MODULES.cache.z = v
             end
 
             return v.c
@@ -8302,15 +8995,15 @@ end
 local Types = __DARKLUA_BUNDLE_MODULES.a()
 local metadata = __DARKLUA_BUNDLE_MODULES.b()
 local config = __DARKLUA_BUNDLE_MODULES.c()
-local JoinerPage = __DARKLUA_BUNDLE_MODULES.j()
-local JoinerRuntime = __DARKLUA_BUNDLE_MODULES.l()
-local MacroPage = __DARKLUA_BUNDLE_MODULES.o()
-local MacroRuntime = __DARKLUA_BUNDLE_MODULES.q()
-local GamePage = __DARKLUA_BUNDLE_MODULES.r()
-local GameAdapter = __DARKLUA_BUNDLE_MODULES.s()
-local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.t()
-local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.w()
-local StatusPage = __DARKLUA_BUNDLE_MODULES.x()
+local JoinerPage = __DARKLUA_BUNDLE_MODULES.k()
+local JoinerRuntime = __DARKLUA_BUNDLE_MODULES.n()
+local MacroPage = __DARKLUA_BUNDLE_MODULES.q()
+local MacroRuntime = __DARKLUA_BUNDLE_MODULES.s()
+local GamePage = __DARKLUA_BUNDLE_MODULES.t()
+local GameAdapter = __DARKLUA_BUNDLE_MODULES.u()
+local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.v()
+local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.y()
+local StatusPage = __DARKLUA_BUNDLE_MODULES.z()
 local active = false
 local joiner = JoinerRuntime.new()
 local macro = MacroRuntime.new()

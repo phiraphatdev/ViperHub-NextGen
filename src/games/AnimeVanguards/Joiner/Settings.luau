@@ -7,6 +7,7 @@ Dependencies: Definitions; FileStorage
 ]]
 
 local definitions = require("./Definitions")
+local TeamEquip = require("./TeamEquip")
 local FileStorage = require("../../../platform/FileStorage")
 local Settings = {}
 local DEFAULT_COOLDOWN = 0
@@ -38,6 +39,8 @@ local priority = defaultPriority()
 local enabled: { [string]: boolean } = {}
 local selection: { [string]: any } = {}
 local changeStageInMatch = true
+local teamEquipEnabled = false
+local teamEquipTeams: { [string]: string } = {}
 local bountyRun: any = nil
 local storage: FileStorage.Storage? = nil
 local encode: ((any) -> string)? = nil
@@ -61,6 +64,7 @@ local function save()
         selection = selection,
         changeStageInMatch = changeStageInMatch,
         bountyRun = bountyRun,
+        teamEquip = { enabled = teamEquipEnabled, teams = teamEquipTeams },
     })
     if ok and type(body) == "string" then
         activeStorage.write(body)
@@ -120,6 +124,18 @@ function Settings.init(env: any)
                 end
             end
             priority = retained
+        end
+    end
+    if type(data.teamEquip) == "table" then
+        if type(data.teamEquip.enabled) == "boolean" then
+            teamEquipEnabled = data.teamEquip.enabled
+        end
+        if type(data.teamEquip.teams) == "table" then
+            for name, key in data.teamEquip.teams do
+                if type(name) == "string" and known(name) and TeamEquip.validKey(key) then
+                    teamEquipTeams[name] = key :: string
+                end
+            end
         end
     end
     if type(data.changeStageInMatch) == "boolean" then
@@ -240,8 +256,35 @@ function Settings.get()
         selection = table.clone(selection),
         changeStageInMatch = changeStageInMatch,
         bountyRun = bountyRun,
+        teamEquip = { enabled = teamEquipEnabled, teams = table.clone(teamEquipTeams) },
         persistent = storage ~= nil,
     }
+end
+
+--- Turns the Team Equipper on or off (it also needs a team chosen for the joiner).
+function Settings.setTeamEquipEnabled(value: boolean): boolean
+    if type(value) ~= "boolean" then
+        return false
+    end
+    teamEquipEnabled = value
+    save()
+    return true
+end
+
+--- Chooses the saved team ("TeamN") to equip before joining; key nil clears it (None). Returns false when invalid.
+function Settings.setTeamForJoiner(name: string, key: string?): boolean
+    if type(name) ~= "string" or not known(name) then
+        return false
+    end
+    if key == nil then
+        teamEquipTeams[name] = nil
+    elseif TeamEquip.validKey(key) then
+        teamEquipTeams[name] = key
+    else
+        return false
+    end
+    save()
+    return true
 end
 
 --- Enables or disables changing the stage inside a match before Vote Start.
