@@ -50,12 +50,72 @@ local function liveDependencies(): any?
         lobbyTeams = optionalModule(replicated, config.instancePaths.lobbyTeamsClient),
         gameUnits = optionalModule(replicated, config.instancePaths.gameUnitsClient),
         unitActions = optionalModule(replicated, config.instancePaths.lobbyUnitActionsClient),
+        popupHandler = optionalModule(starter, config.instancePaths.popupHandler),
+        notifications = optionalModule(starter, config.instancePaths.notifications),
     }
 end
 
 --- Creates a team adapter; injected dependencies support isolated tests. inMatch selects the match network.
 function Adapter.new(injected: any?, inMatch: boolean?): any
     local self: any = { dependencies = injected }
+    local SUPPRESS_SECONDS = 15
+    local suppressUntil = -math.huge
+    local guards: { any } = {}
+
+    local function now(): number
+        local injectedClock = self.dependencies and self.dependencies.clock
+        return if type(injectedClock) == "function" then (injectedClock :: any)() else os.clock()
+    end
+
+    local function isLoadedMessage(value: any): boolean
+        local text = if type(value) == "table" then value.Text else value
+        return type(text) == "string" and string.find(text, "^Successfully ") ~= nil
+    end
+
+    -- Wraps a game UI function so that, only while this script has just asked for a team, the game's own
+    -- "Successfully ..." popup or toast (loaded team, unequipped familiar, ...) is dropped. Everything else, including the player's own loads
+    -- outside that window, reaches the original function unchanged.
+    local function guard(target: any, name: string)
+        if type(target) ~= "table" or type(target[name]) ~= "function" then
+            return
+        end
+        for _, entry in guards do
+            if entry.target == target and entry.name == name then
+                return
+            end
+        end
+        local original = target[name]
+        local function wrapper(...)
+            if now() < suppressUntil then
+                local args = table.pack(...)
+                for index = 2, args.n do
+                    if isLoadedMessage(args[index]) then
+                        return nil
+                    end
+                end
+            end
+            return original(...)
+        end
+        local ok = pcall(function()
+            target[name] = wrapper
+        end)
+        if ok then
+            table.insert(guards, { target = target, name = name, original = original, wrapper = wrapper })
+        end
+    end
+
+    --- Restores the game's UI functions that were wrapped to hide the "Successfully loaded" messages.
+    function self.stop()
+        for _, entry in guards do
+            if entry.target[entry.name] == entry.wrapper then
+                pcall(function()
+                    entry.target[entry.name] = entry.original
+                end)
+            end
+        end
+        table.clear(guards)
+        suppressUntil = -math.huge
+    end
 
     local function deps(): any
         if not self.dependencies then
@@ -231,6 +291,10 @@ function Adapter.new(injected: any?, inMatch: boolean?): any
         if not remote or type(remote.Fire) ~= "function" then
             return false
         end
+        local d2 = deps()
+        guard(d2 and d2.popupHandler, "ShowPopup")
+        guard(d2 and d2.notifications, "CreateNotification")
+        suppressUntil = now() + SUPPRESS_SECONDS
         return (pcall(remote.Fire, { TeamKey = key }))
     end
 

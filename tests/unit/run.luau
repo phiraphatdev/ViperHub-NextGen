@@ -4049,6 +4049,46 @@ test(
         JoinerSettings.setEnabled("Stage", false)
     end
 )
+test("Team Equipper hides the game's loaded-team popup and toast only for its own loads", function()
+    local clock = 100
+    local shown: { string } = {}
+    local toasts: { string } = {}
+    local popupHandler: any = {}
+    function popupHandler.ShowPopup(_self: any, kind: string, text: string)
+        table.insert(shown, kind .. ":" .. text)
+    end
+    local notifications: any = {}
+    function notifications.CreateNotification(_self: any, options: any)
+        table.insert(toasts, options.Text)
+    end
+    local originalPopup = popupHandler.ShowPopup
+    local adapter = TeamAdapter.new({
+        clock = function()
+            return clock
+        end,
+        popupHandler = popupHandler,
+        notifications = notifications,
+        lobbyTeams = { LoadTeam = { Fire = function() end } },
+    }, false)
+    popupHandler:ShowPopup("BaseCancelFrame", "Successfully loaded team!")
+    assert(#shown == 1, "the player's own load still shows the popup before any load by this script")
+    assert(adapter.loadTeam("Team3"))
+    popupHandler:ShowPopup("BaseCancelFrame", "Successfully loaded team!")
+    notifications:CreateNotification({ Name = "Success", Text = "Successfully loaded Main!" })
+    notifications:CreateNotification({ Name = "Failure", Text = "Successfully unequipped familiar! (6x)" })
+    popupHandler:ShowPopup("BaseCancelFrame", "Not enough gems")
+    notifications:CreateNotification({ Name = "Failure", Text = "Disable Auto Play first." })
+    assert(
+        #shown == 2 and shown[2] == "BaseCancelFrame:Not enough gems",
+        "only the loaded-team popup is dropped"
+    )
+    assert(#toasts == 1 and toasts[1] == "Disable Auto Play first.")
+    clock = 130
+    popupHandler:ShowPopup("BaseCancelFrame", "Successfully loaded team!")
+    assert(#shown == 3, "the window ends after 15 seconds")
+    adapter.stop()
+    assert(popupHandler.ShowPopup == originalPopup, "stop restores the game's function")
+end)
 test("ActivityState evaluates game-recorded challenge seeds and rift attempts", function()
     -- Case 1: stored < current -> available (not played yet in this period)
     local status, period = ActivityState.challenge({

@@ -31,6 +31,8 @@ return table.freeze({
         lobbyTeamsClient = "NetworkCode.LobbyTeamsClient",
         gameUnitsClient = "NetworkCode.GameUnitsClient",
         lobbyUnitActionsClient = "NetworkCode.LobbyUnitActionsClient",
+        popupHandler = "Modules.Interface.Loader.Misc.PopupHandler",
+        notifications = "Modules.Interface.Loader.Notifications",
         bountyState = "Modules.Gameplay.Bounty.PlayerBountyDataHandler",
         bountyStateMatch = "Modules.Gameplay.Bounties.PlayerBountyDataHandler",
         autoPlayModeBlocklist = "Modules.Shared.AutoPlayModeBlocklist",

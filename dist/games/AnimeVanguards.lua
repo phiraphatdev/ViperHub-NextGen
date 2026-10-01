@@ -79,6 +79,8 @@ do
                     lobbyTeamsClient = 'NetworkCode.LobbyTeamsClient',
                     gameUnitsClient = 'NetworkCode.GameUnitsClient',
                     lobbyUnitActionsClient = 'NetworkCode.LobbyUnitActionsClient',
+                    popupHandler = 'Modules.Interface.Loader.Misc.PopupHandler',
+                    notifications = 'Modules.Interface.Loader.Notifications',
                     bountyState = 'Modules.Gameplay.Bounty.PlayerBountyDataHandler',
                     bountyStateMatch = 'Modules.Gameplay.Bounties.PlayerBountyDataHandler',
                     autoPlayModeBlocklist = 'Modules.Shared.AutoPlayModeBlocklist',
@@ -2950,11 +2952,81 @@ do
                     lobbyTeams = optionalModule(replicated, config.instancePaths.lobbyTeamsClient),
                     gameUnits = optionalModule(replicated, config.instancePaths.gameUnitsClient),
                     unitActions = optionalModule(replicated, config.instancePaths.lobbyUnitActionsClient),
+                    popupHandler = optionalModule(starter, config.instancePaths.popupHandler),
+                    notifications = optionalModule(starter, config.instancePaths.notifications),
                 }
             end
 
             function Adapter.new(injected, inMatch)
                 local self = {dependencies = injected}
+                local SUPPRESS_SECONDS = 15
+                local suppressUntil = -math.huge
+                local guards = {}
+
+                local function now()
+                    local injectedClock = self.dependencies and self.dependencies.clock
+
+                    return if type(injectedClock) == 'function'then(injectedClock)()else os.clock()
+                end
+                local function isLoadedMessage(value)
+                    local text = if type(value) == 'table'then value.Text else value
+
+                    return type(text) == 'string' and string.find(text, '^Successfully ') ~= nil
+                end
+                local function guard(target, name)
+                    if type(target) ~= 'table' or type(target[name]) ~= 'function' then
+                        return
+                    end
+
+                    for _, entry in guards do
+                        if entry.target == target and entry.name == name then
+                            return
+                        end
+                    end
+
+                    local original = target[name]
+
+                    local function wrapper(...)
+                        if now() < suppressUntil then
+                            local args = table.pack(...)
+
+                            for index = 2, args.n do
+                                if isLoadedMessage(args[index]) then
+                                    return nil
+                                end
+                            end
+                        end
+
+                        return original(...)
+                    end
+
+                    local ok = pcall(function()
+                        target[name] = wrapper
+                    end)
+
+                    if ok then
+                        table.insert(guards, {
+                            target = target,
+                            name = name,
+                            original = original,
+                            wrapper = wrapper,
+                        })
+                    end
+                end
+
+                function self.stop()
+                    for _, entry in guards do
+                        if entry.target[entry.name] == entry.wrapper then
+                            pcall(function()
+                                entry.target[entry.name] = entry.original
+                            end)
+                        end
+                    end
+
+                    table.clear(guards)
+
+                    suppressUntil = -math.huge
+                end
 
                 local function deps()
                     if not self.dependencies then
@@ -3147,6 +3219,13 @@ do
                     if not remote or type(remote.Fire) ~= 'function' then
                         return false
                     end
+
+                    local d2 = deps()
+
+                    guard(d2 and d2.popupHandler, 'ShowPopup')
+                    guard(d2 and d2.notifications, 'CreateNotification')
+
+                    suppressUntil = now() + SUPPRESS_SECONDS
 
                     return (pcall(remote.Fire, {TeamKey = key}))
                 end
@@ -4560,6 +4639,12 @@ do
                         end)
 
                         self.matchEndConnection = nil
+                    end
+
+                    local teamAdapter = self.dependencies and self.dependencies.teamAdapter
+
+                    if teamAdapter and type(teamAdapter.stop) == 'function' then
+                        pcall(teamAdapter.stop)
                     end
                     if not dependencies then
                         self.dependencies = nil

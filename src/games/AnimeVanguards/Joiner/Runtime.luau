@@ -1405,6 +1405,10 @@ function Runtime.new(dependencies: any?): any
             end)
             self.matchEndConnection = nil
         end
+        local teamAdapter = self.dependencies and self.dependencies.teamAdapter
+        if teamAdapter and type(teamAdapter.stop) == "function" then
+            pcall(teamAdapter.stop)
+        end
         if not dependencies then
             self.dependencies = nil
         end
