@@ -187,6 +187,7 @@ do
                     footer = 'ViperHub NextGen \u{2022} Anime Vanguards',
                     defaultUsername = 'ViperHub',
                     pingMinRarity = 'Secret',
+                    everyoneMinRarity = 'Secret',
                     currencies = table.freeze({
                         table.freeze({
                             key = 'Gems',
@@ -210,6 +211,22 @@ do
                         }),
                     }),
                     levelAttribute = 'Level',
+                    endScreen = table.freeze({
+                        gui = 'EndScreen',
+                        title = 'Holder.Title.Label',
+                        stage = 'Holder.Main.StageInfo.Main.StageName',
+                        act = 'Holder.Main.StageInfo.Main.ActName',
+                        difficulty = 'Holder.Main.StageInfo.Main.Difficulty',
+                        units = 'Holder.Main.StageStatistics.UnitsPlaced.Amount',
+                        damage = 'Holder.Main.StageStatistics.TotalDamage.Amount',
+                        playTime = 'Holder.Main.StageStatistics.PlayTime.Amount',
+                        money = 'Holder.Main.StageStatistics.MoneyEarned.Amount',
+                        takedowns = 'Holder.Main.StageStatistics.Takedowns.Amount',
+                        waves = 'Holder.Main.StageStatistics.WavesCompleted.Amount',
+                        rewards = 'Holder.Main.StageRewards.Main',
+                        rewardName = 'Holder.Main.ItemName',
+                        rewardAmount = 'Holder.Main.Amount',
+                    }),
                     waveMaxKeys = table.freeze({
                         'MaxWave',
                         'WaveCount',
@@ -10079,13 +10096,24 @@ do
                 end
 
                 local ping = options.pingUserId
+                local mentions = {}
+                local users = {}
+                local parse = {}
 
+                if options.everyone then
+                    table.insert(mentions, '@everyone')
+                    table.insert(parse, 'everyone')
+                end
                 if options.ping and type(ping) == 'string' and string.match(ping, '^%d+$') and #ping >= 15 and #ping <= 25 then
-                    payload.content = Embed.clip('<@' .. ping .. '>', MAX_CONTENT)
-                    payload.allowed_mentions = {
-                        parse = {},
-                        users = {ping},
-                    }
+                    table.insert(mentions, '<@' .. ping .. '>')
+                    table.insert(users, ping)
+                end
+                if #mentions > 0 then
+                    payload.content = Embed.clip(table.concat(mentions, ' '), MAX_CONTENT)
+                    payload.allowed_mentions = if#users > 0 then{
+                        parse = parse,
+                        users = users,
+                    }else{parse = parse}
                 end
 
                 return payload
@@ -10249,12 +10277,6 @@ do
 
                 return table.concat(lines, '\n')
             end
-
-            local ESC = '\23'
-            local RED_TAG = ESC .. '[2;31m'
-            local GREEN_TAG = ESC .. '[2;32m'
-            local RESET = ESC .. '[0m'
-
             local function playerLine(ctx)
                 if not ctx.showPlayer or type(ctx.player) ~= 'string' or ctx.player == '' then
                     return nil
@@ -10275,11 +10297,9 @@ do
                 local bar = string.rep('\u{1f7e9}', session.bar) .. string.rep('\u{2b1b}', session.barSize - session.bar)
 
                 return table.concat({
-                    '```ansi',
-                    string.format('%s[Win Rate]%s %.1f%% (%d Wins / %d Loss / %d Total Runs)', RED_TAG, RESET, session.winRate, session.wins, session.losses, session.total),
-                    string.format('%s[Progress]%s [%s]', RED_TAG, RESET, bar),
-                    string.format('%s[Session]%s %s Uptime \u{2022} Avg %s/run \u{2022} %s%s runs/hr%s', RED_TAG, RESET, Embed.duration(session.uptime), Embed.duration(session.averageRun), GREEN_TAG, string.format('~%.1f', session.runsPerHour), RESET),
-                    '```',
+                    string.format('\u{1f3c5} **Win Rate** `%.1f%%` \u{2014} %d Win \u{2022} %d Loss \u{2022} %d Runs', session.winRate, session.wins, session.losses, session.total),
+                    bar,
+                    string.format('\u{23f1}\u{fe0f} **Session** `%s` \u{2022} Avg `%s`/run \u{2022} `~%.1f` runs/hr', Embed.duration(session.uptime), Embed.duration(session.averageRun), session.runsPerHour),
                 }, '\n')
             end
 
@@ -10292,6 +10312,7 @@ do
                     timestamp = ctx.timestamp,
                 }
                 local ping = false
+                local everyone = false
 
                 if ctx.showPlayer and type(ctx.player) == 'string' and ctx.player ~= '' then
                     spec.authorName = playerLine(ctx)
@@ -10318,7 +10339,7 @@ do
                         if type(info.difficulty) == 'string' and info.difficulty ~= '' then
                             stage ..= ' (' .. info.difficulty .. ')'
                         end
-                        if type(info.stageType) == 'string' and info.stageType ~= '' then
+                        if type(info.stageType) == 'string' and info.stageType ~= '' and info.stageType ~= info.stage then
                             stage ..= ' (' .. info.stageType .. ')'
                         end
 
@@ -10351,7 +10372,7 @@ do
                         table.insert(stats, '\u{23f1}\u{fe0f} **Duration**: `' .. tostring(info.durationText) .. '`')
                     end
                     if info.wave then
-                        table.insert(stats, string.format('\u{1f30a} **Wave**: `%s/%s`', tostring(info.wave), tostring(info.maxWave or info.wave)))
+                        table.insert(stats, string.format('\u{1f30a} **Wave**: `%s`', if info.maxWave then tostring(info.wave) .. '/' .. tostring(info.maxWave)else tostring(info.wave)))
                     end
 
                     local session = info.session
@@ -10419,11 +10440,25 @@ do
                             local rate = session.rates[row.key]
 
                             if rate then
-                                table.insert(rates, string.format('%s %s +%s/hr', row.emoji, row.label, Embed.number(rate)))
+                                table.insert(rates, string.format('%s **%s** `+%s`/hr', row.emoji, row.label, Embed.number(rate)))
                             end
                         end
 
-                        addField(fields, '\u{1f4c8} Farming Rates (/hr)', if#rates > 0 then table.concat(rates, '\n')else'```No session rewards reported yet```', false)
+                        local dropLines = {}
+
+                        for label, count in session.drops do
+                            local perHour = session.dropRates[label]
+
+                            table.insert(dropLines, string.format('\u{1f381} **%s** \u{d7}%d%s', label, count, if perHour then string.format(' (`%.2f`/hr)', perHour)else''))
+                        end
+
+                        table.sort(dropLines)
+
+                        for _, line in dropLines do
+                            table.insert(rates, line)
+                        end
+
+                        addField(fields, '\u{1f4c8} Farming Rates (/hr)', if#rates > 0 then table.concat(rates, '\n')else'No session rewards yet \u{2014} rates appear after a minute of play', false)
                     end
                 elseif kind == 'unit' then
                     local style = config.rarityStyle[info.rarity] or {
@@ -10446,6 +10481,7 @@ do
                     local rank = Events.rarityRank(info.rarity, config.rarityOrder)
 
                     ping = rank > 0 and rank >= Events.rarityRank(config.pingMinRarity, config.rarityOrder)
+                    everyone = rank > 0 and rank >= Events.rarityRank(config.everyoneMinRarity, config.rarityOrder)
                 elseif kind == 'join' then
                     spec.title = '\u{1f6aa} Entered ' .. tostring(info.name or 'stage')
                     spec.description = modeText(info)
@@ -10502,13 +10538,13 @@ do
                     addField(fields, 'Enabled events', info.enabledCount)
                     addField(fields, 'Version', ctx.version)
                 else
-                    return nil, false
+                    return nil, false, false
                 end
                 if #fields > 0 then
                     spec.fields = fields
                 end
 
-                return spec, ping
+                return spec, ping, everyone
             end
 
             return Events
@@ -10661,6 +10697,15 @@ do
 
                 local drops = Style.section(tab, 'Unit drops', 'gem', false)
 
+                drops:Toggle({
+                    Title = 'Ping @everyone on rare drops',
+                    Desc =
+[[Adds @everyone to Secret and higher unit drops. The webhook must be allowed to mention everyone in that channel.]],
+                    Value = settings.pingEveryone,
+                    Callback = function(value)
+                        runtime.setPingEveryone(value)
+                    end,
+                })
                 drops:Dropdown({
                     Title = 'Minimum rarity to announce',
                     Desc =
@@ -10936,6 +10981,8 @@ do
                     startedAt = clock(),
                     wins = 0,
                     losses = 0,
+                    other = 0,
+                    drops = {},
                     streakKind = '',
                     streakCount = 0,
                     bestWinStreak = 0,
@@ -10944,22 +10991,26 @@ do
                 }
 
                 function self.record(won, duration, gains)
-                    if won then
-                        self.wins += 1
+                    if won == nil then
+                        self.other += 1
                     else
-                        self.losses += 1
-                    end
+                        if won then
+                            self.wins += 1
+                        else
+                            self.losses += 1
+                        end
 
-                    local kind = if won then'W'else'L'
+                        local kind = if won then'W'else'L'
 
-                    if self.streakKind == kind then
-                        self.streakCount += 1
-                    else
-                        self.streakKind = kind
-                        self.streakCount = 1
-                    end
-                    if won and self.streakCount > self.bestWinStreak then
-                        self.bestWinStreak = self.streakCount
+                        if self.streakKind == kind then
+                            self.streakCount += 1
+                        else
+                            self.streakKind = kind
+                            self.streakCount = 1
+                        end
+                        if won and self.streakCount > self.bestWinStreak then
+                            self.bestWinStreak = self.streakCount
+                        end
                     end
                     if type(duration) == 'number' and duration > 0 then
                         self.runSeconds += duration
@@ -10971,16 +11022,24 @@ do
                         end
                     end
                 end
+                function self.addDrop(label)
+                    self.drops[label] = (self.drops[label] or 0) + 1
+                end
                 function self.summary()
-                    local total = self.wins + self.losses
+                    local known = self.wins + self.losses
+                    local total = known + self.other
                     local uptime = math.max(0, clock() - self.startedAt)
-                    local winRate = if total > 0 then self.wins / total * 100 else 0
+                    local winRate = if known > 0 then self.wins / known * 100 else 0
                     local filled = math.floor(winRate / 100 * BAR_SEGMENTS + 0.5)
                     local rates = {}
+                    local dropRates = {}
 
                     if uptime >= MIN_RATE_SECONDS then
                         for key, amount in self.gains do
                             rates[key] = amount / uptime * 3600
+                        end
+                        for label, count in self.drops do
+                            dropRates[label] = count / uptime * 3600
                         end
                     end
 
@@ -10998,6 +11057,8 @@ do
                         runsPerHour = if total > 0 and uptime >= MIN_RATE_SECONDS then total / uptime * 3600 else 0,
                         gains = table.clone(self.gains),
                         rates = rates,
+                        drops = table.clone(self.drops),
+                        dropRates = dropRates,
                     }
                 end
 
@@ -11036,7 +11097,8 @@ do
             local THRESHOLDS = (config).thresholds
             local TICK_SECONDS = 1
             local SESSION_DELAY_SECONDS = 5
-            local END_SCREEN_DELAY_SECONDS = 1.5
+            local END_SCREEN_DELAY_SECONDS = 2
+            local END_SCREEN_POLL_SECONDS = 0.5
             local UNIT_DEDUP_LIMIT = 4000
 
             local function resolve(root, path)
@@ -11083,59 +11145,96 @@ do
                     avatarUrl = '',
                     showPlayer = true,
                     pingUserId = '',
+                    pingEveryone = true,
                     minRarity = WEBHOOK.rarityOrder[1],
                     events = events,
                 }
             end
+            local function childAt(root, path)
+                local node = root
+
+                for part in string.gmatch(path, '[^%.]+')do
+                    if node == nil then
+                        return nil
+                    end
+
+                    local current = node
+                    local ok, child = pcall(function()
+                        return current:FindFirstChild(part)
+                    end)
+
+                    node = if ok then child else nil
+                end
+
+                return node
+            end
+            local function textAt(root, path)
+                local node = childAt(root, path)
+
+                if node ~= nil and type(node.Text) == 'string' and node.Text ~= '' then
+                    return node.Text
+                end
+
+                return nil
+            end
+            local function clockSeconds(text)
+                local h, m, sec = string.match(text or '', '^(%d+):(%d+):(%d+)$')
+
+                if h then
+                    return (tonumber(h) or 0) * 3600 + (tonumber(m) or 0) * 60 + (tonumber(sec) or 0)
+                end
+
+                return nil
+            end
             local function readEndScreen(gameObject)
+                local layout = WEBHOOK.endScreen
                 local ok, result = pcall(function()
                     local players = gameObject:GetService('Players')
                     local playerGui = players.LocalPlayer:FindFirstChildOfClass('PlayerGui')
-                    local screen = playerGui and playerGui:FindFirstChild('EndScreen')
+                    local screen = playerGui and playerGui:FindFirstChild(layout.gui)
 
                     if not screen then
                         return nil
                     end
 
                     local data = {rewards = {}}
-                    local keys = {
-                        ['Units Placed:'] = 'units',
-                        ['Total Damage:'] = 'damage',
-                        ['Play Time:'] = 'time',
-                        ['Money Earned:'] = 'money',
-                        ['Takedowns:'] = 'takedowns',
-                        ['Waves Completed:'] = 'waves',
-                    }
+                    local title = textAt(screen, layout.title)
 
-                    for _, label in screen:GetDescendants()do
-                        if label:IsA('TextLabel') then
-                            local text = label.Text
-                            local lower = string.lower(text)
+                    if title then
+                        local lower = string.lower(title)
 
-                            if data.result == nil and (lower == 'victory' or lower == 'defeat') then
-                                data.result = if lower == 'victory'then'Victory'else'Defeat'
+                        if lower == 'victory' then
+                            data.result = 'Victory'
+                        elseif lower == 'defeat' then
+                            data.result = 'Defeat'
+                        end
+                    end
+
+                    data.stage = textAt(screen, layout.stage)
+                    data.act = textAt(screen, layout.act)
+                    data.difficulty = textAt(screen, layout.difficulty)
+                    data.units = textAt(screen, layout.units)
+                    data.damage = textAt(screen, layout.damage)
+                    data.money = textAt(screen, layout.money)
+                    data.takedowns = textAt(screen, layout.takedowns)
+                    data.waves = tonumber(textAt(screen, layout.waves) or '')
+                    data.seconds = clockSeconds(textAt(screen, layout.playTime))
+
+                    local tiles = childAt(screen, layout.rewards)
+
+                    if tiles then
+                        for _, tile in tiles:GetChildren()do
+                            if #data.rewards >= 12 then
+                                break
                             end
+                            if tile:IsA('GuiObject') then
+                                local name = textAt(tile, layout.rewardName) or tile.Name
+                                local amount = textAt(tile, layout.rewardAmount)
 
-                            local key = keys[text]
-
-                            if key and label.Parent then
-                                for _, sibling in label.Parent:GetChildren()do
-                                    if sibling ~= label and sibling:IsA('TextLabel') and sibling.Text ~= text then
-                                        data[key] = sibling.Text
-                                    end
-                                end
-                            end
-                            if string.match(text, '^[xX]%d[%d,%.]*[KMB]?$') and label.Parent and #data.rewards < 12 then
-                                for _, sibling in label.Parent:GetChildren()do
-                                    if sibling ~= label and sibling:IsA('TextLabel') and not string.match(sibling.Text, '^[xX]?%d') then
-                                        table.insert(data.rewards, {
-                                            name = sibling.Text,
-                                            amount = string.gsub(text, '^[xX]', ''),
-                                        })
-
-                                        break
-                                    end
-                                end
+                                table.insert(data.rewards, {
+                                    name = name,
+                                    amount = if amount then string.gsub(amount, '^[xX]', '')else nil,
+                                })
                             end
                         end
                     end
@@ -11236,6 +11335,7 @@ do
                         avatarUrl = self.settings.avatarUrl,
                         showPlayer = self.settings.showPlayer,
                         pingUserId = self.settings.pingUserId,
+                        pingEveryone = self.settings.pingEveryone,
                         minRarity = self.settings.minRarity,
                         events = self.settings.events,
                     })
@@ -11299,7 +11399,7 @@ do
                         return false
                     end
 
-                    local spec, ping = Events.build(kind, data, context(), WEBHOOK)
+                    local spec, ping, everyone = Events.build(kind, data, context(), WEBHOOK)
 
                     if not spec then
                         return false
@@ -11311,6 +11411,7 @@ do
                         avatarUrl = if self.settings.avatarUrl ~= ''then self.settings.avatarUrl else nil,
                         pingUserId = self.settings.pingUserId,
                         ping = ping,
+                        everyone = everyone and self.settings.pingEveryone == true,
                     })
 
                     return sender.enqueue(payload)
@@ -11425,6 +11526,17 @@ do
 
                     return true
                 end
+                function self.setPingEveryone(value)
+                    if type(value) ~= 'boolean' then
+                        return false
+                    end
+
+                    self.settings.pingEveryone = value
+
+                    save()
+
+                    return true
+                end
                 function self.setMinRarity(value)
                     if type(value) ~= 'string' or table.find(WEBHOOK.rarityOrder, value) == nil then
                         return false
@@ -11525,6 +11637,9 @@ do
 
                     if type(unit.Trait) == 'table' and type(unit.Trait.Name) == 'string' then
                         trait = unit.Trait.Name
+                    end
+                    if self.session then
+                        self.session.addDrop(string.format('%s %s', tostring(rarity), tostring(unit.UnitData.Name)))
                     end
 
                     self.notify('unit', {
@@ -11766,8 +11881,7 @@ do
                     self.matchStartedAt = nil
                     self.matchBalances = nil
 
-                    local function send()
-                        local screen = call('readEndScreen')
+                    local function send(screen)
                         local game = call('gameData')
                         local info = {
                             rewards = {},
@@ -11792,8 +11906,18 @@ do
                             info.result = screen.result
                             info.damage = screen.damage
                             info.takedowns = screen.takedowns
+                            info.units = screen.units
                             info.rewards = screen.rewards
-                            info.durationText = screen.time
+                            info.stage = screen.stage or info.stage
+                            info.act = screen.act or info.act
+                            info.difficulty = screen.difficulty or info.difficulty
+
+                            if screen.waves then
+                                wave = screen.waves
+                            end
+                            if info.result == 'Victory' and wave and not maxWave then
+                                maxWave = wave
+                            end
                         end
 
                         info.result = argumentResult or info.result
@@ -11802,7 +11926,9 @@ do
                             info.wave = wave
                             info.maxWave = maxWave
                         end
-                        if startedAt then
+                        if type(screen) == 'table' and screen.seconds then
+                            info.duration = screen.seconds
+                        elseif startedAt then
                             info.duration = clock() - startedAt
                         end
 
@@ -11824,8 +11950,9 @@ do
                         if info.result == nil then
                             info.unknownResult = true
                             info.result = 'Defeat'
-                        elseif self.session then
-                            self.session.record(info.result == 'Victory', info.duration, gains)
+                        end
+                        if self.session then
+                            self.session.record(if info.unknownResult then nil else info.result == 'Victory', info.duration, gains)
                         end
                         if self.session then
                             info.session = self.session.summary()
@@ -11841,11 +11968,21 @@ do
                         local waitTask = taskApi.wait
 
                         spawnTask(function()
-                            waitTask(END_SCREEN_DELAY_SECONDS)
-                            send()
+                            local waited = 0
+                            local screen = nil
+
+                            repeat
+                                waitTask(END_SCREEN_POLL_SECONDS)
+
+                                waited += END_SCREEN_POLL_SECONDS
+
+                                screen = call('readEndScreen')
+                            until (type(screen) == 'table' and screen.result ~= nil) or waited >= END_SCREEN_DELAY_SECONDS
+
+                            send(screen)
                         end)
                     else
-                        send()
+                        send(call('readEndScreen'))
                     end
                 end
                 function self.start(ctx, sources)
@@ -12017,6 +12154,9 @@ do
                                 end
                                 if type(data.pingUserId) == 'string' and (data.pingUserId == '' or string.match(data.pingUserId, '^%d+$')) then
                                     settings.pingUserId = Embed.clip(data.pingUserId, 25)
+                                end
+                                if type(data.pingEveryone) == 'boolean' then
+                                    settings.pingEveryone = data.pingEveryone
                                 end
                                 if type(data.minRarity) == 'string' and table.find(WEBHOOK.rarityOrder, data.minRarity) then
                                     settings.minRarity = data.minRarity

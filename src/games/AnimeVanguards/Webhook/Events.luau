@@ -124,11 +124,6 @@ local function rewardLines(rewards: any): string
     return table.concat(lines, "\n")
 end
 
-local ESC = ""
-local RED_TAG = ESC .. "[2;31m"
-local GREEN_TAG = ESC .. "[2;32m"
-local RESET = ESC .. "[0m"
-
 -- Author line: "DisplayName (@name) • Lv. N" (or just the name).
 local function playerLine(ctx: any): string?
     if not ctx.showPlayer or type(ctx.player) ~= "string" or ctx.player == "" then
@@ -144,38 +139,30 @@ local function playerLine(ctx: any): string?
     return text
 end
 
--- Colored ANSI code block summarising the session (Discord renders the ansi language in embed fields).
+-- Plain markdown summary of the session (win rate, progress bar, pace); no ANSI so it renders everywhere.
 local function sessionBlock(session: any): string
     local bar = string.rep("🟩", session.bar) .. string.rep("⬛", session.barSize - session.bar)
     return table.concat({
-        "```ansi",
         string.format(
-            "%s[Win Rate]%s %.1f%% (%d Wins / %d Loss / %d Total Runs)",
-            RED_TAG,
-            RESET,
+            "🏅 **Win Rate** `%.1f%%` — %d Win • %d Loss • %d Runs",
             session.winRate,
             session.wins,
             session.losses,
             session.total
         ),
-        string.format("%s[Progress]%s [%s]", RED_TAG, RESET, bar),
+        bar,
         string.format(
-            "%s[Session]%s %s Uptime • Avg %s/run • %s%s runs/hr%s",
-            RED_TAG,
-            RESET,
+            "⏱️ **Session** `%s` • Avg `%s`/run • `~%.1f` runs/hr",
             Embed.duration(session.uptime),
             Embed.duration(session.averageRun),
-            GREEN_TAG,
-            string.format("~%.1f", session.runsPerHour),
-            RESET
+            session.runsPerHour
         ),
-        "```",
     }, "\n")
 end
 
 --- Builds the embed spec for an event; returns the spec and whether the event should ping the configured user.
 --- ctx: {player, userId, showPlayer, timestamp, version}; config: the game config's webhook table.
-function Events.build(kind: string, data: any, ctx: any, config: any): (Embed.Spec?, boolean)
+function Events.build(kind: string, data: any, ctx: any, config: any): (Embed.Spec?, boolean, boolean)
     local info: any = if type(data) == "table" then data else {}
     local fields: { Embed.Field } = {}
     local spec: Embed.Spec = {
@@ -184,6 +171,7 @@ function Events.build(kind: string, data: any, ctx: any, config: any): (Embed.Sp
         timestamp = ctx.timestamp,
     }
     local ping = false
+    local everyone = false
     if ctx.showPlayer and type(ctx.player) == "string" and ctx.player ~= "" then
         spec.authorName = playerLine(ctx)
         if type(ctx.avatarUrl) == "string" then
@@ -205,7 +193,7 @@ function Events.build(kind: string, data: any, ctx: any, config: any): (Embed.Sp
             if type(info.difficulty) == "string" and info.difficulty ~= "" then
                 stage ..= " (" .. info.difficulty .. ")"
             end
-            if type(info.stageType) == "string" and info.stageType ~= "" then
+            if type(info.stageType) == "string" and info.stageType ~= "" and info.stageType ~= info.stage then
                 stage ..= " (" .. info.stageType .. ")"
             end
             table.insert(parts, stage)
@@ -241,9 +229,10 @@ function Events.build(kind: string, data: any, ctx: any, config: any): (Embed.Sp
             table.insert(
                 stats,
                 string.format(
-                    "🌊 **Wave**: `%s/%s`",
-                    tostring(info.wave),
-                    tostring(info.maxWave or info.wave)
+                    "🌊 **Wave**: `%s`",
+                    if info.maxWave
+                        then tostring(info.wave) .. "/" .. tostring(info.maxWave)
+                        else tostring(info.wave)
                 )
             )
         end
@@ -315,14 +304,33 @@ function Events.build(kind: string, data: any, ctx: any, config: any): (Embed.Sp
                 if rate then
                     table.insert(
                         rates,
-                        string.format("%s %s +%s/hr", row.emoji, row.label, Embed.number(rate))
+                        string.format("%s **%s** `+%s`/hr", row.emoji, row.label, Embed.number(rate))
                     )
                 end
+            end
+            local dropLines: { string } = {}
+            for label, count in session.drops :: { [string]: number } do
+                local perHour = session.dropRates[label]
+                table.insert(
+                    dropLines,
+                    string.format(
+                        "🎁 **%s** ×%d%s",
+                        label,
+                        count,
+                        if perHour then string.format(" (`%.2f`/hr)", perHour) else "" :: string
+                    )
+                )
+            end
+            table.sort(dropLines)
+            for _, line in dropLines do
+                table.insert(rates, line)
             end
             addField(
                 fields,
                 "📈 Farming Rates (/hr)",
-                if #rates > 0 then table.concat(rates, "\n") else "```No session rewards reported yet```",
+                if #rates > 0
+                    then table.concat(rates, "\n")
+                    else "No session rewards yet — rates appear after a minute of play",
                 false
             )
         end
@@ -339,6 +347,7 @@ function Events.build(kind: string, data: any, ctx: any, config: any): (Embed.Sp
         end
         local rank = Events.rarityRank(info.rarity, config.rarityOrder)
         ping = rank > 0 and rank >= Events.rarityRank(config.pingMinRarity, config.rarityOrder)
+        everyone = rank > 0 and rank >= Events.rarityRank(config.everyoneMinRarity, config.rarityOrder)
     elseif kind == "join" then
         spec.title = "🚪 Entered " .. tostring(info.name or "stage")
         spec.description = modeText(info)
@@ -390,12 +399,12 @@ function Events.build(kind: string, data: any, ctx: any, config: any): (Embed.Sp
         addField(fields, "Enabled events", info.enabledCount)
         addField(fields, "Version", ctx.version)
     else
-        return nil, false
+        return nil, false, false
     end
     if #fields > 0 then
         spec.fields = fields
     end
-    return spec, ping
+    return spec, ping, everyone
 end
 
 return Events

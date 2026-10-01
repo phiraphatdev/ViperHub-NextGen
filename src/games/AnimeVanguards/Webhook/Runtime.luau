@@ -21,7 +21,8 @@ local WEBHOOK: any = (config :: any).webhook
 local THRESHOLDS: any = (config :: any).thresholds
 local TICK_SECONDS = 1
 local SESSION_DELAY_SECONDS = 5
-local END_SCREEN_DELAY_SECONDS = 1.5
+local END_SCREEN_DELAY_SECONDS = 2
+local END_SCREEN_POLL_SECONDS = 0.5
 local UNIT_DEDUP_LIMIT = 4000
 
 local function resolve(root: any, path: string): any
@@ -62,58 +63,88 @@ local function defaults(): any
         avatarUrl = "",
         showPlayer = true,
         pingUserId = "",
+        pingEveryone = true,
         minRarity = WEBHOOK.rarityOrder[1],
         events = events,
     }
 end
 
--- Reads the match end screen (best effort): result text, stat rows ("Key:" label next to its value) and reward tiles.
+-- Walks a dotted child path below a Roblox instance; nil when any part is missing.
+local function childAt(root: any, path: string): any
+    local node: any = root
+    for part in string.gmatch(path, "[^%.]+") do
+        if node == nil then
+            return nil
+        end
+        local current: any = node
+        local ok, child = pcall(function()
+            return current:FindFirstChild(part)
+        end)
+        node = if ok then child else nil
+    end
+    return node
+end
+
+local function textAt(root: any, path: string): string?
+    local node = childAt(root, path)
+    if node ~= nil and type(node.Text) == "string" and node.Text ~= "" then
+        return node.Text
+    end
+    return nil
+end
+
+-- Parses "00:01:40" into seconds.
+local function clockSeconds(text: string?): number?
+    local h, m, sec = string.match(text or "", "^(%d+):(%d+):(%d+)$")
+    if h then
+        return (tonumber(h) or 0) * 3600 + (tonumber(m) or 0) * 60 + (tonumber(sec) or 0)
+    end
+    return nil
+end
+
+-- Reads the match end screen using the paths in Config.webhook.endScreen; nil while it is not on screen.
+-- Returns result ("Victory"/"Defeat"/nil), stage, act, difficulty, stats as text, play time in seconds and reward tiles.
 local function readEndScreen(gameObject: any): any
+    local layout: any = WEBHOOK.endScreen
     local ok, result = pcall(function(): any
         local players = gameObject:GetService("Players")
         local playerGui = players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
-        local screen = playerGui and playerGui:FindFirstChild("EndScreen")
+        local screen = playerGui and playerGui:FindFirstChild(layout.gui)
         if not screen then
             return nil
         end
         local data: any = { rewards = {} }
-        local keys: { [string]: string } = {
-            ["Units Placed:"] = "units",
-            ["Total Damage:"] = "damage",
-            ["Play Time:"] = "time",
-            ["Money Earned:"] = "money",
-            ["Takedowns:"] = "takedowns",
-            ["Waves Completed:"] = "waves",
-        }
-        for _, label in screen:GetDescendants() do
-            if label:IsA("TextLabel") then
-                local text = label.Text
-                local lower = string.lower(text)
-                if data.result == nil and (lower == "victory" or lower == "defeat") then
-                    data.result = if lower == "victory" then "Victory" else "Defeat"
+        local title = textAt(screen, layout.title)
+        if title then
+            local lower = string.lower(title)
+            if lower == "victory" then
+                data.result = "Victory"
+            elseif lower == "defeat" then
+                data.result = "Defeat"
+            end
+        end
+        data.stage = textAt(screen, layout.stage)
+        data.act = textAt(screen, layout.act)
+        data.difficulty = textAt(screen, layout.difficulty)
+        data.units = textAt(screen, layout.units)
+        data.damage = textAt(screen, layout.damage)
+        data.money = textAt(screen, layout.money)
+        data.takedowns = textAt(screen, layout.takedowns)
+        data.waves = tonumber(textAt(screen, layout.waves) or "")
+        data.seconds = clockSeconds(textAt(screen, layout.playTime))
+        local tiles = childAt(screen, layout.rewards)
+        if tiles then
+            for _, tile in tiles:GetChildren() do
+                if #data.rewards >= 12 then
+                    break
                 end
-                local key = keys[text]
-                if key and label.Parent then
-                    for _, sibling in label.Parent:GetChildren() do
-                        if sibling ~= label and sibling:IsA("TextLabel") and sibling.Text ~= text then
-                            data[key] = sibling.Text
-                        end
-                    end
-                end
-                if string.match(text, "^[xX]%d[%d,%.]*[KMB]?$") and label.Parent and #data.rewards < 12 then
-                    for _, sibling in label.Parent:GetChildren() do
-                        if
-                            sibling ~= label
-                            and sibling:IsA("TextLabel")
-                            and not string.match(sibling.Text, "^[xX]?%d")
-                        then
-                            table.insert(
-                                data.rewards,
-                                { name = sibling.Text, amount = string.gsub(text, "^[xX]", "") }
-                            )
-                            break
-                        end
-                    end
+                if tile:IsA("GuiObject") then
+                    local name = textAt(tile, layout.rewardName) or tile.Name
+                    local amount = textAt(tile, layout.rewardAmount)
+                    table.insert(
+                        data.rewards,
+                        { name = name, amount = if amount then string.gsub(amount, "^[xX]", "") else nil }
+                    )
                 end
             end
         end
@@ -213,6 +244,7 @@ function Runtime.new(injected: any?): any
             avatarUrl = self.settings.avatarUrl,
             showPlayer = self.settings.showPlayer,
             pingUserId = self.settings.pingUserId,
+            pingEveryone = self.settings.pingEveryone,
             minRarity = self.settings.minRarity,
             events = self.settings.events,
         })
@@ -268,7 +300,7 @@ function Runtime.new(injected: any?): any
         if not sender or not sender.isReady() then
             return false
         end
-        local spec, ping = Events.build(kind, data, context(), WEBHOOK)
+        local spec, ping, everyone = Events.build(kind, data, context(), WEBHOOK)
         if not spec then
             return false
         end
@@ -280,6 +312,7 @@ function Runtime.new(injected: any?): any
             avatarUrl = if self.settings.avatarUrl ~= "" then self.settings.avatarUrl else nil,
             pingUserId = self.settings.pingUserId,
             ping = ping,
+            everyone = everyone and self.settings.pingEveryone == true,
         })
         return sender.enqueue(payload)
     end
@@ -383,6 +416,16 @@ function Runtime.new(injected: any?): any
         return true
     end
 
+    --- Allows or blocks @everyone on rare drops (Secret and above by default).
+    function self.setPingEveryone(value: boolean): boolean
+        if type(value) ~= "boolean" then
+            return false
+        end
+        self.settings.pingEveryone = value
+        save()
+        return true
+    end
+
     --- Sets the lowest unit rarity that triggers a new-unit notification.
     function self.setMinRarity(value: any): boolean
         if type(value) ~= "string" or table.find(WEBHOOK.rarityOrder, value) == nil then
@@ -472,6 +515,9 @@ function Runtime.new(injected: any?): any
         local trait = nil
         if type(unit.Trait) == "table" and type(unit.Trait.Name) == "string" then
             trait = unit.Trait.Name
+        end
+        if self.session then
+            self.session.addDrop(string.format("%s %s", tostring(rarity), tostring(unit.UnitData.Name)))
         end
         self.notify("unit", {
             name = unit.UnitData.Name,
@@ -696,8 +742,7 @@ function Runtime.new(injected: any?): any
         local argumentResult = resultFromArguments({ ... })
         self.matchStartedAt = nil
         self.matchBalances = nil
-        local function send()
-            local screen: any = call("readEndScreen")
+        local function send(screen: any)
             local game: any = call("gameData")
             local info: any = { rewards = {}, currencies = WEBHOOK.currencies }
             if type(game) == "table" then
@@ -716,15 +761,26 @@ function Runtime.new(injected: any?): any
                 info.result = screen.result
                 info.damage = screen.damage
                 info.takedowns = screen.takedowns
+                info.units = screen.units
                 info.rewards = screen.rewards
-                info.durationText = screen.time
+                info.stage = screen.stage or info.stage
+                info.act = screen.act or info.act
+                info.difficulty = screen.difficulty or info.difficulty
+                if screen.waves then
+                    wave = screen.waves
+                end
+                if info.result == "Victory" and wave and not maxWave then
+                    maxWave = wave
+                end
             end
             info.result = argumentResult or info.result
             if wave then
                 info.wave = wave
                 info.maxWave = maxWave
             end
-            if startedAt then
+            if type(screen) == "table" and screen.seconds then
+                info.duration = screen.seconds
+            elseif startedAt then
                 info.duration = clock() - startedAt
             end
             local after = balances()
@@ -741,8 +797,13 @@ function Runtime.new(injected: any?): any
             if info.result == nil then
                 info.unknownResult = true
                 info.result = "Defeat"
-            elseif self.session then
-                self.session.record(info.result == "Victory", info.duration, gains)
+            end
+            if self.session then
+                self.session.record(
+                    if info.unknownResult then nil else info.result == "Victory",
+                    info.duration,
+                    gains
+                )
             end
             if self.session then
                 info.session = self.session.summary()
@@ -758,11 +819,19 @@ function Runtime.new(injected: any?): any
             local spawnTask: any = taskApi.spawn
             local waitTask: any = taskApi.wait
             spawnTask(function()
-                waitTask(END_SCREEN_DELAY_SECONDS)
-                send()
+                -- The result title appears shortly after MatchEnded; poll briefly, but stay below the joiner's
+                -- return-to-lobby delay so the teleport cannot cut the message off.
+                local waited = 0
+                local screen: any = nil
+                repeat
+                    waitTask(END_SCREEN_POLL_SECONDS)
+                    waited += END_SCREEN_POLL_SECONDS
+                    screen = call("readEndScreen")
+                until (type(screen) == "table" and screen.result ~= nil) or waited >= END_SCREEN_DELAY_SECONDS
+                send(screen)
             end)
         else
-            send()
+            send(call("readEndScreen"))
         end
     end
 
@@ -930,6 +999,9 @@ function Runtime.new(injected: any?): any
                         and (data.pingUserId == "" or string.match(data.pingUserId, "^%d+$"))
                     then
                         settings.pingUserId = Embed.clip(data.pingUserId, 25)
+                    end
+                    if type(data.pingEveryone) == "boolean" then
+                        settings.pingEveryone = data.pingEveryone
                     end
                     if
                         type(data.minRarity) == "string" and table.find(WEBHOOK.rarityOrder, data.minRarity)

@@ -5709,15 +5709,15 @@ test("Webhook match embed shows earnings, balances, streak and session overview"
     assert(string.find(first, "`1W` (Best: 1W)", 1, true) ~= nil)
     assert(string.find(first, "+2,000 Gold [3,000]", 1, true), "earnings measured from the match start")
     assert(string.find(first, "`3,000` Gold", 1, true) and string.find(first, "`100` Gems", 1, true))
-    assert(string.find(first, "100.0% (1 Wins / 0 Loss / 1 Total Runs)", 1, true) ~= nil)
+    assert(string.find(first, "`100.0%` — 1 Win • 0 Loss • 1 Runs", 1, true) ~= nil)
     assert(h.sent[#h.sent].embeds[1].author.name == "ToonDiWa (@Tester) • Lv. 295")
     finish(false, 100, 0)
     local second = textOf(h.sent[#h.sent].embeds[1])
     assert(string.find(second, "DEFEAT", 1, true) and string.find(second, "`1L`", 1, true))
-    assert(string.find(second, "50.0% (1 Wins / 1 Loss / 2 Total Runs)", 1, true) ~= nil)
+    assert(string.find(second, "`50.0%` — 1 Win • 1 Loss • 2 Runs", 1, true) ~= nil)
     assert(string.find(second, "No change detected", 1, true) ~= nil)
     assert(
-        string.find(second, "Gold +", 1, true),
+        string.find(second, "**Gold**", 1, true),
         "hourly farming rate shown once the session is long enough"
     )
 end)
@@ -5824,5 +5824,65 @@ test("Webhook page mounts controls, hides the URL and reports errors", function(
     assert(rt.getSettings().events.rift == false)
     ctl("Forget webhook URL").options.Callback()
     assert(not rt.getSettings().hasUrl)
+end)
+test("Webhook pings @everyone for rare drops only when allowed and counts unknown-result gains", function()
+    local units: any = {
+        s1 = { UnitData = { Name = "Ghost", Rarity = "Secret" }, Level = 1 },
+        s2 = { UnitData = { Name = "Ghost", Rarity = "Secret" }, Level = 1 },
+        e1 = { UnitData = { Name = "Epicus", Rarity = "Epic" }, Level = 1 },
+    }
+    local balances: any = { Gold = 100 }
+    local captured: { any } = {}
+    local ownedModule: any = {
+        GetOwnedUnits = function()
+            return {}
+        end,
+        GetUnitObject = function(guid: string)
+            return units[guid]
+        end,
+        UnitAdded = {
+            Connect = function(_self: any, handler: any)
+                captured[1] = handler
+                return { Disconnect = function() end }
+            end,
+        },
+    }
+    local h = newWebhook({
+        ownedUnitsModule = ownedModule,
+        unitObject = ownedModule.GetUnitObject,
+        readCurrencies = function()
+            return table.clone(balances)
+        end,
+    })
+    local rt = h.runtime
+    rt.start({ alive = false }, {})
+    rt.setUrl(HOOK_URL)
+    rt.setEnabled(true)
+    rt.setMinRarity("Epic")
+    h.clk.now += 100
+    local fire: any = captured[1]
+    fire("e1")
+    assert(h.sent[1].content == nil, "Epic does not ping")
+    fire("s1")
+    assert(string.find(h.sent[2].content, "@everyone", 1, true) ~= nil)
+    assert(h.sent[2].allowed_mentions.parse[1] == "everyone")
+    rt.setPingEveryone(false)
+    fire("s2")
+    assert(
+        h.sent[3].content == nil and #h.sent[3].allowed_mentions.parse == 0,
+        "switch off removes @everyone"
+    )
+    rt.onMatchStarted()
+    h.clk.now += 120
+    balances.Gold = 600
+    rt.onMatchEnded()
+    local text = ""
+    for _, field in h.sent[4].embeds[1].fields do
+        text ..= field.name .. field.value
+    end
+    assert(string.find(text, "+500 Gold", 1, true) ~= nil, "gains counted although the result is unknown")
+    assert(
+        string.find(text, "Secret Ghost", 1, true) ~= nil and string.find(text, "**Gold**", 1, true) ~= nil
+    )
 end)
 print(string.format("PASS: %d unit scenarios", passed))

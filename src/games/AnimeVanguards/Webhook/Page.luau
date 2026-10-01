@@ -127,6 +127,14 @@ function Page.mount(tab: any, runtime: any)
     })
 
     local drops = Style.section(tab, "Unit drops", "gem", false)
+    drops:Toggle({
+        Title = "Ping @everyone on rare drops",
+        Desc = "Adds @everyone to Secret and higher unit drops. The webhook must be allowed to mention everyone in that channel.",
+        Value = settings.pingEveryone,
+        Callback = function(value: boolean)
+            runtime.setPingEveryone(value)
+        end,
+    })
     drops:Dropdown({
         Title = "Minimum rarity to announce",
         Desc = "New units below this rarity are ignored. Secret and above can ping you.",

@@ -211,7 +211,13 @@ end
 --- Shapes the request body: embeds are capped, mentions are disabled except one optionally allowed user id.
 function Embed.payload(
     embeds: { any },
-    options: { username: string?, avatarUrl: string?, pingUserId: string?, ping: boolean? }
+    options: {
+        username: string?,
+        avatarUrl: string?,
+        pingUserId: string?,
+        ping: boolean?,
+        everyone: boolean?,
+    }
 ): { [string]: any }
     local capped: { any } = {}
     for index, embed in embeds do
@@ -228,6 +234,13 @@ function Embed.payload(
         payload.avatar_url = options.avatarUrl
     end
     local ping = options.pingUserId
+    local mentions: { string } = {}
+    local users: { string } = {}
+    local parse: { string } = {}
+    if options.everyone then
+        table.insert(mentions, "@everyone")
+        table.insert(parse, "everyone")
+    end
     if
         options.ping
         and type(ping) == "string"
@@ -235,8 +248,12 @@ function Embed.payload(
         and #ping >= 15
         and #ping <= 25
     then
-        payload.content = Embed.clip("<@" .. ping .. ">", MAX_CONTENT)
-        payload.allowed_mentions = { parse = {}, users = { ping } }
+        table.insert(mentions, "<@" .. ping .. ">")
+        table.insert(users, ping)
+    end
+    if #mentions > 0 then
+        payload.content = Embed.clip(table.concat(mentions, " "), MAX_CONTENT)
+        payload.allowed_mentions = if #users > 0 then { parse = parse, users = users } else { parse = parse }
     end
     return payload
 end

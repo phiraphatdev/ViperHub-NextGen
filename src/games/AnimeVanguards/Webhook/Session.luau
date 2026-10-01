@@ -17,6 +17,8 @@ function Session.new(clock: () -> number): any
         startedAt = clock(),
         wins = 0,
         losses = 0,
+        other = 0,
+        drops = {} :: { [string]: number },
         streakKind = "",
         streakCount = 0,
         bestWinStreak = 0,
@@ -25,21 +27,25 @@ function Session.new(clock: () -> number): any
     }
 
     --- Adds a finished match; gains maps currency key to the amount earned (negative values are ignored).
-    function self.record(won: boolean, duration: number?, gains: { [string]: number }?)
-        if won then
-            self.wins += 1
+    function self.record(won: boolean?, duration: number?, gains: { [string]: number }?)
+        if won == nil then
+            self.other += 1
         else
-            self.losses += 1
-        end
-        local kind = if won then "W" else "L"
-        if self.streakKind == kind then
-            self.streakCount += 1
-        else
-            self.streakKind = kind
-            self.streakCount = 1
-        end
-        if won and self.streakCount > self.bestWinStreak then
-            self.bestWinStreak = self.streakCount
+            if won then
+                self.wins += 1
+            else
+                self.losses += 1
+            end
+            local kind = if won then "W" else "L"
+            if self.streakKind == kind then
+                self.streakCount += 1
+            else
+                self.streakKind = kind
+                self.streakCount = 1
+            end
+            if won and self.streakCount > self.bestWinStreak then
+                self.bestWinStreak = self.streakCount
+            end
         end
         if type(duration) == "number" and duration > 0 then
             self.runSeconds += duration
@@ -51,16 +57,26 @@ function Session.new(clock: () -> number): any
         end
     end
 
+    --- Counts one obtained item or unit under a display label (for example "Secret Gojo").
+    function self.addDrop(label: string)
+        self.drops[label] = (self.drops[label] or 0) + 1
+    end
+
     --- Returns the current totals and derived figures.
     function self.summary(): any
-        local total = self.wins + self.losses
+        local known = self.wins + self.losses
+        local total = known + self.other
         local uptime = math.max(0, clock() - self.startedAt)
-        local winRate = if total > 0 then self.wins / total * 100 else 0
+        local winRate = if known > 0 then self.wins / known * 100 else 0
         local filled = math.floor(winRate / 100 * BAR_SEGMENTS + 0.5)
         local rates: { [string]: number } = {}
+        local dropRates: { [string]: number } = {}
         if uptime >= MIN_RATE_SECONDS then
             for key, amount in self.gains do
                 rates[key] = amount / uptime * 3600
+            end
+            for label, count in self.drops do
+                dropRates[label] = count / uptime * 3600
             end
         end
         return {
@@ -77,6 +93,8 @@ function Session.new(clock: () -> number): any
             runsPerHour = if total > 0 and uptime >= MIN_RATE_SECONDS then total / uptime * 3600 else 0,
             gains = table.clone(self.gains),
             rates = rates,
+            drops = table.clone(self.drops),
+            dropRates = dropRates,
         }
     end
 

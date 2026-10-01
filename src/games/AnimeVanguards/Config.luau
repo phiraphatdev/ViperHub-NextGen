@@ -110,6 +110,8 @@ return table.freeze({
         footer = "ViperHub NextGen • Anime Vanguards",
         defaultUsername = "ViperHub",
         pingMinRarity = "Secret",
+        -- Drops at or above this rarity can also @everyone (when the setting is on).
+        everyoneMinRarity = "Secret",
         -- Player attributes holding balances, shown in match embeds (key, label, emoji).
         currencies = table.freeze({
             table.freeze({ key = "Gems", label = "Gems", emoji = "💎" }),
@@ -118,6 +120,23 @@ return table.freeze({
             table.freeze({ key = "Trophies", label = "Trophies", emoji = "🏆" }),
         }),
         levelAttribute = "Level",
+        -- Match end screen layout (PlayerGui.EndScreen), read live: text labels by child path from the screen.
+        endScreen = table.freeze({
+            gui = "EndScreen",
+            title = "Holder.Title.Label",
+            stage = "Holder.Main.StageInfo.Main.StageName",
+            act = "Holder.Main.StageInfo.Main.ActName",
+            difficulty = "Holder.Main.StageInfo.Main.Difficulty",
+            units = "Holder.Main.StageStatistics.UnitsPlaced.Amount",
+            damage = "Holder.Main.StageStatistics.TotalDamage.Amount",
+            playTime = "Holder.Main.StageStatistics.PlayTime.Amount",
+            money = "Holder.Main.StageStatistics.MoneyEarned.Amount",
+            takedowns = "Holder.Main.StageStatistics.Takedowns.Amount",
+            waves = "Holder.Main.StageStatistics.WavesCompleted.Amount",
+            rewards = "Holder.Main.StageRewards.Main",
+            rewardName = "Holder.Main.ItemName",
+            rewardAmount = "Holder.Main.Amount",
+        }),
         -- Possible GameData fields for the stage's wave count, tried in order.
         waveMaxKeys = table.freeze({ "MaxWave", "WaveCount", "TotalWaves", "Waves" }),
         -- Possible fields in a MatchEnded argument table that say whether the match was won.
