@@ -15,6 +15,9 @@ local TeamAdapter = require("./TeamAdapter")
 local metadata = require("../Metadata")
 local config = require("../Config")
 local Runtime = {}
+
+local TRACE_FILE = "ViperHubNextGen/AnimeVanguardsJoinerTrace.txt"
+local TRACE_LINES = 60
 local LOBBY_PLACE_ID = metadata.placeIds[1]
 local RETRY_SECONDS = 30
 local POLL_SECONDS = 1
@@ -174,7 +177,40 @@ function Runtime.new(dependencies: any?): any
             { text = text, at = if type(clockFn) == "function" then (clockFn :: any)() else os.time() }
     end
 
+    -- Bounded action trace kept in an executor file so a disconnect can be analysed afterwards.
+    local traceLines: { string } = {}
+    local lastTraced = ""
+    local function trace(value: string)
+        if value == lastTraced then
+            return
+        end
+        lastTraced = value
+        local env: any = getfenv()
+        local place = if self.dependencies and self.dependencies.game
+            then self.dependencies.game.PlaceId
+            else 0
+        table.insert(
+            traceLines,
+            string.format("%s place=%s %s", os.date("!%H:%M:%S"), tostring(place), value)
+        )
+        if #traceLines > TRACE_LINES then
+            table.remove(traceLines, 1)
+        end
+        local writeFile: any = env.writefile
+        local isFolder: any = env.isfolder
+        local makeFolder: any = env.makefolder
+        if type(writeFile) == "function" and type(isFolder) == "function" then
+            pcall(function()
+                if not (isFolder :: any)("ViperHubNextGen") then
+                    (makeFolder :: any)("ViperHubNextGen")
+                end
+                (writeFile :: any)(TRACE_FILE, table.concat(traceLines, "\n"))
+            end)
+        end
+    end
+
     local function setStatus(value: string)
+        trace(value)
         local prefix = string.match(value, "^([%w ]+): ")
         if prefix and table.find(Settings.get().priority, prefix) then
             note(prefix, string.sub(value, #prefix + 3))

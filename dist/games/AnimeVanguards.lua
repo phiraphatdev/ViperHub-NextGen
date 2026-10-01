@@ -3595,6 +3595,8 @@ do
             local metadata = __DARKLUA_BUNDLE_MODULES.b()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Runtime = {}
+            local TRACE_FILE = 'ViperHubNextGen/AnimeVanguardsJoinerTrace.txt'
+            local TRACE_LINES = 60
             local LOBBY_PLACE_ID = metadata.placeIds[1]
             local RETRY_SECONDS = 30
             local POLL_SECONDS = 1
@@ -3746,7 +3748,43 @@ do
                         at = if type(clockFn) == 'function'then(clockFn)()else os.time(),
                     }
                 end
+
+                local traceLines = {}
+                local lastTraced = ''
+
+                local function trace(value)
+                    if value == lastTraced then
+                        return
+                    end
+
+                    lastTraced = value
+
+                    local env = getfenv()
+                    local place = if self.dependencies and self.dependencies.game then self.dependencies.game.PlaceId else 0
+
+                    table.insert(traceLines, string.format('%s place=%s %s', os.date('!%H:%M:%S'), tostring(place), value))
+
+                    if #traceLines > TRACE_LINES then
+                        table.remove(traceLines, 1)
+                    end
+
+                    local writeFile = env.writefile
+                    local isFolder = env.isfolder
+                    local makeFolder = env.makefolder
+
+                    if type(writeFile) == 'function' and type(isFolder) == 'function' then
+                        pcall(function()
+                            if not (isFolder)('ViperHubNextGen') then
+                                (makeFolder)('ViperHubNextGen')
+                            end
+
+                            (writeFile)(TRACE_FILE, table.concat(traceLines, '\n'))
+                        end)
+                    end
+                end
                 local function setStatus(value)
+                    trace(value)
+
                     local prefix = string.match(value, '^([%w ]+): ')
 
                     if prefix and table.find(Settings.get().priority, prefix) then
