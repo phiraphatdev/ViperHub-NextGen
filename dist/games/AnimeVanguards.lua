@@ -4227,19 +4227,13 @@ do
                     local snapshot = deps.activityState and deps.activityState.load(now, deps.challengeData)
                     local states = if snapshot and type(snapshot.states) == 'table'then snapshot.states else{}
                     local ws = deps.game and deps.game:GetService('Workspace')
-                    local isRiftOpenAttr = nil
 
                     if ws and ws.GetAttribute then
                         local okAttr, attrVal = pcall(ws.GetAttribute, ws, config.attributes.riftOpen)
 
-                        if okAttr and type(attrVal) == 'boolean' then
-                            isRiftOpenAttr = attrVal
+                        if okAttr and attrVal ~= true then
+                            states.Rift = nil
                         end
-                    end
-                    if isRiftOpenAttr == true then
-                        states.Rift = {
-                            status = 'available',
-                        }
                     end
 
                     for _, name in settings.priority do

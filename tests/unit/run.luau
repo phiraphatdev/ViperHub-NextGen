@@ -3189,6 +3189,7 @@ test("Joiner runtime in match triggers immediate return and suspends macro", fun
     local teleportFired = 0
     local macroSuspended = false
     local isRiftOpen = false
+    local riftRecorded = false
     local runtime = JoinerRuntime.new({
         game = {
             PlaceId = 16277809958, -- Match place!
@@ -3215,6 +3216,11 @@ test("Joiner runtime in match triggers immediate return and suspends macro", fun
             return 100
         end,
         userId = 42,
+        activityState = {
+            load = function(): any
+                return { states = if riftRecorded then { Rift = { status = "available" } } else {} }
+            end,
+        },
         lobbyReturn = {
             RequestTeleportToLobby = {
                 Fire = function()
@@ -3239,6 +3245,15 @@ test("Joiner runtime in match triggers immediate return and suspends macro", fun
     isRiftOpen = false
     runtime.step(100)
     assert(teleportFired == 0 and not macroSuspended)
+
+    -- Open room but no recorded attempts (used up) -> must not leave the match
+    isRiftOpen = true
+    runtime.step(100.5)
+    assert(
+        teleportFired == 0 and not macroSuspended,
+        "an open Rift without recorded attempts does not interrupt"
+    )
+    riftRecorded = true
 
     -- When rift opens -> immediate return triggered + macro suspended!
     isRiftOpen = true
