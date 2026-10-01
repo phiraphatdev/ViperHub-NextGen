@@ -10,8 +10,8 @@
   "artifacts": {
     "loader": {
       "path": "dist/loader.lua",
-      "sha256": "dba3f4b5d1cbccd4929948e71b94edcdcd86d8e491c19467bfe04e38a33ec052",
-      "bytes": 59280
+      "sha256": "7c4d381d96972b1c8166a1467b3b06bdec1dbe3fd6f56d8e489228a38e9aabfa",
+      "bytes": 59511
     },
     "ui": {
       "path": "dist/ui.lua",
@@ -25,8 +25,8 @@
     },
     "AnimeVanguards": {
       "path": "dist/games/AnimeVanguards.lua",
-      "sha256": "66254971c9f8ab243a461fcc64592aa23f241ccf5ecb2c025bf2bb93991fdd6c",
-      "bytes": 396959
+      "sha256": "742c34d4a2973acf0af48cc53c38833a43cf9f4eff23cfffb50ba6c571cdef0d",
+      "bytes": 402336
     }
   },
   "games": {

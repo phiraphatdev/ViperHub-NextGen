@@ -22,12 +22,12 @@ local RIFT_POLL_SECONDS = 2
 local ACK_TIMEOUT_SECONDS = 10
 local TEAM_LOAD_TIMEOUT_SECONDS: number = (config :: any).thresholds.teamLoadTimeoutSeconds
 local TEAM_LOAD_ATTEMPTS: number = (config :: any).thresholds.teamLoadAttempts
-local BOUNTY_RUN_MAX_AGE_SECONDS = 10800
-local MACRO_LIST_CACHE_SECONDS = 5
-local CHANGE_STAGE_RETRY_SECONDS = 6
-local CHANGE_STAGE_ATTEMPTS = 2
+local JOINER_RUN_MAX_AGE_SECONDS: number = (config :: any).thresholds.joinerRunMaxAgeSeconds
+local MACRO_LIST_CACHE_SECONDS: number = (config :: any).thresholds.macroListCacheSeconds
+local CHANGE_STAGE_RETRY_SECONDS: number = (config :: any).thresholds.changeStageRetrySeconds
+local CHANGE_STAGE_ATTEMPTS: number = (config :: any).thresholds.changeStageAttempts
 -- Only these match types may be switched to another joiner target before Vote Start.
-local SWITCHABLE_STAGE_TYPES = { Story = true, LegendStage = true, Raid = true, Dungeon = true }
+local SWITCHABLE_STAGE_TYPES: any = (config :: any).switchableStageTypes
 local START_TIMEOUT_SECONDS = 15
 local MODES = { Stage = "Story", ["Legend Stage"] = "LegendStage", Raid = "Raid", Dungeon = "Dungeon" }
 local CHALLENGES = {
@@ -157,6 +157,7 @@ function Runtime.new(dependencies: any?): any
         macro = nil,
         gameSettings = nil,
         changeAttempt = nil,
+        lastSwitch = nil,
         teamAttempt = nil,
         macroAttempt = nil,
         macroStore = nil,
@@ -392,7 +393,8 @@ function Runtime.new(dependencies: any?): any
         if not deps or not deps.gameHandler or deps.gameHandler.IsMatchStarted ~= false then
             return false
         end
-        local row = TeamEquip.rowFor(matchData, bounty)
+        local row =
+            TeamEquip.rowFor(matchData, bounty, (config :: any).stageTypeRows, (config :: any).challengeRows)
         if not row then
             return false
         end
@@ -408,7 +410,34 @@ function Runtime.new(dependencies: any?): any
             and matchData.Stage == run.stage
             and matchData.Act == run.act
             and os.time() - run.at >= 0
-            and os.time() - run.at < BOUNTY_RUN_MAX_AGE_SECONDS
+            and os.time() - run.at < JOINER_RUN_MAX_AGE_SECONDS
+    end
+
+    -- True when the current match is one this joiner created (or switched) recently.
+    local function createdByJoiner(settings: any, matchData: any): boolean
+        local switched: any = self.lastSwitch
+        local deps = self.dependencies
+        -- A switch this script just requested in this very match counts as joiner-owned once it has applied.
+        if
+            switched
+            and type(matchData) == "table"
+            and deps
+            and deps.gameHandler
+            and switched.matchId == deps.gameHandler.MatchId
+            and matchData.StageType == switched.mode
+            and matchData.Stage == switched.stage
+            and matchData.Act == switched.act
+        then
+            return true
+        end
+        local run = settings.joinerRun
+        return type(run) == "table"
+            and type(matchData) == "table"
+            and matchData.StageType == run.mode
+            and matchData.Stage == run.stage
+            and matchData.Act == run.act
+            and os.time() - run.at >= 0
+            and os.time() - run.at < JOINER_RUN_MAX_AGE_SECONDS
     end
 
     -- Before Vote Start the host may switch this match to the highest-priority stage joiner's target.
@@ -424,6 +453,8 @@ function Runtime.new(dependencies: any?): any
             or not deps.lobbyReturn
             or type(deps.lobbyReturn.RequestStartMatch) ~= "table"
             or type(deps.lobbyReturn.RequestStartMatch.Fire) ~= "function"
+            -- Never rewrite a match the player created by hand.
+            or not (createdByJoiner(settings, matchData) or isBountyMatch(settings, matchData))
         then
             return false
         end
@@ -468,6 +499,13 @@ function Runtime.new(dependencies: any?): any
             and (matchData.Difficulty == nil or matchData.Difficulty == target.Difficulty)
         then
             self.changeAttempt = nil
+            -- The switched match stays joiner-owned so later restarts can still be switched.
+            Settings.setJoinerRun({
+                mode = target.StageType,
+                stage = target.Stage,
+                act = target.Act,
+                at = os.time(),
+            })
             if targetName == "Boss Bounties" then
                 Settings.setBountyRun({
                     mode = target.StageType,
@@ -494,6 +532,12 @@ function Runtime.new(dependencies: any?): any
         end
         attempt.sent += 1
         attempt.last = now
+        self.lastSwitch = {
+            mode = target.StageType,
+            stage = target.Stage,
+            act = target.Act,
+            matchId = deps.gameHandler.MatchId,
+        }
         local ok = pcall(deps.lobbyReturn.RequestStartMatch.Fire, target)
         setStatus(
             if ok
@@ -758,8 +802,14 @@ function Runtime.new(dependencies: any?): any
             return
         end
         -- Back in the lobby with nothing in flight: the previous bounty match marker is no longer valid.
-        if not self.confirmed and not self.pending and Settings.get().bountyRun ~= nil then
-            Settings.setBountyRun(nil)
+        if not self.confirmed and not self.pending then
+            local current = Settings.get()
+            if current.bountyRun ~= nil then
+                Settings.setBountyRun(nil)
+            end
+            if current.joinerRun ~= nil then
+                Settings.setJoinerRun(nil)
+            end
         end
         if deps.activityState and now - self.lastActivityRead >= RIFT_POLL_SECONDS then
             local states: { [string]: any } = {}
@@ -1291,6 +1341,12 @@ function Runtime.new(dependencies: any?): any
                         self.pending = nil
                         pending.confirmedAt = deps.clock()
                         self.confirmed = pending
+                        Settings.setJoinerRun({
+                            mode = pending.mode,
+                            stage = pending.stage,
+                            act = pending.act,
+                            at = os.time(),
+                        })
                         if pending.name == "Boss Bounties" then
                             Settings.setBountyRun({
                                 mode = pending.mode,

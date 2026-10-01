@@ -68,7 +68,7 @@ local pages: { Types.PageDefinition } = {
     { title = "Webhook", icon = "bell", description = "Navigation only; no webhook actions yet." },
     { title = "Misc", icon = "ellipsis", description = "Navigation only; no miscellaneous actions yet." },
 }
-local GameModule = { metadata = metadata, config = config, pages = pages }
+local GameModule = { metadata = metadata, config = config, pages = pages, windowTags = config.windowTags }
 --- Starts the Joiner runtime with context; returns nothing until a joiner is enabled.
 function GameModule.start(context: Types.Context)
     if active or not context.alive then

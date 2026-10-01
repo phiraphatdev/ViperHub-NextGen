@@ -20,6 +20,7 @@ local VanguardsEntry = require("../../src/games/AnimeVanguards/Entry")
 local JoinerSettings = require("../../src/games/AnimeVanguards/Joiner/Settings")
 local JoinerPage = require("../../src/games/AnimeVanguards/Joiner/Page")
 local JoinerCatalog = require("../../src/games/AnimeVanguards/Joiner/Catalog")
+local VanguardsConfig = require("../../src/games/AnimeVanguards/Config")
 local TeamEquip = require("../../src/games/AnimeVanguards/Joiner/TeamEquip")
 local MacroEquip = require("../../src/games/AnimeVanguards/Joiner/MacroEquip")
 local TeamAdapter = require("../../src/games/AnimeVanguards/Joiner/TeamAdapter")
@@ -3306,7 +3307,12 @@ test("Joiner in match switches to the current bounty or stage target before Vote
     JoinerSettings.setPaused(false)
     JoinerSettings.setBountyRun(nil)
     runtime.setEnabled("Boss Bounties", true)
+    -- A match the player created by hand is never rewritten.
+    JoinerSettings.setJoinerRun(nil)
     runtime.start({ alive = true })
+    runtime.step(99)
+    assert(#fired == 0, "manual matches are left alone")
+    JoinerSettings.setJoinerRun({ mode = "Story", stage = "Stage1", act = "Act1", at = os.time() })
 
     -- Pre-start in another stage: the host switches to today's bounty (Legend Stage is always Nightmare).
     runtime.step(100)
@@ -3396,14 +3402,73 @@ test("Team Equipper rules validate keys, list owned teams and compare equipped u
     assert(TeamEquip.evaluate(team, ownsUnit, {}) == "unusable")
     assert(TeamEquip.evaluate({ Units = {} }, ownsUnit, {}) == "unusable")
     assert(TeamEquip.evaluate(nil, ownsUnit, {}) == "unusable")
-    assert(TeamEquip.rowFor({ StageType = "Story" }, false) == "Stage")
-    assert(TeamEquip.rowFor({ StageType = "LegendStage" }, false) == "Legend Stage")
-    assert(TeamEquip.rowFor({ StageType = "Story" }, true) == "Boss Bounties")
-    assert(TeamEquip.rowFor({ StageType = "Challenge", ChallengeType = "Daily" }, false) == "Daily Challenge")
-    assert(TeamEquip.rowFor({ StageType = "Rift" }, false) == "Rift")
-    assert(TeamEquip.rowFor({ StageType = "ElementalTowers" }, false) == "Elemental Towers")
-    assert(TeamEquip.rowFor({ StageType = "Portals" }, false) == "Portal")
-    assert(TeamEquip.rowFor({ StageType = "PVP" }, false) == nil and TeamEquip.rowFor(nil, false) == nil)
+    assert(
+        TeamEquip.rowFor(
+            { StageType = "Story" },
+            false,
+            VanguardsConfig.stageTypeRows,
+            VanguardsConfig.challengeRows
+        ) == "Stage"
+    )
+    assert(
+        TeamEquip.rowFor(
+            { StageType = "LegendStage" },
+            false,
+            VanguardsConfig.stageTypeRows,
+            VanguardsConfig.challengeRows
+        ) == "Legend Stage"
+    )
+    assert(
+        TeamEquip.rowFor(
+            { StageType = "Story" },
+            true,
+            VanguardsConfig.stageTypeRows,
+            VanguardsConfig.challengeRows
+        ) == "Boss Bounties"
+    )
+    assert(
+        TeamEquip.rowFor(
+            { StageType = "Challenge", ChallengeType = "Daily" },
+            false,
+            VanguardsConfig.stageTypeRows,
+            VanguardsConfig.challengeRows
+        ) == "Daily Challenge"
+    )
+    assert(
+        TeamEquip.rowFor(
+            { StageType = "Rift" },
+            false,
+            VanguardsConfig.stageTypeRows,
+            VanguardsConfig.challengeRows
+        ) == "Rift"
+    )
+    assert(
+        TeamEquip.rowFor(
+            { StageType = "ElementalTowers" },
+            false,
+            VanguardsConfig.stageTypeRows,
+            VanguardsConfig.challengeRows
+        ) == "Elemental Towers"
+    )
+    assert(
+        TeamEquip.rowFor(
+            { StageType = "Portals" },
+            false,
+            VanguardsConfig.stageTypeRows,
+            VanguardsConfig.challengeRows
+        ) == "Portal"
+    )
+    assert(
+        TeamEquip.rowFor(
+            { StageType = "PVP" },
+            false,
+            VanguardsConfig.stageTypeRows,
+            VanguardsConfig.challengeRows
+        )
+                == nil
+            and TeamEquip.rowFor(nil, false, VanguardsConfig.stageTypeRows, VanguardsConfig.challengeRows)
+                == nil
+    )
 end)
 test(
     "Team Equipper adapter reads teams, ownership and equipped units and sends the observed payload",
@@ -5085,6 +5150,7 @@ test(
         JoinerSettings.setBountyRun(nil)
         runtime.setSelection("Stage", "Stage1", "Act1", "Normal")
         runtime.setEnabled("Stage", true)
+        JoinerSettings.setJoinerRun({ mode = "Raid", stage = "Stage1", act = "Act1", at = os.time() })
         runtime.start({ alive = true })
         runtime.step(100)
         runtime.step(107)
@@ -5121,4 +5187,28 @@ test(
         JoinerSettings.setPaused(true)
     end
 )
+test("Team popup guard replaces a stale wrapper instead of stacking", function()
+    local calls = 0
+    local popupHandler: any = {}
+    function popupHandler.ShowPopup(_self: any, _kind: string, _text: string)
+        calls += 1
+    end
+    local original = popupHandler.ShowPopup
+    local function newAdapter(): any
+        return TeamAdapter.new({
+            popupHandler = popupHandler,
+            lobbyTeams = { LoadTeam = { Fire = function() end } },
+        }, false)
+    end
+    local first = newAdapter()
+    assert(first.loadTeam("Team1"))
+    local firstWrapper = popupHandler.ShowPopup
+    assert(firstWrapper ~= original)
+    local second = newAdapter() -- the first one was never stopped (script reloaded)
+    assert(second.loadTeam("Team2"))
+    popupHandler:ShowPopup("BaseCancelFrame", "Other popup")
+    assert(calls == 1, "one wrapper layer: the original runs once")
+    second.stop()
+    assert(popupHandler.ShowPopup == original, "the original is back after stopping the current adapter")
+end)
 print(string.format("PASS: %d unit scenarios", passed))

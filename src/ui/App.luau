@@ -19,9 +19,10 @@ function App.mount(
     store: any,
     buffer: any,
     keyCodes: any,
-    pages: { any }?
+    pages: { any }?,
+    windowTags: { string }?
 ): (any, () -> ())
-    local window = Adapter.create(library, context, store.get())
+    local window = Adapter.create(library, context, store.get(), windowTags)
     Overview.mount(window, metadata)
     if pages then
         for _, page in pages do

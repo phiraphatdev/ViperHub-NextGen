@@ -21,6 +21,8 @@ export type PageDefinition =
 export type GameModule = {
     metadata: Metadata,
     pages: { PageDefinition }?,
+    -- Optional: CollectionService tags applied to every UI layer (for example to opt out of a game's own button effects).
+    windowTags: { string }?,
     start: (Context) -> (),
     stop: () -> (),
 }

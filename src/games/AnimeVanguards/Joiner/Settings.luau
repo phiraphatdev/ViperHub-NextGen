@@ -45,6 +45,7 @@ local teamEquipTeams: { [string]: string } = {}
 local macroEquipEnabled = false
 local macroEquipMacros: { [string]: string } = {}
 local bountyRun: any = nil
+local joinerRun: any = nil
 local storage: FileStorage.Storage? = nil
 local encode: ((any) -> string)? = nil
 
@@ -67,6 +68,7 @@ local function save()
         selection = selection,
         changeStageInMatch = changeStageInMatch,
         bountyRun = bountyRun,
+        joinerRun = joinerRun,
         teamEquip = { enabled = teamEquipEnabled, teams = teamEquipTeams },
         macroEquip = { enabled = macroEquipEnabled, macros = macroEquipMacros },
     })
@@ -129,6 +131,20 @@ function Settings.init(env: any)
             end
             priority = retained
         end
+    end
+    if
+        type(data.joinerRun) == "table"
+        and type(data.joinerRun.mode) == "string"
+        and type(data.joinerRun.stage) == "string"
+        and type(data.joinerRun.act) == "string"
+        and type(data.joinerRun.at) == "number"
+    then
+        joinerRun = {
+            mode = data.joinerRun.mode,
+            stage = data.joinerRun.stage,
+            act = data.joinerRun.act,
+            at = data.joinerRun.at,
+        }
     end
     if type(data.teamEquip) == "table" then
         if type(data.teamEquip.enabled) == "boolean" then
@@ -272,6 +288,7 @@ function Settings.get()
         selection = table.clone(selection),
         changeStageInMatch = changeStageInMatch,
         bountyRun = bountyRun,
+        joinerRun = joinerRun,
         teamEquip = { enabled = teamEquipEnabled, teams = table.clone(teamEquipTeams) },
         macroEquip = { enabled = macroEquipEnabled, macros = table.clone(macroEquipMacros) },
         persistent = storage ~= nil,
@@ -336,6 +353,25 @@ function Settings.setChangeStageInMatch(value: boolean): boolean
         return false
     end
     changeStageInMatch = value
+    save()
+    return true
+end
+
+--- Records (or clears with nil) the match this joiner created, so only joiner-created matches are switched in the match.
+function Settings.setJoinerRun(run: any): boolean
+    if run == nil then
+        joinerRun = nil
+    elseif
+        type(run) == "table"
+        and type(run.mode) == "string"
+        and type(run.stage) == "string"
+        and type(run.act) == "string"
+        and type(run.at) == "number"
+    then
+        joinerRun = { mode = run.mode, stage = run.stage, act = run.act, at = run.at }
+    else
+        return false
+    end
     save()
     return true
 end

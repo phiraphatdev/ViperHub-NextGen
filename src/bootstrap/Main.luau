@@ -275,8 +275,16 @@ local function run()
         fail("GAME_CONTRACT", "Game module version or interface mismatch.")
         return
     end
-    local window, refreshDiagnostics =
-        App.mount(exports.ui, context, gameModule.metadata, store, buffer, ENV.Enum.KeyCode, gameModule.pages)
+    local window, refreshDiagnostics = App.mount(
+        exports.ui,
+        context,
+        gameModule.metadata,
+        store,
+        buffer,
+        ENV.Enum.KeyCode,
+        gameModule.pages,
+        gameModule.windowTags
+    )
     session.window = window
     context.cleanup.add(gameModule.stop)
     gameModule.start(context)

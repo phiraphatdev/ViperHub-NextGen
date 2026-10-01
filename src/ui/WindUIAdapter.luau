@@ -39,11 +39,10 @@ function WindUIAdapter.own(library: any, context: Types.Context)
         end
     end)
 end
---- Opts every WindUI layer out of the game's own button hover/press effects (it tags PlayerGui buttons
---- unless their ScreenGui carries ButtonEffects_Ignore); returns nothing and ignores missing services.
-local function ignoreGameButtonEffects(library: any)
+--- Applies game-supplied CollectionService tags to every WindUI layer; ignores missing services and bad tags.
+local function tagLayers(library: any, tags: { string }?)
     local gameObject = ENV.game
-    if not gameObject then
+    if not gameObject or type(tags) ~= "table" or #tags == 0 then
         return
     end
     local ok, tagService = pcall(function()
@@ -55,17 +54,20 @@ local function ignoreGameButtonEffects(library: any)
     for _, key in { "ScreenGui", "NotificationGui", "DropdownGui", "TooltipGui" } do
         local gui = library[key]
         if gui then
-            pcall(function()
-                tagService:AddTag(gui, "ButtonEffects_Ignore")
-                tagService:AddTag(gui, "NoButtonEffects")
-            end)
+            for _, tag in tags do
+                if type(tag) == "string" and #tag > 0 and #tag <= 64 then
+                    pcall(function()
+                        tagService:AddTag(gui, tag)
+                    end)
+                end
+            end
         end
     end
 end
 
 --- Creates a window for an already-owned library; returns its UI handle.
-function WindUIAdapter.create(library: any, context: Types.Context, config: any): any
-    ignoreGameButtonEffects(library)
+function WindUIAdapter.create(library: any, context: Types.Context, config: any, windowTags: { string }?): any
+    tagLayers(library, windowTags)
     local window = (library.CreateWindow :: any)(library, {
         Title = "ViperHub NextGen",
         Author = "Foundation 0.2.2",

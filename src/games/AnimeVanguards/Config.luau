@@ -60,6 +60,30 @@ return table.freeze({
         Rememberance = true,
         Scenarios = true,
     }),
+    -- The game tags every PlayerGui button for hover/press effects unless the UI layer carries these opt-out tags.
+    windowTags = table.freeze({ "ButtonEffects_Ignore", "NoButtonEffects" }),
+    -- Match types (GameData.StageType) a host may switch before Vote Start.
+    switchableStageTypes = table.freeze({ Story = true, LegendStage = true, Raid = true, Dungeon = true }),
+    -- GameData.StageType to Joiner row name, used to pick the Team Equipper row for the current match.
+    stageTypeRows = table.freeze({
+        Story = "Stage",
+        LegendStage = "Legend Stage",
+        Raid = "Raid",
+        Dungeon = "Dungeon",
+        ElementalTowers = "Elemental Towers",
+        BossEvent = "Boss Event",
+        Worldline = "Worldline",
+        Portals = "Portal",
+        Rift = "Rift",
+    }),
+    -- GameData.ChallengeType to Joiner row name.
+    challengeRows = table.freeze({
+        Regular = "Regular Challenge",
+        Daily = "Daily Challenge",
+        Weekly = "Weekly Challenge",
+    }),
+    -- Game UI messages starting with this text are dropped right after this script loads a team.
+    teamLoadMessagePrefix = "^Successfully ",
     attributes = table.freeze({ riftOpen = "IsRiftOpen" }),
     thresholds = table.freeze({
         activitySnapshotSeconds = 7200,
@@ -69,6 +93,11 @@ return table.freeze({
         presetSwitchAttempts = 3,
         teamLoadAttempts = 3,
         teamLoadTimeoutSeconds = 8,
+        teamMessageSuppressSeconds = 15,
+        changeStageRetrySeconds = 6,
+        changeStageAttempts = 2,
+        joinerRunMaxAgeSeconds = 10800,
+        macroListCacheSeconds = 5,
         presetSwitchTimeoutSeconds = 8,
         presetRequestSeconds = 8,
     }),

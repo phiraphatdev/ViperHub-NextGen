@@ -110,6 +110,33 @@ do
                     Rememberance = true,
                     Scenarios = true,
                 }),
+                windowTags = table.freeze({
+                    'ButtonEffects_Ignore',
+                    'NoButtonEffects',
+                }),
+                switchableStageTypes = table.freeze({
+                    Story = true,
+                    LegendStage = true,
+                    Raid = true,
+                    Dungeon = true,
+                }),
+                stageTypeRows = table.freeze({
+                    Story = 'Stage',
+                    LegendStage = 'Legend Stage',
+                    Raid = 'Raid',
+                    Dungeon = 'Dungeon',
+                    ElementalTowers = 'Elemental Towers',
+                    BossEvent = 'Boss Event',
+                    Worldline = 'Worldline',
+                    Portals = 'Portal',
+                    Rift = 'Rift',
+                }),
+                challengeRows = table.freeze({
+                    Regular = 'Regular Challenge',
+                    Daily = 'Daily Challenge',
+                    Weekly = 'Weekly Challenge',
+                }),
+                teamLoadMessagePrefix = '^Successfully ',
                 attributes = table.freeze({
                     riftOpen = 'IsRiftOpen',
                 }),
@@ -121,6 +148,11 @@ do
                     presetSwitchAttempts = 3,
                     teamLoadAttempts = 3,
                     teamLoadTimeoutSeconds = 8,
+                    teamMessageSuppressSeconds = 15,
+                    changeStageRetrySeconds = 6,
+                    changeStageAttempts = 2,
+                    joinerRunMaxAgeSeconds = 10800,
+                    macroListCacheSeconds = 5,
                     presetSwitchTimeoutSeconds = 8,
                     presetRequestSeconds = 8,
                 }),
@@ -365,36 +397,23 @@ do
 
                 return if mismatch then'mismatch'else'match'
             end
-
-            local STAGE_TYPE_ROWS = {
-                Story = 'Stage',
-                LegendStage = 'Legend Stage',
-                Raid = 'Raid',
-                Dungeon = 'Dungeon',
-                ElementalTowers = 'Elemental Towers',
-                BossEvent = 'Boss Event',
-                Worldline = 'Worldline',
-                Portals = 'Portal',
-                Rift = 'Rift',
-            }
-            local CHALLENGE_ROWS = {
-                Regular = 'Regular Challenge',
-                Daily = 'Daily Challenge',
-                Weekly = 'Weekly Challenge',
-            }
-
-            function TeamEquip.rowFor(matchData, isBountyMatch)
-                if type(matchData) ~= 'table' then
+            function TeamEquip.rowFor(
+                matchData,
+                isBountyMatch,
+                stageTypeRows,
+                challengeRows
+            )
+                if type(matchData) ~= 'table' or type(stageTypeRows) ~= 'table' or type(challengeRows) ~= 'table' then
                     return nil
                 end
 
                 local challenge = matchData.ChallengeType or matchData.Challenge
 
-                if type(challenge) == 'string' and CHALLENGE_ROWS[challenge] then
-                    return CHALLENGE_ROWS[challenge]
+                if type(challenge) == 'string' and challengeRows[challenge] then
+                    return challengeRows[challenge]
                 end
                 if matchData.Rift ~= nil or matchData.StageType == 'Rift' then
-                    return 'Rift'
+                    return stageTypeRows.Rift
                 end
                 if isBountyMatch then
                     return 'Boss Bounties'
@@ -402,7 +421,7 @@ do
 
                 local stageType = matchData.StageType
 
-                return if type(stageType) == 'string'then STAGE_TYPE_ROWS[stageType]else nil
+                return if type(stageType) == 'string'then stageTypeRows[stageType]else nil
             end
 
             return TeamEquip
@@ -724,6 +743,7 @@ do
             local macroEquipEnabled = false
             local macroEquipMacros = {}
             local bountyRun = nil
+            local joinerRun = nil
             local storage = nil
             local encode = nil
 
@@ -747,6 +767,7 @@ do
                     selection = selection,
                     changeStageInMatch = changeStageInMatch,
                     bountyRun = bountyRun,
+                    joinerRun = joinerRun,
                     teamEquip = {
                         enabled = teamEquipEnabled,
                         teams = teamEquipTeams,
@@ -825,6 +846,14 @@ do
 
                         priority = retained
                     end
+                end
+                if type(data.joinerRun) == 'table' and type(data.joinerRun.mode) == 'string' and type(data.joinerRun.stage) == 'string' and type(data.joinerRun.act) == 'string' and type(data.joinerRun.at) == 'number' then
+                    joinerRun = {
+                        mode = data.joinerRun.mode,
+                        stage = data.joinerRun.stage,
+                        act = data.joinerRun.act,
+                        at = data.joinerRun.at,
+                    }
                 end
                 if type(data.teamEquip) == 'table' then
                     if type(data.teamEquip.enabled) == 'boolean' then
@@ -933,6 +962,7 @@ do
                     selection = table.clone(selection),
                     changeStageInMatch = changeStageInMatch,
                     bountyRun = bountyRun,
+                    joinerRun = joinerRun,
                     teamEquip = {
                         enabled = teamEquipEnabled,
                         teams = table.clone(teamEquipTeams),
@@ -1004,6 +1034,24 @@ do
                 end
 
                 changeStageInMatch = value
+
+                save()
+
+                return true
+            end
+            function Settings.setJoinerRun(run)
+                if run == nil then
+                    joinerRun = nil
+                elseif type(run) == 'table' and type(run.mode) == 'string' and type(run.stage) == 'string' and type(run.act) == 'string' and type(run.at) == 'number' then
+                    joinerRun = {
+                        mode = run.mode,
+                        stage = run.stage,
+                        act = run.act,
+                        at = run.at,
+                    }
+                else
+                    return false
+                end
 
                 save()
 
@@ -2964,7 +3012,7 @@ do
 
             function Adapter.new(injected, inMatch)
                 local self = {dependencies = injected}
-                local SUPPRESS_SECONDS = 15
+                local SUPPRESS_SECONDS = (config).thresholds.teamMessageSuppressSeconds
                 local suppressUntil = -math.huge
                 local guards = {}
 
@@ -2976,7 +3024,7 @@ do
                 local function isLoadedMessage(value)
                     local text = if type(value) == 'table'then value.Text else value
 
-                    return type(text) == 'string' and string.find(text, '^Successfully ') ~= nil
+                    return type(text) == 'string' and string.find(text, (config).teamLoadMessagePrefix) ~= nil
                 end
                 local function guard(target, name)
                     if type(target) ~= 'table' or type(target[name]) ~= 'function' then
@@ -2987,6 +3035,24 @@ do
                         if entry.target == target and entry.name == name then
                             return
                         end
+                    end
+
+                    local env = getfenv()
+                    local registry = env.__ViperGuardRegistry
+
+                    if type(registry) ~= 'table' then
+                        registry = setmetatable({}, {
+                            __mode = 'k',
+                        })
+                        env.__ViperGuardRegistry = registry
+                    end
+
+                    local previous = if registry[target]then registry[target][name]else nil
+
+                    if previous and target[name] == previous.wrapper then
+                        pcall(function()
+                            target[name] = previous.original
+                        end)
                     end
 
                     local original = target[name]
@@ -3016,6 +3082,12 @@ do
                             original = original,
                             wrapper = wrapper,
                         })
+
+                        registry[target] = registry[target] or {}
+                        registry[target][name] = {
+                            original = original,
+                            wrapper = wrapper,
+                        }
                     end
                 end
 
@@ -3292,16 +3364,11 @@ do
             local ACK_TIMEOUT_SECONDS = 10
             local TEAM_LOAD_TIMEOUT_SECONDS = (config).thresholds.teamLoadTimeoutSeconds
             local TEAM_LOAD_ATTEMPTS = (config).thresholds.teamLoadAttempts
-            local BOUNTY_RUN_MAX_AGE_SECONDS = 10800
-            local MACRO_LIST_CACHE_SECONDS = 5
-            local CHANGE_STAGE_RETRY_SECONDS = 6
-            local CHANGE_STAGE_ATTEMPTS = 2
-            local SWITCHABLE_STAGE_TYPES = {
-                Story = true,
-                LegendStage = true,
-                Raid = true,
-                Dungeon = true,
-            }
+            local JOINER_RUN_MAX_AGE_SECONDS = (config).thresholds.joinerRunMaxAgeSeconds
+            local MACRO_LIST_CACHE_SECONDS = (config).thresholds.macroListCacheSeconds
+            local CHANGE_STAGE_RETRY_SECONDS = (config).thresholds.changeStageRetrySeconds
+            local CHANGE_STAGE_ATTEMPTS = (config).thresholds.changeStageAttempts
+            local SWITCHABLE_STAGE_TYPES = (config).switchableStageTypes
             local START_TIMEOUT_SECONDS = 15
             local MODES = {
                 Stage = 'Story',
@@ -3423,6 +3490,7 @@ do
                     macro = nil,
                     gameSettings = nil,
                     changeAttempt = nil,
+                    lastSwitch = nil,
                     teamAttempt = nil,
                     macroAttempt = nil,
                     macroStore = nil,
@@ -3702,7 +3770,7 @@ do
                         return false
                     end
 
-                    local row = TeamEquip.rowFor(matchData, bounty)
+                    local row = TeamEquip.rowFor(matchData, bounty, (config).stageTypeRows, (config).challengeRows)
 
                     if not row then
                         return false
@@ -3713,12 +3781,24 @@ do
                 local function isBountyMatch(settings, matchData)
                     local run = settings.bountyRun
 
-                    return type(run) == 'table' and type(matchData) == 'table' and matchData.StageType == run.mode and matchData.Stage == run.stage and matchData.Act == run.act and os.time() - run.at >= 0 and os.time() - run.at < BOUNTY_RUN_MAX_AGE_SECONDS
+                    return type(run) == 'table' and type(matchData) == 'table' and matchData.StageType == run.mode and matchData.Stage == run.stage and matchData.Act == run.act and os.time() - run.at >= 0 and os.time() - run.at < JOINER_RUN_MAX_AGE_SECONDS
+                end
+                local function createdByJoiner(settings, matchData)
+                    local switched = self.lastSwitch
+                    local deps = self.dependencies
+
+                    if switched and type(matchData) == 'table' and deps and deps.gameHandler and switched.matchId == deps.gameHandler.MatchId and matchData.StageType == switched.mode and matchData.Stage == switched.stage and matchData.Act == switched.act then
+                        return true
+                    end
+
+                    local run = settings.joinerRun
+
+                    return type(run) == 'table' and type(matchData) == 'table' and matchData.StageType == run.mode and matchData.Stage == run.stage and matchData.Act == run.act and os.time() - run.at >= 0 and os.time() - run.at < JOINER_RUN_MAX_AGE_SECONDS
                 end
                 local function tryChangeStage(settings, matchData, now)
                     local deps = self.dependencies
 
-                    if not settings.changeStageInMatch or type(matchData) ~= 'table' or not SWITCHABLE_STAGE_TYPES[matchData.StageType] or matchData.Host ~= deps.userId or not deps.gameHandler or deps.gameHandler.IsMatchStarted ~= false or not deps.lobbyReturn or type(deps.lobbyReturn.RequestStartMatch) ~= 'table' or type(deps.lobbyReturn.RequestStartMatch.Fire) ~= 'function' then
+                    if not settings.changeStageInMatch or type(matchData) ~= 'table' or not SWITCHABLE_STAGE_TYPES[matchData.StageType] or matchData.Host ~= deps.userId or not deps.gameHandler or deps.gameHandler.IsMatchStarted ~= false or not deps.lobbyReturn or type(deps.lobbyReturn.RequestStartMatch) ~= 'table' or type(deps.lobbyReturn.RequestStartMatch.Fire) ~= 'function' or not (createdByJoiner(settings, matchData) or isBountyMatch(settings, matchData)) then
                         return false
                     end
 
@@ -3763,6 +3843,13 @@ do
                     if matchData.StageType == target.StageType and matchData.Stage == target.Stage and matchData.Act == target.Act and (matchData.Difficulty == nil or matchData.Difficulty == target.Difficulty) then
                         self.changeAttempt = nil
 
+                        Settings.setJoinerRun({
+                            mode = target.StageType,
+                            stage = target.Stage,
+                            act = target.Act,
+                            at = os.time(),
+                        })
+
                         if targetName == 'Boss Bounties' then
                             Settings.setBountyRun({
                                 mode = target.StageType,
@@ -3798,6 +3885,12 @@ do
                     attempt.sent += 1
 
                     attempt.last = now
+                    self.lastSwitch = {
+                        mode = target.StageType,
+                        stage = target.Stage,
+                        act = target.Act,
+                        matchId = deps.gameHandler.MatchId,
+                    }
 
                     local ok = pcall(deps.lobbyReturn.RequestStartMatch.Fire, target)
 
@@ -4033,8 +4126,15 @@ do
 
                         return
                     end
-                    if not self.confirmed and not self.pending and Settings.get().bountyRun ~= nil then
-                        Settings.setBountyRun(nil)
+                    if not self.confirmed and not self.pending then
+                        local current = Settings.get()
+
+                        if current.bountyRun ~= nil then
+                            Settings.setBountyRun(nil)
+                        end
+                        if current.joinerRun ~= nil then
+                            Settings.setJoinerRun(nil)
+                        end
                     end
                     if deps.activityState and now - self.lastActivityRead >= RIFT_POLL_SECONDS then
                         local states = {}
@@ -4559,6 +4659,13 @@ do
                                     self.pending = nil
                                     pending.confirmedAt = deps.clock()
                                     self.confirmed = pending
+
+                                    Settings.setJoinerRun({
+                                        mode = pending.mode,
+                                        stage = pending.stage,
+                                        act = pending.act,
+                                        at = os.time(),
+                                    })
 
                                     if pending.name == 'Boss Bounties' then
                                         Settings.setBountyRun({
@@ -9665,6 +9772,7 @@ local GameModule = {
     metadata = metadata,
     config = config,
     pages = pages,
+    windowTags = config.windowTags,
 }
 
 function GameModule.start(context)

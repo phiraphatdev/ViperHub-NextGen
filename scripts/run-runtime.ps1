@@ -32,12 +32,12 @@ try {
 
     $logPath = Join-Path $projectRoot 'work/runtime-access.log'
     $maxLogBytes = 262144
-    function Write-Access([string]$who, [string]$path, [string]$status, [int]$bytes) {
+    function Write-Access([string]$who, [string]$path, [string]$status, [int]$bytes, [string]$build = '') {
         try {
             if ((Test-Path -LiteralPath $logPath) -and (Get-Item -LiteralPath $logPath).Length -gt $maxLogBytes) {
                 Move-Item -LiteralPath $logPath -Destination "$logPath.old" -Force
             }
-            $line = '{0:o} {1} {2} {3} {4}' -f (Get-Date), $who, $path, $status, $bytes
+            $line = '{0:o} {1} {2} {3} {4} {5}' -f (Get-Date), $who, $path, $status, $bytes, $build
             Add-Content -LiteralPath $logPath -Value $line -Encoding ascii
         }
         catch { }
@@ -60,9 +60,11 @@ try {
                 if ($line -match '^(?:X-Forwarded-For|CF-Connecting-IP):\s*([0-9a-fA-F\.:,\s]{1,80})$') { $who = ($Matches[1].Trim() -split '\s*,\s*')[0] }
             }
             $path = '-'
+            $build = $null
             if ($requestLine -match '^GET (/[A-Za-z0-9_\-\.]*)') { $path = $Matches[1] }
             if ($requestLine -match '^GET /runtime-smoke\.lua(?:\?[^ ]*)? HTTP/') {
                 $body = [System.IO.File]::ReadAllBytes($harnessPath)
+                $build = (Get-Item -LiteralPath $harnessPath).LastWriteTimeUtc.ToString('yyyyMMddTHHmmssZ', [System.Globalization.CultureInfo]::InvariantCulture)
                 $status = '200 OK'
             }
             elseif ($requestLine -match '^GET /health(?:\?[^ ]*)? HTTP/') {
@@ -73,13 +75,14 @@ try {
                 $body = [System.Text.Encoding]::UTF8.GetBytes("not found`n")
                 $status = '404 Not Found'
             }
-            $headers = "HTTP/1.1 $status`r`nContent-Type: text/plain; charset=utf-8`r`nContent-Length: $($body.Length)`r`nCache-Control: no-store`r`nX-Content-Type-Options: nosniff`r`nConnection: close`r`n`r`n"
+            $buildHeader = if ($build) { "X-Harness-Build: $build`r`n" } else { '' }
+            $headers = "HTTP/1.1 $status`r`n$buildHeader`Content-Type: text/plain; charset=utf-8`r`nContent-Length: $($body.Length)`r`nCache-Control: no-store`r`nX-Content-Type-Options: nosniff`r`nConnection: close`r`n`r`n"
             $headerBytes = [System.Text.Encoding]::ASCII.GetBytes($headers)
             $stream.Write($headerBytes, 0, $headerBytes.Length)
             $stream.Write($body, 0, $body.Length)
             $stream.Flush()
             $reader.Dispose()
-            Write-Access $who $path $status.Substring(0, 3) $body.Length
+            Write-Access $who $path $status.Substring(0, 3) $body.Length $build
         }
         catch {
             Write-Access 'error' '-' '000' 0

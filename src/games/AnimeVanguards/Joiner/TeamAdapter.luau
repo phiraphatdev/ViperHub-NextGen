@@ -58,7 +58,7 @@ end
 --- Creates a team adapter; injected dependencies support isolated tests. inMatch selects the match network.
 function Adapter.new(injected: any?, inMatch: boolean?): any
     local self: any = { dependencies = injected }
-    local SUPPRESS_SECONDS = 15
+    local SUPPRESS_SECONDS: number = (config :: any).thresholds.teamMessageSuppressSeconds
     local suppressUntil = -math.huge
     local guards: { any } = {}
 
@@ -69,7 +69,7 @@ function Adapter.new(injected: any?, inMatch: boolean?): any
 
     local function isLoadedMessage(value: any): boolean
         local text = if type(value) == "table" then value.Text else value
-        return type(text) == "string" and string.find(text, "^Successfully ") ~= nil
+        return type(text) == "string" and string.find(text, (config :: any).teamLoadMessagePrefix) ~= nil
     end
 
     -- Wraps a game UI function so that, only while this script has just asked for a team, the game's own
@@ -83,6 +83,20 @@ function Adapter.new(injected: any?, inMatch: boolean?): any
             if entry.target == target and entry.name == name then
                 return
             end
+        end
+        -- A previous instance that was never stopped (script reloaded) left its wrapper installed: remove it first
+        -- so wrappers do not stack and keep dead adapters alive.
+        local env: any = getfenv()
+        local registry: any = env.__ViperGuardRegistry
+        if type(registry) ~= "table" then
+            registry = setmetatable({}, { __mode = "k" })
+            env.__ViperGuardRegistry = registry
+        end
+        local previous = if registry[target] then registry[target][name] else nil
+        if previous and target[name] == previous.wrapper then
+            pcall(function()
+                target[name] = previous.original
+            end)
         end
         local original = target[name]
         local function wrapper(...)
@@ -101,6 +115,8 @@ function Adapter.new(injected: any?, inMatch: boolean?): any
         end)
         if ok then
             table.insert(guards, { target = target, name = name, original = original, wrapper = wrapper })
+            registry[target] = registry[target] or {}
+            registry[target][name] = { original = original, wrapper = wrapper }
         end
     end
 

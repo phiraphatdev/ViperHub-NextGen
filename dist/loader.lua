@@ -1110,10 +1110,10 @@ do
                 end)
             end
 
-            local function ignoreGameButtonEffects(library)
+            local function tagLayers(library, tags)
                 local gameObject = ENV.game
 
-                if not gameObject then
+                if not gameObject or type(tags) ~= 'table' or #tags == 0 then
                     return
                 end
 
@@ -1134,16 +1134,19 @@ do
                     local gui = library[key]
 
                     if gui then
-                        pcall(function()
-                            tagService:AddTag(gui, 'ButtonEffects_Ignore')
-                            tagService:AddTag(gui, 'NoButtonEffects')
-                        end)
+                        for _, tag in tags do
+                            if type(tag) == 'string' and #tag > 0 and #tag <= 64 then
+                                pcall(function()
+                                    tagService:AddTag(gui, tag)
+                                end)
+                            end
+                        end
                     end
                 end
             end
 
-            function WindUIAdapter.create(library, context, config)
-                ignoreGameButtonEffects(library)
+            function WindUIAdapter.create(library, context, config, windowTags)
+                tagLayers(library, windowTags)
 
                 local window = (library.CreateWindow)(library, {
                     Title = 'ViperHub NextGen',
@@ -1450,9 +1453,10 @@ do
                 store,
                 buffer,
                 keyCodes,
-                pages
+                pages,
+                windowTags
             )
-                local window = Adapter.create(library, context, store.get())
+                local window = Adapter.create(library, context, store.get(), windowTags)
 
                 Overview.mount(window, metadata)
 
@@ -1861,7 +1865,7 @@ local function run()
         return
     end
 
-    local window, refreshDiagnostics = App.mount(exports.ui, context, gameModule.metadata, store, buffer, ENV.Enum.KeyCode, gameModule.pages)
+    local window, refreshDiagnostics = App.mount(exports.ui, context, gameModule.metadata, store, buffer, ENV.Enum.KeyCode, gameModule.pages, gameModule.windowTags)
 
     session.window = window
 

@@ -88,40 +88,29 @@ function TeamEquip.evaluate(team: any, ownsUnit: (string) -> boolean, equipped: 
     return if mismatch then "mismatch" else "match"
 end
 
-local STAGE_TYPE_ROWS: { [string]: string } = {
-    Story = "Stage",
-    LegendStage = "Legend Stage",
-    Raid = "Raid",
-    Dungeon = "Dungeon",
-    ElementalTowers = "Elemental Towers",
-    BossEvent = "Boss Event",
-    Worldline = "Worldline",
-    Portals = "Portal",
-    Rift = "Rift",
-}
-local CHALLENGE_ROWS: { [string]: string } = {
-    Regular = "Regular Challenge",
-    Daily = "Daily Challenge",
-    Weekly = "Weekly Challenge",
-}
-
 --- Maps the current match (GameData) to the Joiner row whose team applies; nil when unknown.
-function TeamEquip.rowFor(matchData: any, isBountyMatch: boolean): string?
-    if type(matchData) ~= "table" then
+--- stageTypeRows and challengeRows come from the game config (StageType / ChallengeType to row name).
+function TeamEquip.rowFor(
+    matchData: any,
+    isBountyMatch: boolean,
+    stageTypeRows: any,
+    challengeRows: any
+): string?
+    if type(matchData) ~= "table" or type(stageTypeRows) ~= "table" or type(challengeRows) ~= "table" then
         return nil
     end
     local challenge = matchData.ChallengeType or matchData.Challenge
-    if type(challenge) == "string" and CHALLENGE_ROWS[challenge] then
-        return CHALLENGE_ROWS[challenge]
+    if type(challenge) == "string" and challengeRows[challenge] then
+        return challengeRows[challenge]
     end
     if matchData.Rift ~= nil or matchData.StageType == "Rift" then
-        return "Rift"
+        return stageTypeRows.Rift
     end
     if isBountyMatch then
         return "Boss Bounties"
     end
     local stageType = matchData.StageType
-    return if type(stageType) == "string" then STAGE_TYPE_ROWS[stageType] else nil
+    return if type(stageType) == "string" then stageTypeRows[stageType] else nil
 end
 
 return TeamEquip
