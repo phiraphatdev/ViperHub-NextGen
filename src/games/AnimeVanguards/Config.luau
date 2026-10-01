@@ -166,6 +166,8 @@ return table.freeze({
         presetRequestSeconds = 8,
         -- Wait after the game reports loaded before any feature starts (keeps early network traffic away from the join).
         startDelaySeconds = 6,
+        -- After the reward wait, the joiner holds its lobby return while another feature (the webhook) is still sending.
+        returnGateMaxSeconds = 8,
     }),
     remoteNames = table.freeze({
         worldlineProgress = "GetWorldlineProgress",

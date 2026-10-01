@@ -86,6 +86,8 @@ function GameModule.start(context: Types.Context)
     end
     active = true
     joiner.setMacro(macro)
+    joiner.setReturnGate(webhook.isBusy)
+    gameSettings.setReturnGate(webhook.isBusy)
     joiner.setGameSettings(gameSettings)
     autoPlay.setMacro(macro)
     macro.setAutoPlay(autoPlay)

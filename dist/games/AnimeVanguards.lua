@@ -266,6 +266,7 @@ do
                     presetSwitchTimeoutSeconds = 8,
                     presetRequestSeconds = 8,
                     startDelaySeconds = 6,
+                    returnGateMaxSeconds = 8,
                 }),
                 remoteNames = table.freeze({
                     worldlineProgress = 'GetWorldlineProgress',
@@ -3841,6 +3842,9 @@ do
                         end
                     end
                 end
+                function self.setReturnGate(gate)
+                    self.returnGate = gate
+                end
                 function self.setMacro(m)
                     self.macro = m
                 end
@@ -5088,6 +5092,21 @@ do
                                         if taskApi and type(taskApi.spawn) == 'function' and type(taskApi.wait) == 'function' then
                                             (taskApi).spawn(function()
                                                 (taskApi).wait(2.5)
+
+                                                local gate = self.returnGate
+                                                local held = 0
+
+                                                while type(gate) == 'function' and held < config.thresholds.returnGateMaxSeconds do
+                                                    local okGate, busy = pcall(gate)
+
+                                                    if not okGate or busy ~= true then
+                                                        break
+                                                    end
+
+                                                    (taskApi).wait(0.5)
+
+                                                    held += 0.5
+                                                end
 
                                                 if self.worldlineCanContinue(deps) then
                                                     setStatus('Worldline: next room available; staying in the match')
@@ -8054,9 +8073,24 @@ do
                                 if self.autoBackToLobby then
                                     local taskApi = env.task
 
-                                    local function doTeleport()
+                                    local function doTeleport(held)
                                         if self.teleportCancelled or not self.context or not self.context.alive then
                                             return
+                                        end
+
+                                        local gate = self.returnGate
+                                        local waited = held or 0
+
+                                        if type(gate) == 'function' and waited < config.thresholds.returnGateMaxSeconds and type(taskApi) == 'table' and type(taskApi.delay) == 'function' then
+                                            local okGate, busy = pcall(gate)
+
+                                            if okGate and busy == true then
+                                                (taskApi.delay)(0.5, function()
+                                                    doTeleport(waited + 0.5)
+                                                end)
+
+                                                return
+                                            end
                                         end
 
                                         local lr = resolve(replicated, config.instancePaths.lobbyReturnClient)
@@ -8084,7 +8118,10 @@ do
                                     end
 
                                     if type(taskApi) == 'table' and type(taskApi.delay) == 'function' then
-                                        (taskApi.delay)(2.5, checkAndTeleport)(taskApi.delay)(7, checkAndTeleport)
+                                        local delayTask = taskApi.delay
+
+                                        delayTask(2.5, checkAndTeleport)
+                                        delayTask(7, checkAndTeleport)
                                     else
                                         checkAndTeleport()
                                     end
@@ -8092,6 +8129,9 @@ do
                             end)
                         end
                     end
+                end
+                function self.setReturnGate(gate)
+                    self.returnGate = gate
                 end
                 function self.stop()
                     self.teleportCancelled = true
@@ -11293,7 +11333,7 @@ do
             local TICK_SECONDS = 1
             local SESSION_DELAY_SECONDS = 5
             local END_SCREEN_DELAY_SECONDS = 2
-            local END_SCREEN_POLL_SECONDS = 0.5
+            local END_SCREEN_POLL_SECONDS = 0.25
             local UNIT_DEDUP_LIMIT = 4000
 
             local function resolve(root, path)
@@ -11993,6 +12033,19 @@ do
                     return if type(value) == 'table'then value else nil
                 end
 
+                function self.isBusy()
+                    if self.matchEndPending then
+                        return true
+                    end
+
+                    local sender = self.sender
+
+                    if sender and #sender.queue > 0 then
+                        return true
+                    end
+
+                    return false
+                end
                 function self.onMatchStarted()
                     self.matchStartedAt = clock()
                     self.matchBalances = balances()
@@ -12075,6 +12128,7 @@ do
 
                     self.matchStartedAt = nil
                     self.matchBalances = nil
+                    self.matchEndPending = self.settings.enabled and self.settings.events.matchEnd == true
 
                     local function send(screen)
                         local game = call('gameData')
@@ -12154,6 +12208,8 @@ do
                         end
 
                         self.notify('matchEnd', info)
+
+                        self.matchEndPending = false
                     end
 
                     local taskApi = d.task
@@ -12610,6 +12666,8 @@ function GameModule.start(context)
     active = true
 
     joiner.setMacro(macro)
+    joiner.setReturnGate(webhook.isBusy)
+    gameSettings.setReturnGate(webhook.isBusy)
     joiner.setGameSettings(gameSettings)
     autoPlay.setMacro(macro)
     macro.setAutoPlay(autoPlay)

@@ -277,9 +277,26 @@ function Adapter.new(injectedDeps: any?): any
                 self.matchEndConnection = (gh.MatchEnded.Connect :: any)(gh.MatchEnded, function()
                     if self.autoBackToLobby then
                         local taskApi = env.task
-                        local function doTeleport()
+                        local function doTeleport(held: number?)
                             if self.teleportCancelled or not self.context or not self.context.alive then
                                 return
+                            end
+                            -- Let a pending webhook message finish before the teleport can cut it off.
+                            local gate: any = self.returnGate
+                            local waited: number = held or 0
+                            if
+                                type(gate) == "function"
+                                and waited < config.thresholds.returnGateMaxSeconds
+                                and type(taskApi) == "table"
+                                and type(taskApi.delay) == "function"
+                            then
+                                local okGate, busy = pcall(gate)
+                                if okGate and busy == true then
+                                    (taskApi.delay :: any)(0.5, function()
+                                        doTeleport(waited + 0.5)
+                                    end)
+                                    return
+                                end
                             end
                             local lr = resolve(replicated, config.instancePaths.lobbyReturnClient)
                             if lr then
@@ -303,10 +320,9 @@ function Adapter.new(injectedDeps: any?): any
                         end
 
                         if type(taskApi) == "table" and type(taskApi.delay) == "function" then
-                            (taskApi.delay :: any)(2.5, checkAndTeleport)(taskApi.delay :: any)(
-                                7.0,
-                                checkAndTeleport
-                            )
+                            local delayTask: any = taskApi.delay
+                            delayTask(2.5, checkAndTeleport)
+                            delayTask(7.0, checkAndTeleport)
                         else
                             checkAndTeleport()
                         end
@@ -314,6 +330,11 @@ function Adapter.new(injectedDeps: any?): any
                 end)
             end
         end
+    end
+
+    --- Registers a function that returns true while another feature still needs this match (the webhook sending).
+    function self.setReturnGate(gate: () -> boolean)
+        self.returnGate = gate
     end
 
     function self.stop()

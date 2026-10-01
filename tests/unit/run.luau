@@ -5956,4 +5956,26 @@ test("Joiner report lists every mode in priority order with off and decision sta
     runtime.setEnabled("Rift", false)
     JoinerSettings.setPaused(true)
 end)
+test("Webhook reports busy from match end until the result is delivered", function()
+    local held: { any } = {}
+    local h = newWebhook()
+    local realSpawn = h.deps.task.spawn
+    h.deps.task.spawn = function(callback: any, ...: any)
+        table.insert(held, callback)
+    end
+    local rt = h.runtime
+    rt.setUrl(HOOK_URL)
+    rt.setEnabled(true)
+    assert(not rt.isBusy())
+    rt.onMatchStarted()
+    rt.onMatchEnded(true)
+    assert(rt.isBusy(), "busy while the end screen is awaited")
+    h.deps.task.spawn = realSpawn
+    held[1]()
+    assert(#h.sent == 1 and string.find(h.sent[1].embeds[1].title, "VICTORY") ~= nil)
+    assert(not rt.isBusy(), "idle once delivered")
+    rt.setEnabled(false)
+    rt.onMatchEnded(true)
+    assert(not rt.isBusy(), "not busy when notifications are off")
+end)
 print(string.format("PASS: %d unit scenarios", passed))

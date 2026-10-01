@@ -259,6 +259,11 @@ function Runtime.new(dependencies: any?): any
         end
     end
 
+    --- Registers a function that returns true while another feature still needs this match (the webhook sending).
+    function self.setReturnGate(gate: () -> boolean)
+        self.returnGate = gate
+    end
+
     function self.setMacro(m: any)
         self.macro = m
     end
@@ -1535,6 +1540,20 @@ function Runtime.new(dependencies: any?): any
                             then
                                 (taskApi :: any).spawn(function()
                                     (taskApi :: any).wait(2.5)
+                                    -- Let a pending webhook message finish before the teleport can cut it off.
+                                    local gate: any = self.returnGate
+                                    local held = 0
+                                    while
+                                        type(gate) == "function"
+                                        and held < config.thresholds.returnGateMaxSeconds
+                                    do
+                                        local okGate, busy = pcall(gate)
+                                        if not okGate or busy ~= true then
+                                            break
+                                        end
+                                        (taskApi :: any).wait(0.5)
+                                        held += 0.5
+                                    end
                                     -- Worldline continues in the same session: while the end screen offers Next, stay and let the game advance.
                                     if self.worldlineCanContinue(deps) then
                                         setStatus("Worldline: next room available; staying in the match")

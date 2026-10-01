@@ -22,7 +22,7 @@ local THRESHOLDS: any = (config :: any).thresholds
 local TICK_SECONDS = 1
 local SESSION_DELAY_SECONDS = 5
 local END_SCREEN_DELAY_SECONDS = 2
-local END_SCREEN_POLL_SECONDS = 0.5
+local END_SCREEN_POLL_SECONDS = 0.25
 local UNIT_DEDUP_LIMIT = 4000
 
 local function resolve(root: any, path: string): any
@@ -672,6 +672,18 @@ function Runtime.new(injected: any?): any
         return if type(value) == "table" then value else nil
     end
 
+    --- True while a match result is still being collected or delivered (the joiner holds its lobby return).
+    function self.isBusy(): boolean
+        if self.matchEndPending then
+            return true
+        end
+        local sender = self.sender
+        if sender and #sender.queue > 0 then
+            return true
+        end
+        return false
+    end
+
     --- Records the match start: the time and the currency balances the earnings are measured against.
     function self.onMatchStarted()
         self.matchStartedAt = clock()
@@ -742,6 +754,7 @@ function Runtime.new(injected: any?): any
         local argumentResult = resultFromArguments({ ... })
         self.matchStartedAt = nil
         self.matchBalances = nil
+        self.matchEndPending = self.settings.enabled and self.settings.events.matchEnd == true
         local function send(screen: any)
             local game: any = call("gameData")
             local info: any = { rewards = {}, currencies = WEBHOOK.currencies }
@@ -809,6 +822,7 @@ function Runtime.new(injected: any?): any
                 info.session = self.session.summary()
             end
             self.notify("matchEnd", info)
+            self.matchEndPending = false
         end
         local taskApi: any = d.task
         if
