@@ -460,11 +460,11 @@ end
 -- Auto Join Equipper: Team Equipper rows (one dropdown of owned saved teams per joiner) plus the locked
 -- Macro Equipper (macro file per joiner). Returns an update function the page loop calls to follow team changes.
 local function addEquipper(tab: any, runtime: any?): () -> ()
-    local section = tab:Section({ Title = "Auto Join Equipper", Opened = false })
+    local section = tab:Section({ Title = "Auto Join Equipper", Opened = true })
     local function subsection(title: string): any
         local host: any = section
         if type(host.Section) == "function" then
-            return (host.Section :: any)(host, { Title = title })
+            return (host.Section :: any)(host, { Title = title, Opened = true })
         end
         return host
     end
@@ -715,6 +715,9 @@ function Page.mount(tab: any, stageDataOverride: any?, runtime: any?, challengeC
             status:SetDesc(value)
         end
     end
+    -- Equipper first so the Team and Macro Equipper controls are the first thing on the tab.
+    local updateEquipper = addEquipper(tab, runtime)
+    pcall(updateEquipper)
     local settings = tab:Section({ Title = "Auto Join Settings", Opened = true })
     settings:Paragraph({
         Title = "Storage",
@@ -789,8 +792,6 @@ function Page.mount(tab: any, stageDataOverride: any?, runtime: any?, challengeC
     addSpecial(tab, "Boss Event", specialChoices, runtime)
     addSpecial(tab, "Worldline", specialChoices, runtime)
     local updateBounty = addBounty(tab, runtime)
-    local updateEquipper = addEquipper(tab, runtime)
-    pcall(updateEquipper)
     local riftTimer = addRift(tab, runtime)
     local regTimer = addChallenge(tab, "Regular", challengeChoices, runtime)
     local dailyTimer = addChallenge(tab, "Daily", challengeChoices, runtime)

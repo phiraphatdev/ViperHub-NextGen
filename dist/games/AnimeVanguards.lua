@@ -1752,14 +1752,17 @@ do
             local function addEquipper(tab, runtime)
                 local section = tab:Section({
                     Title = 'Auto Join Equipper',
-                    Opened = false,
+                    Opened = true,
                 })
 
                 local function subsection(title)
                     local host = section
 
                     if type(host.Section) == 'function' then
-                        return (host.Section)(host, {Title = title})
+                        return (host.Section)(host, {
+                            Title = title,
+                            Opened = true,
+                        })
                     end
 
                     return host
@@ -2085,6 +2088,10 @@ do
                     end
                 end
 
+                local updateEquipper = addEquipper(tab, runtime)
+
+                pcall(updateEquipper)
+
                 local settings = tab:Section({
                     Title = 'Auto Join Settings',
                     Opened = true,
@@ -2166,10 +2173,6 @@ do
                 addSpecial(tab, 'Worldline', specialChoices, runtime)
 
                 local updateBounty = addBounty(tab, runtime)
-                local updateEquipper = addEquipper(tab, runtime)
-
-                pcall(updateEquipper)
-
                 local riftTimer = addRift(tab, runtime)
                 local regTimer = addChallenge(tab, 'Regular', challengeChoices, runtime)
                 local dailyTimer = addChallenge(tab, 'Daily', challengeChoices, runtime)
