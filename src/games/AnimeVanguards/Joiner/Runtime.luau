@@ -995,6 +995,15 @@ function Runtime.new(dependencies: any?): any
             local mode = MODES[name]
             local choice = self.selection[name]
             -- Rift polling bypasses the general cooldown (it holds on full rooms at 1-2s intervals)
+            if name == "Rift" and self.enabled[name] and not (deps.specialEvents and deps.riftsData) then
+                note(
+                    name,
+                    "Rift game modules not found ("
+                        .. (if deps.specialEvents then "" else "special events ")
+                        .. (if deps.riftsData then "" else "rifts data")
+                        .. "); the game may have moved them"
+                )
+            end
             if name == "Rift" and self.enabled[name] and deps.specialEvents and deps.riftsData then
                 local currentHour = math.floor(now / 3600)
                 if self.lastCompletedRiftHour == currentHour then
@@ -1081,6 +1090,8 @@ function Runtime.new(dependencies: any?): any
                                 setStatus("Rift: all rooms full (6/6); waiting for open slot...")
                                 return
                             end
+                        else
+                            note(name, "attempt data not ready from the game; skipped for now")
                         end
                     end
                 end
