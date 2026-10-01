@@ -186,11 +186,8 @@ function Events.build(kind: string, data: any, ctx: any, config: any): (Embed.Sp
     local ping = false
     if ctx.showPlayer and type(ctx.player) == "string" and ctx.player ~= "" then
         spec.authorName = playerLine(ctx)
-        if type(ctx.userId) == "number" then
-            spec.authorIcon = string.format(
-                "https://www.roblox.com/headshot-thumbnail/image?userId=%d&width=150&height=150&format=png",
-                ctx.userId
-            )
+        if type(ctx.avatarUrl) == "string" then
+            spec.authorIcon = ctx.avatarUrl
         end
     end
 
@@ -343,11 +340,9 @@ function Events.build(kind: string, data: any, ctx: any, config: any): (Embed.Sp
         local rank = Events.rarityRank(info.rarity, config.rarityOrder)
         ping = rank > 0 and rank >= Events.rarityRank(config.pingMinRarity, config.rarityOrder)
     elseif kind == "join" then
-        spec.title = "🚪 " .. tostring(info.name or "Joiner") .. " — entered"
+        spec.title = "🚪 Entered " .. tostring(info.name or "stage")
         spec.description = modeText(info)
         spec.color = TEAL
-        addField(fields, "Mode", info.name)
-        addField(fields, "Status", info.message, false)
     elseif kind == "joinProblem" then
         spec.title = "⚠️ Joiner problem"
         spec.description = tostring(info.message or "A joiner request did not complete.")

@@ -10268,9 +10268,8 @@ do
                 if ctx.showPlayer and type(ctx.player) == 'string' and ctx.player ~= '' then
                     spec.authorName = playerLine(ctx)
 
-                    if type(ctx.userId) == 'number' then
-                        spec.authorIcon = string.format(
-[[https://www.roblox.com/headshot-thumbnail/image?userId=%d&width=150&height=150&format=png]], ctx.userId)
+                    if type(ctx.avatarUrl) == 'string' then
+                        spec.authorIcon = ctx.avatarUrl
                     end
                 end
                 if kind == 'matchEnd' then
@@ -10420,12 +10419,9 @@ do
 
                     ping = rank > 0 and rank >= Events.rarityRank(config.pingMinRarity, config.rarityOrder)
                 elseif kind == 'join' then
-                    spec.title = '\u{1f6aa} ' .. tostring(info.name or 'Joiner') .. ' \u{2014} entered'
+                    spec.title = '\u{1f6aa} Entered ' .. tostring(info.name or 'stage')
                     spec.description = modeText(info)
                     spec.color = TEAL
-
-                    addField(fields, 'Mode', info.name)
-                    addField(fields, 'Status', info.message, false)
                 elseif kind == 'joinProblem' then
                     spec.title = '\u{26a0}\u{fe0f} Joiner problem'
                     spec.description = tostring(info.message or 'A joiner request did not complete.')
@@ -11259,6 +11255,7 @@ do
                         player = d.playerName,
                         displayName = d.displayName,
                         level = call('readLevel'),
+                        avatarUrl = self.avatarUrl,
                         userId = d.userId,
                         showPlayer = self.settings.showPlayer,
                         timestamp = if has('timestamp')then call('timestamp')else os.date('!%Y-%m-%dT%H:%M:%SZ'),
@@ -11857,6 +11854,23 @@ do
                                 task = env.task,
                                 playerName = players.LocalPlayer.Name,
                                 displayName = players.LocalPlayer.DisplayName,
+                                fetchAvatar = function()
+                                    local ok, response = pcall(requestFn, {
+                                        Url = string.format(
+[[https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=%d&size=150x150&format=Png]], players.LocalPlayer.UserId),
+                                        Method = 'GET',
+                                    })
+
+                                    if not ok or type(response) ~= 'table' or type(response.Body) ~= 'string' then
+                                        return nil
+                                    end
+
+                                    local okJson, data = pcall(http.JSONDecode, http, response.Body)
+                                    local row = if okJson and type(data) == 'table' and type(data.data) == 'table'then data.data[1]else nil
+                                    local url = if type(row) == 'table'then row.imageUrl else nil
+
+                                    return if type(url) == 'string' and string.match(url, '^https://[%w%.%-]+/')then url else nil
+                                end,
                                 readCurrencies = function()
                                     local values = {}
 
@@ -12070,6 +12084,12 @@ do
                         local waitTask = taskApi.wait
 
                         spawnTask(function()
+                            local fetched = call('fetchAvatar')
+
+                            if type(fetched) == 'string' then
+                                self.avatarUrl = fetched
+                            end
+
                             waitTask(SESSION_DELAY_SECONDS)
 
                             if self.context == ctx and ctx.alive then

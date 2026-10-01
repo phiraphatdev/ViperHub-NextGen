@@ -254,6 +254,7 @@ function Runtime.new(injected: any?): any
             player = d.playerName,
             displayName = d.displayName,
             level = call("readLevel"),
+            avatarUrl = self.avatarUrl,
             userId = d.userId,
             showPlayer = self.settings.showPlayer,
             timestamp = if has("timestamp") then call("timestamp") else os.date("!%Y-%m-%dT%H:%M:%SZ"),
@@ -795,6 +796,28 @@ function Runtime.new(injected: any?): any
                     task = env.task,
                     playerName = players.LocalPlayer.Name,
                     displayName = players.LocalPlayer.DisplayName,
+                    fetchAvatar = function(): string?
+                        local ok, response = pcall(requestFn, {
+                            Url = string.format(
+                                "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=%d&size=150x150&format=Png",
+                                players.LocalPlayer.UserId
+                            ),
+                            Method = "GET",
+                        })
+                        if not ok or type(response) ~= "table" or type(response.Body) ~= "string" then
+                            return nil
+                        end
+                        local okJson, data = pcall(http.JSONDecode, http, response.Body)
+                        local row = if okJson
+                                and type(data) == "table"
+                                and type(data.data) == "table"
+                            then data.data[1]
+                            else nil
+                        local url = if type(row) == "table" then row.imageUrl else nil
+                        return if type(url) == "string" and string.match(url, "^https://[%w%.%-]+/")
+                            then url
+                            else nil
+                    end,
                     readCurrencies = function(): { [string]: number }?
                         local values: { [string]: number } = {}
                         for _, currency in WEBHOOK.currencies do
@@ -989,6 +1012,11 @@ function Runtime.new(injected: any?): any
             local spawnTask: any = taskApi.spawn
             local waitTask: any = taskApi.wait
             spawnTask(function()
+                -- Discord cannot load Roblox redirect links, so ask the thumbnails API for the real image URL once.
+                local fetched: any = call("fetchAvatar")
+                if type(fetched) == "string" then
+                    self.avatarUrl = fetched
+                end
                 waitTask(SESSION_DELAY_SECONDS)
                 if self.context == ctx and ctx.alive then
                     self.notify("session", {

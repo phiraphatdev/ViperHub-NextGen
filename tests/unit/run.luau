@@ -5389,6 +5389,7 @@ end)
 test("Webhook events build for every kind and ping only when it matters", function()
     local ctx = {
         player = "Tester",
+        avatarUrl = "https://tr.rbxcdn.com/x.png",
         userId = 42,
         showPlayer = true,
         timestamp = "2026-01-02T03:04:05Z",
@@ -5421,7 +5422,7 @@ test("Webhook events build for every kind and ping only when it matters", functi
     assert(
         win.color ~= loss.color and string.find(win.title, "VICTORY") and string.find(loss.title, "DEFEAT")
     )
-    assert(win.authorName == "Tester" and string.find(win.authorIcon, "userId=42", 1, true))
+    assert(win.authorName == "Tester" and win.authorIcon == "https://tr.rbxcdn.com/x.png")
     ctx.showPlayer = false
     local hidden = WebhookEvents.build("session", {}, ctx, WEBHOOK_CONFIG) :: any
     assert(hidden.authorName == nil and hidden.authorIcon == nil, "player identity hidden when switched off")
@@ -5561,7 +5562,7 @@ test("Webhook runtime turns joiner and auto play status lines into notices", fun
     rt.onStatusLine("joiner", "Team Equipper: waiting for Team 1 to equip")
     assert(#h.sent == 0, "progress lines are quiet")
     rt.onStatusLine("joiner", "Stage Joiner: confirmed by server")
-    assert(#h.sent == 1 and string.find(h.sent[1].embeds[1].title, "entered"))
+    assert(#h.sent == 1 and string.find(h.sent[1].embeds[1].title, "Entered"))
     rt.onStatusLine("joiner", "Stage Joiner: entered match")
     assert(#h.sent == 1, "same joiner not announced twice in a row")
     rt.onStatusLine("joiner", "Boss Bounties: stage/act locked or progress unavailable")
