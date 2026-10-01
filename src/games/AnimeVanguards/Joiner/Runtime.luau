@@ -595,6 +595,27 @@ function Runtime.new(dependencies: any?): any
         end
     end
 
+    --- True when the finished match is a Worldline whose end screen offers a visible Next button.
+    function self.worldlineCanContinue(deps: any): boolean
+        local handler = deps and deps.gameHandler
+        local data: any = if handler and type(handler.GetGameData) == "function"
+            then select(2, pcall(handler.GetGameData, handler))
+            else nil
+        if type(data) ~= "table" or data.StageType ~= "Worldline" then
+            return false
+        end
+        local ok, visible = pcall(function(): boolean
+            local playerGui = deps.localPlayer:FindFirstChildOfClass("PlayerGui")
+            local screen: any = playerGui and playerGui:FindFirstChild("EndScreen")
+            local buttons: any = screen
+                and screen:FindFirstChild("Holder")
+                and screen.Holder:FindFirstChild("Buttons")
+            local nextFrame: any = buttons and buttons:FindFirstChild("Next")
+            return nextFrame ~= nil and nextFrame.Visible == true
+        end)
+        return ok and visible == true
+    end
+
     --- Reads today's bounty from the game: {mode, stage, act, boss, left} or nil when unavailable.
     function self.readBounty(): any
         local deps = self.dependencies
@@ -1419,6 +1440,15 @@ function Runtime.new(dependencies: any?): any
                             then
                                 (taskApi :: any).spawn(function()
                                     (taskApi :: any).wait(2.5)
+                                    -- Worldline continues in the same session: while the end screen offers Next, stay and let the game advance.
+                                    if self.worldlineCanContinue(deps) then
+                                        setStatus("Worldline: next room available; staying in the match")
+                                        return
+                                    end
+                                    if self.gameSettings and type(self.gameSettings.set) == "function" then
+                                        pcall(self.gameSettings.set :: any, "AutoReplay", false)
+                                        pcall(self.gameSettings.set :: any, "AutoNext", false)
+                                    end
                                     self.returnAttempts = 1
                                     self.teleportingToLobby = deps.clock()
                                     setStatus(

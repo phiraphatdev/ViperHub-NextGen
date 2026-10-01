@@ -4068,6 +4068,25 @@ do
                         Settings.setSelection('Worldline', self.selection.Worldline)
                     end
                 end
+                function self.worldlineCanContinue(deps)
+                    local handler = deps and deps.gameHandler
+                    local data = if handler and type(handler.GetGameData) == 'function'then select(2, pcall(handler.GetGameData, handler))else nil
+
+                    if type(data) ~= 'table' or data.StageType ~= 'Worldline' then
+                        return false
+                    end
+
+                    local ok, visible = pcall(function()
+                        local playerGui = deps.localPlayer:FindFirstChildOfClass('PlayerGui')
+                        local screen = playerGui and playerGui:FindFirstChild('EndScreen')
+                        local buttons = screen and screen:FindFirstChild('Holder') and screen.Holder:FindFirstChild('Buttons')
+                        local nextFrame = buttons and buttons:FindFirstChild('Next')
+
+                        return nextFrame ~= nil and nextFrame.Visible == true
+                    end)
+
+                    return ok and visible == true
+                end
                 function self.readBounty()
                     local deps = self.dependencies
 
@@ -4858,6 +4877,16 @@ do
                                         if taskApi and type(taskApi.spawn) == 'function' and type(taskApi.wait) == 'function' then
                                             (taskApi).spawn(function()
                                                 (taskApi).wait(2.5)
+
+                                                if self.worldlineCanContinue(deps) then
+                                                    setStatus('Worldline: next room available; staying in the match')
+
+                                                    return
+                                                end
+                                                if self.gameSettings and type(self.gameSettings.set) == 'function' then
+                                                    pcall(self.gameSettings.set, 'AutoReplay', false)
+                                                    pcall(self.gameSettings.set, 'AutoNext', false)
+                                                end
 
                                                 self.returnAttempts = 1
                                                 self.teleportingToLobby = deps.clock()
