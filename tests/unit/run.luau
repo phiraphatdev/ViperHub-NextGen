@@ -21,6 +21,7 @@ local JoinerSettings = require("../../src/games/AnimeVanguards/Joiner/Settings")
 local JoinerPage = require("../../src/games/AnimeVanguards/Joiner/Page")
 local JoinerCatalog = require("../../src/games/AnimeVanguards/Joiner/Catalog")
 local TeamEquip = require("../../src/games/AnimeVanguards/Joiner/TeamEquip")
+local MacroEquip = require("../../src/games/AnimeVanguards/Joiner/MacroEquip")
 local TeamAdapter = require("../../src/games/AnimeVanguards/Joiner/TeamAdapter")
 local JoinerRuntime = require("../../src/games/AnimeVanguards/Joiner/Runtime")
 local ActivityState = require("../../src/games/AnimeVanguards/Joiner/ActivityState")
@@ -3733,7 +3734,9 @@ test("Team Equipper page lists owned teams per joiner and saves the choice witho
             self.Selected = value
             self.Callback(self.Selected)
         end
-        dropdowns[opt.Title] = d
+        if dropdowns[opt.Title] == nil then
+            dropdowns[opt.Title] = d
+        end
         return d
     end
     tab.Section = host.Section
@@ -3755,6 +3758,297 @@ test("Team Equipper page lists owned teams per joiner and saves the choice witho
     assert(JoinerSettings.get().teamEquip.teams.Stage == nil)
     JoinerSettings.setTeamForJoiner("Raid", nil)
 end)
+test("Macro Equipper picks the best unit per name and plans the equip", function()
+    local function unit(
+        guid: string,
+        name: string,
+        level: number,
+        subTrait: string?,
+        ascensions: number?,
+        takedowns: number?
+    ): any
+        return {
+            guid = guid,
+            name = name,
+            level = level,
+            subTrait = subTrait or "None",
+            ascensions = ascensions or 0,
+            takedowns = takedowns or 0,
+        }
+    end
+    local owned: { any } = {
+        unit("b1", "Bounty Hunter", 50),
+        unit("b2", "Bounty Hunter", 60),
+        unit("b3", "Bounty Hunter", 60, "Monarch"),
+        unit("b4", "Bounty Hunter", 60, "Monarch", 2),
+        unit("b5", "Bounty Hunter", 60, "Monarch", 2, 9),
+        unit("w1", "Wrath (Assault)", 60),
+        unit("s1", "Smith John", 10),
+    }
+    assert(
+        (MacroEquip.best(owned, "Bounty Hunter") :: any).guid == "b5",
+        "level, sub-trait, ascensions, then takedowns"
+    )
+    assert(MacroEquip.best(owned, "Nobody") == nil)
+    assert(
+        MacroEquip.validName("my_macro-1")
+            and not MacroEquip.validName("a/b")
+            and not MacroEquip.validName("")
+    )
+    local names = MacroEquip.names({
+        "Bounty Hunter",
+        "Bounty Hunter",
+        "Wrath (Assault)",
+        "",
+        5,
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+    })
+    assert(#names == 6 and names[1] == "Bounty Hunter" and names[2] == "Wrath (Assault)")
+    local equipped: { any } = { { guid = "x", name = "Bounty Hunter" } }
+    local plan = MacroEquip.plan({ "Bounty Hunter", "Wrath (Assault)", "Missing One" }, equipped, owned)
+    assert(plan.state == "equip" and plan.steps[1] == "b5" and plan.steps[2] == "w1" and #plan.steps == 2)
+    assert(#plan.missing == 1 and plan.missing[1] == "Missing One")
+    equipped = {
+        { guid = "x", name = "Bounty Hunter" },
+        { guid = "y", name = "Wrath (Assault)" },
+        { guid = "z", name = "Other" },
+    }
+    assert(
+        MacroEquip.plan({ "Bounty Hunter", "Wrath (Assault)" }, equipped, owned).state == "match",
+        "names present in any slot or level"
+    )
+    assert(
+        MacroEquip.plan({ "Missing One" }, {}, owned).state == "match",
+        "nothing equippable means nothing to change"
+    )
+end)
+test("Macro Equipper adapter lists units and sends the observed unit payloads", function()
+    local sentEquip: { any } = {}
+    local sentClear: any = nil
+    local deps: any = {
+        ownedUnits = {
+            GetOwnedUnits = function()
+                return { g1 = true, g2 = true }
+            end,
+            GetUnitObject = function(guid: string)
+                return {
+                    UnitData = { Name = if guid == "g1" then "Alpha" else "Beta" },
+                    Level = 60,
+                    SubTrait = "None",
+                    Ascensions = 1,
+                    Takedowns = 7,
+                }
+            end,
+            GetEquippedUnits = function()
+                return { "g2" }
+            end,
+        },
+        unitActions = {
+            EquipUnitInSlot = {
+                Fire = function(payload: any)
+                    table.insert(sentEquip, payload)
+                end,
+            },
+            UnequipAllUnits = {
+                Fire = function(payload: any)
+                    sentClear = payload
+                end,
+            },
+        },
+    }
+    local adapter = TeamAdapter.new(deps, false)
+    local owned = adapter.ownedUnitList()
+    assert(#owned == 2 and owned[1].level == 60 and owned[1].takedowns == 7)
+    local equipped = adapter.equippedList()
+    assert(#equipped == 1 and equipped[1].name == "Beta")
+    assert(adapter.unequipAll() and sentClear.NonFarmsOnly == false)
+    assert(adapter.equipUnit("g1") and sentEquip[1].UnitGUID == "g1" and not adapter.equipUnit(""))
+    assert(#TeamAdapter.new({}, false).ownedUnitList() == 0 and not TeamAdapter.new({}, false).unequipAll())
+end)
+test("Macro Equipper settings persist per joiner and reject invalid names", function()
+    JoinerSettings.setMacroEquipEnabled(false)
+    assert(JoinerSettings.setMacroForJoiner("Stage", "my_macro"))
+    assert(
+        not JoinerSettings.setMacroForJoiner("Stage", "../bad")
+            and not JoinerSettings.setMacroForJoiner("Nope", "x")
+    )
+    assert(
+        JoinerSettings.get().macroEquip.macros.Stage == "my_macro"
+            and JoinerSettings.get().macroEquip.enabled == false
+    )
+    assert(JoinerSettings.setMacroEquipEnabled(true) and JoinerSettings.get().macroEquip.enabled == true)
+    assert(
+        JoinerSettings.setMacroForJoiner("Stage", nil) and JoinerSettings.get().macroEquip.macros.Stage == nil
+    )
+    JoinerSettings.setMacroEquipEnabled(false)
+end)
+test(
+    "Macro Equipper equips the macro's best units before the lobby join and prefers a chosen team",
+    function()
+        local sent: { string } = {}
+        local equippedNow: { any } = { { guid = "old", name = "Other" } }
+        local owned: { any } = {
+            {
+                guid = "bh1",
+                name = "Bounty Hunter",
+                level = 50,
+                subTrait = "None",
+                ascensions = 0,
+                takedowns = 0,
+            },
+            {
+                guid = "bh2",
+                name = "Bounty Hunter",
+                level = 60,
+                subTrait = "None",
+                ascensions = 0,
+                takedowns = 0,
+            },
+            {
+                guid = "wr",
+                name = "Wrath (Assault)",
+                level = 60,
+                subTrait = "None",
+                ascensions = 0,
+                takedowns = 0,
+            },
+        }
+        local creates: { any } = {}
+        local teamLoads: { string } = {}
+        local adapter: any = {
+            getTeams = function()
+                return { Team1 = { Name = "T", Units = { "bh1" } } }
+            end,
+            isSlotOwned = function()
+                return true
+            end,
+            ownsUnit = function()
+                return true
+            end,
+            getEquipped = function()
+                return {}
+            end,
+            equippedList = function()
+                return equippedNow
+            end,
+            ownedUnitList = function()
+                return owned
+            end,
+            unequipAll = function()
+                table.insert(sent, "clear")
+                return true
+            end,
+            equipUnit = function(guid: string)
+                table.insert(sent, guid)
+                return true
+            end,
+            loadTeam = function(key: string)
+                table.insert(teamLoads, key)
+                return true
+            end,
+        }
+        local store: any = {
+            list = function()
+                return { "farm" }
+            end,
+            read = function(name: string)
+                if name == "farm" then
+                    return { units = { "Bounty Hunter", "Wrath (Assault)", "Ghost Unit" } }
+                end
+                return nil
+            end,
+        }
+        local runtime = JoinerRuntime.new({
+            game = { PlaceId = 16146832113 },
+            task = { spawn = function() end, wait = function() end },
+            clock = function()
+                return 100
+            end,
+            userId = 42,
+            lobby = { IsHosting = false, IsInLobby = false },
+            progress = {
+                GetActData = function()
+                    return {}
+                end,
+            },
+            network = {
+                CreateMatch = {
+                    Fire = function(payload: any)
+                        table.insert(creates, payload)
+                    end,
+                },
+                StartMatch = { Fire = function() end },
+                MatchConfirmed = {
+                    On = function()
+                        return function() end
+                    end,
+                },
+            },
+            teamAdapter = adapter,
+            macroStore = store,
+        })
+        for _, other in { "Legend Stage", "Raid", "Dungeon", "Worldline", "Boss Event", "Boss Bounties" } do
+            JoinerSettings.setEnabled(other, false)
+        end
+        JoinerSettings.setPaused(false)
+        JoinerSettings.setCooldown(0)
+        JoinerSettings.setTeamEquipEnabled(false)
+        JoinerSettings.setMacroEquipEnabled(true)
+        JoinerSettings.setMacroForJoiner("Stage", "farm")
+        runtime.setSelection("Stage", "Stage1", "Act1", "Normal")
+        runtime.setEnabled("Stage", true)
+        runtime.start({ alive = true })
+        assert(#runtime.getMacroOptions() == 1)
+
+        runtime.step(100)
+        assert(
+            #sent == 3 and sent[1] == "clear" and sent[2] == "bh2" and sent[3] == "wr",
+            "best units, macro order"
+        )
+        assert(#creates == 0, "join only after the units are equipped")
+        runtime.step(103)
+        assert(#sent == 3 and #creates == 0, "no resend inside the confirmation window")
+        equippedNow = { { guid = "bh2", name = "Bounty Hunter" }, { guid = "wr", name = "Wrath (Assault)" } }
+        runtime.step(104)
+        assert(
+            #creates == 1 and runtime.status:find("missing units Ghost Unit") == nil,
+            "joins once the macro units are equipped"
+        )
+
+        -- A chosen team wins over the macro: the macro is not touched.
+        JoinerSettings.setTeamEquipEnabled(true)
+        JoinerSettings.setTeamForJoiner("Stage", "Team1")
+        equippedNow = { { guid = "old", name = "Other" } }
+        sent = {}
+        runtime.step(140)
+        assert(#sent == 0 and #teamLoads == 1 and teamLoads[1] == "Team1")
+        JoinerSettings.setTeamForJoiner("Stage", nil)
+        JoinerSettings.setTeamEquipEnabled(false)
+
+        -- Unreadable macro: skip the joiner without touching units.
+        JoinerSettings.setMacroForJoiner("Stage", "gone")
+        sent = {}
+        local before = #creates
+        runtime.step(180)
+        assert(#sent == 0 and #creates == before and runtime.status:find("could not be read") ~= nil)
+
+        -- Three unconfirmed attempts give up.
+        JoinerSettings.setMacroForJoiner("Stage", "farm")
+        runtime.step(220)
+        runtime.step(229)
+        runtime.step(238)
+        runtime.step(247)
+        assert(#creates == before and runtime.status:find("not confirmed") ~= nil)
+        runtime.stop()
+        JoinerSettings.setMacroForJoiner("Stage", nil)
+        JoinerSettings.setMacroEquipEnabled(false)
+        JoinerSettings.setEnabled("Stage", false)
+    end
+)
 test("ActivityState evaluates game-recorded challenge seeds and rift attempts", function()
     -- Case 1: stored < current -> available (not played yet in this period)
     local status, period = ActivityState.challenge({

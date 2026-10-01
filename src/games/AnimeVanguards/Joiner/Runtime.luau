@@ -9,6 +9,8 @@ Dependencies: Settings; replicated matchmaking, challenge and stage-progress mod
 local Settings = require("./Settings")
 local ActivityState = require("./ActivityState")
 local TeamEquip = require("./TeamEquip")
+local MacroEquip = require("./MacroEquip")
+local MacroStorage = require("../Macro/Storage")
 local TeamAdapter = require("./TeamAdapter")
 local metadata = require("../Metadata")
 local config = require("../Config")
@@ -155,6 +157,8 @@ function Runtime.new(dependencies: any?): any
         gameSettings = nil,
         changeAttempt = nil,
         teamAttempt = nil,
+        macroAttempt = nil,
+        macroStore = nil,
     }
     local function setStatus(value: string)
         self.status = value
@@ -251,6 +255,114 @@ function Runtime.new(dependencies: any?): any
         return "wait"
     end
 
+    local function getMacroStore(): any
+        local deps = self.dependencies
+        if deps and deps.macroStore then
+            return deps.macroStore
+        end
+        if not self.macroStore then
+            local env: any = getfenv()
+            local okHttp, http = pcall(function()
+                return env.game:GetService("HttpService")
+            end)
+            if okHttp and http then
+                local ok, store = pcall(MacroStorage.new, env, http)
+                if ok then
+                    self.macroStore = store
+                end
+            end
+        end
+        return self.macroStore
+    end
+
+    --- Returns the macro file names available to the Macro Equipper (empty when files are unavailable).
+    function self.getMacroOptions(): { string }
+        local store = getMacroStore()
+        if not store then
+            return {}
+        end
+        local ok, names = pcall(store.list)
+        return if ok and type(names) == "table" then names else {}
+    end
+
+    -- Macro Equipper step for one joiner row (lobby only): same "go" / "wait" / "skip" contract as teamStep.
+    -- Unequips everything and equips the best owned unit for each macro unit name when a macro unit is not equipped.
+    local function macroStep(name: string, now: number): string
+        local deps = self.dependencies
+        local settings = Settings.get()
+        local file = settings.macroEquip.macros[name]
+        local adapter = deps and deps.teamAdapter
+        if not settings.macroEquip.enabled or not file or not adapter then
+            return "go"
+        end
+        local store = getMacroStore()
+        local document = if store then store.read(file) else nil
+        if not document then
+            setStatus(string.format("Macro Equipper: macro %s could not be read (%s)", file, name))
+            return "skip"
+        end
+        local names = MacroEquip.names(document.units)
+        local plan = MacroEquip.plan(names, adapter.equippedList(), adapter.ownedUnitList())
+        if plan.state == "match" then
+            self.macroAttempt = nil
+            if #plan.missing > 0 then
+                setStatus(
+                    "Macro Equipper: missing units "
+                        .. table.concat(plan.missing, ", ")
+                        .. "; joining with the units available"
+                )
+            end
+            return "go"
+        end
+        local attempt: any = self.macroAttempt
+        if not attempt or attempt.key ~= file then
+            attempt = { key = file, sent = 0, last = -math.huge, backoff = -math.huge }
+            self.macroAttempt = attempt
+        end
+        if now < attempt.backoff then
+            return "skip"
+        end
+        if attempt.sent > 0 and now - attempt.last < TEAM_LOAD_TIMEOUT_SECONDS then
+            setStatus(string.format("Macro Equipper: waiting for %s units to equip", file))
+            return "wait"
+        end
+        if attempt.sent >= TEAM_LOAD_ATTEMPTS then
+            attempt.sent = 0
+            attempt.backoff = now + RETRY_SECONDS
+            setStatus(string.format("Macro Equipper: %s units were not confirmed; skipping %s", file, name))
+            return "skip"
+        end
+        attempt.sent += 1
+        attempt.last = now
+        local ok = adapter.unequipAll()
+        for _, guid in plan.steps do
+            ok = adapter.equipUnit(guid) and ok
+        end
+        setStatus(
+            if ok
+                then string.format(
+                    "Macro Equipper: equipping %s units (%d/%d)",
+                    file,
+                    attempt.sent :: any,
+                    TEAM_LOAD_ATTEMPTS
+                )
+                else "Macro Equipper: equip request failed"
+        )
+        return "wait"
+    end
+
+    -- Equipment step for a joiner row: a chosen team wins over a chosen macro (Macro Equipper is lobby only).
+    local function equipStep(name: string, now: number, inMatch: boolean): string
+        local settings = Settings.get()
+        if settings.teamEquip.enabled and settings.teamEquip.teams[name] then
+            return teamStep(name, now)
+        end
+        if inMatch then
+            return "go"
+        end
+        return macroStep(name, now)
+    end
+
     -- True while a team change for the current match is in progress (before Vote Start only).
     local function inMatchTeam(settings: any, matchData: any, now: number, bounty: boolean): boolean
         local deps = self.dependencies
@@ -261,7 +373,7 @@ function Runtime.new(dependencies: any?): any
         if not row then
             return false
         end
-        return teamStep(row, now) == "wait"
+        return equipStep(row, now, true) == "wait"
     end
 
     -- True when the current match is the Boss Bounty match this joiner entered recently.
@@ -786,7 +898,7 @@ function Runtime.new(dependencies: any?): any
                                 end
                             end
                             if targetGuid then
-                                local teamState = teamStep(name, now)
+                                local teamState = equipStep(name, now, false)
                                 if teamState == "wait" then
                                     return
                                 end
@@ -838,7 +950,7 @@ function Runtime.new(dependencies: any?): any
                     and current == choice.eventName
                     and type(deps.bossNetwork[config.remoteNames.bossEventStart]) == "table"
                 then
-                    local teamState = teamStep(name, now)
+                    local teamState = equipStep(name, now, false)
                     if teamState == "wait" then
                         return
                     end
@@ -900,7 +1012,7 @@ function Runtime.new(dependencies: any?): any
                         if completed then
                             setStatus("Worldline: selected worldline already completed")
                         elseif okProgress and type(progress) == "table" and progress.Ready == true then
-                            local teamState = teamStep(name, now)
+                            local teamState = equipStep(name, now, false)
                             if teamState == "wait" then
                                 return
                             end
@@ -944,7 +1056,7 @@ function Runtime.new(dependencies: any?): any
                     if okProgress and unlocked ~= nil then
                         -- The game's bounty panel has no difficulty choice: Legend Stage is Nightmare-only, others Normal.
                         local difficulty = if bounty.mode == "LegendStage" then "Nightmare" else "Normal"
-                        local teamState = teamStep(name, now)
+                        local teamState = equipStep(name, now, false)
                         if teamState == "wait" then
                             return
                         end
@@ -1023,7 +1135,7 @@ function Runtime.new(dependencies: any?): any
                             and type(stage.Stage) == "string"
                             and type(stage.Act) == "string"
                         then
-                            local teamState = teamStep(name, now)
+                            local teamState = equipStep(name, now, false)
                             if teamState == "wait" then
                                 return
                             end
@@ -1073,7 +1185,7 @@ function Runtime.new(dependencies: any?): any
             then
                 local okProgress, unlocked = pcall(deps.progress.GetActData, mode, choice.stage, choice.act)
                 if okProgress and unlocked ~= nil then
-                    local teamState = teamStep(name, now)
+                    local teamState = equipStep(name, now, false)
                     if teamState == "wait" then
                         return
                     end

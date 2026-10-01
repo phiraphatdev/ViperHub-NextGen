@@ -78,6 +78,7 @@ do
                     teamsData = 'Modules.Interface.Loader.Gameplay.Teams.TeamsDataHandler',
                     lobbyTeamsClient = 'NetworkCode.LobbyTeamsClient',
                     gameUnitsClient = 'NetworkCode.GameUnitsClient',
+                    lobbyUnitActionsClient = 'NetworkCode.LobbyUnitActionsClient',
                     bountyState = 'Modules.Gameplay.Bounty.PlayerBountyDataHandler',
                     bountyStateMatch = 'Modules.Gameplay.Bounties.PlayerBountyDataHandler',
                     autoPlayModeBlocklist = 'Modules.Shared.AutoPlayModeBlocklist',
@@ -138,6 +139,8 @@ do
                     castWaveSkipVote = 'CastWaveSkipVote',
                     switchAutoPlayPreset = 'SwitchAutoPlayPreset',
                     loadTeam = 'LoadTeam',
+                    equipUnit = 'EquipUnitInSlot',
+                    unequipAllUnits = 'UnequipAllUnits',
                     requestLoadTeam = 'RequestLoadTeam',
                     requestAutoPlayData = 'RequestAutoPlayData',
                     autoPlayPresetsUpdated = 'AutoPlayPresetsUpdated',
@@ -413,6 +416,112 @@ do
     end
     do
         local function __modImpl()
+            local MacroEquip = {}
+            local MAX_UNITS = 6
+
+            function MacroEquip.validName(name)
+                return type(name) == 'string' and #name > 0 and #name <= 64 and string.match(name, '^[%w_%-]+$') ~= nil
+            end
+
+            local function hasSubTrait(unit)
+                return if unit.subTrait ~= '' and unit.subTrait ~= 'None'then 1 else 0
+            end
+            local function better(a, b)
+                if a.level ~= b.level then
+                    return a.level > b.level
+                end
+                if hasSubTrait(a) ~= hasSubTrait(b) then
+                    return hasSubTrait(a) > hasSubTrait(b)
+                end
+                if a.ascensions ~= b.ascensions then
+                    return a.ascensions > b.ascensions
+                end
+                if a.takedowns ~= b.takedowns then
+                    return a.takedowns > b.takedowns
+                end
+
+                return a.guid < b.guid
+            end
+
+            function MacroEquip.best(owned, name)
+                local winner = nil
+
+                for _, unit in owned do
+                    if unit.name == name and (winner == nil or better(unit, winner)) then
+                        winner = unit
+                    end
+                end
+
+                return winner
+            end
+            function MacroEquip.names(units)
+                local result = {}
+                local seen = {}
+
+                if type(units) == 'table' then
+                    for _, name in units do
+                        if type(name) == 'string' and name ~= '' and not seen[name] and #result < MAX_UNITS then
+                            seen[name] = true
+
+                            table.insert(result, name)
+                        end
+                    end
+                end
+
+                return result
+            end
+            function MacroEquip.plan(names, equipped, owned)
+                local equippedNames = {}
+
+                for _, unit in equipped do
+                    equippedNames[unit.name] = true
+                end
+
+                local steps = {}
+                local missing = {}
+                local complete = true
+
+                for _, name in names do
+                    local best = MacroEquip.best(owned, name)
+
+                    if best == nil then
+                        table.insert(missing, name)
+                    else
+                        table.insert(steps, best.guid)
+
+                        if not equippedNames[name] then
+                            complete = false
+                        end
+                    end
+                end
+
+                local state = if#steps == 0 or complete then'match'else'equip'
+
+                return {
+                    state = state,
+                    steps = steps,
+                    missing = missing,
+                }
+            end
+
+            return MacroEquip
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.g()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.g
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.g = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
             local Capabilities = {}
 
             function Capabilities.detect(env)
@@ -430,14 +539,14 @@ do
             return Capabilities
         end
 
-        function __DARKLUA_BUNDLE_MODULES.g()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.g
+        function __DARKLUA_BUNDLE_MODULES.h()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.h
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.g = v
+                __DARKLUA_BUNDLE_MODULES.cache.h = v
             end
 
             return v.c
@@ -470,14 +579,14 @@ do
             return Validation
         end
 
-        function __DARKLUA_BUNDLE_MODULES.h()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.h
+        function __DARKLUA_BUNDLE_MODULES.i()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.i
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.h = v
+                __DARKLUA_BUNDLE_MODULES.cache.i = v
             end
 
             return v.c
@@ -485,8 +594,8 @@ do
     end
     do
         local function __modImpl()
-            local Capabilities = __DARKLUA_BUNDLE_MODULES.g()
-            local Validation = __DARKLUA_BUNDLE_MODULES.h()
+            local Capabilities = __DARKLUA_BUNDLE_MODULES.h()
+            local Validation = __DARKLUA_BUNDLE_MODULES.i()
             local FileStorage = {}
             local ROOT = 'ViperHubNextGen'
             local MAX_BYTES = 16384
@@ -545,14 +654,14 @@ do
             return FileStorage
         end
 
-        function __DARKLUA_BUNDLE_MODULES.i()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.i
+        function __DARKLUA_BUNDLE_MODULES.j()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.j
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.i = v
+                __DARKLUA_BUNDLE_MODULES.cache.j = v
             end
 
             return v.c
@@ -562,7 +671,8 @@ do
         local function __modImpl()
             local definitions = __DARKLUA_BUNDLE_MODULES.e()
             local TeamEquip = __DARKLUA_BUNDLE_MODULES.f()
-            local FileStorage = __DARKLUA_BUNDLE_MODULES.i()
+            local MacroEquip = __DARKLUA_BUNDLE_MODULES.g()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.j()
             local Settings = {}
             local DEFAULT_COOLDOWN = 0
             local MAX_COOLDOWN = 300
@@ -604,6 +714,8 @@ do
             local changeStageInMatch = true
             local teamEquipEnabled = false
             local teamEquipTeams = {}
+            local macroEquipEnabled = false
+            local macroEquipMacros = {}
             local bountyRun = nil
             local storage = nil
             local encode = nil
@@ -631,6 +743,10 @@ do
                     teamEquip = {
                         enabled = teamEquipEnabled,
                         teams = teamEquipTeams,
+                    },
+                    macroEquip = {
+                        enabled = macroEquipEnabled,
+                        macros = macroEquipMacros,
                     },
                 })
 
@@ -711,6 +827,18 @@ do
                         for name, key in data.teamEquip.teams do
                             if type(name) == 'string' and known(name) and TeamEquip.validKey(key) then
                                 teamEquipTeams[name] = key
+                            end
+                        end
+                    end
+                end
+                if type(data.macroEquip) == 'table' then
+                    if type(data.macroEquip.enabled) == 'boolean' then
+                        macroEquipEnabled = data.macroEquip.enabled
+                    end
+                    if type(data.macroEquip.macros) == 'table' then
+                        for name, file in data.macroEquip.macros do
+                            if type(name) == 'string' and known(name) and MacroEquip.validName(file) then
+                                macroEquipMacros[name] = file
                             end
                         end
                     end
@@ -802,6 +930,10 @@ do
                         enabled = teamEquipEnabled,
                         teams = table.clone(teamEquipTeams),
                     },
+                    macroEquip = {
+                        enabled = macroEquipEnabled,
+                        macros = table.clone(macroEquipMacros),
+                    },
                     persistent = storage ~= nil,
                 }
             end
@@ -811,6 +943,33 @@ do
                 end
 
                 teamEquipEnabled = value
+
+                save()
+
+                return true
+            end
+            function Settings.setMacroEquipEnabled(value)
+                if type(value) ~= 'boolean' then
+                    return false
+                end
+
+                macroEquipEnabled = value
+
+                save()
+
+                return true
+            end
+            function Settings.setMacroForJoiner(name, file)
+                if type(name) ~= 'string' or not known(name) then
+                    return false
+                end
+                if file == nil then
+                    macroEquipMacros[name] = nil
+                elseif MacroEquip.validName(file) then
+                    macroEquipMacros[name] = file
+                else
+                    return false
+                end
 
                 save()
 
@@ -973,14 +1132,14 @@ do
             return Settings
         end
 
-        function __DARKLUA_BUNDLE_MODULES.j()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.j
+        function __DARKLUA_BUNDLE_MODULES.k()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.k
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.j = v
+                __DARKLUA_BUNDLE_MODULES.cache.k = v
             end
 
             return v.c
@@ -990,7 +1149,7 @@ do
         local function __modImpl()
             local Catalog = __DARKLUA_BUNDLE_MODULES.d()
             local definitions = __DARKLUA_BUNDLE_MODULES.e()
-            local Settings = __DARKLUA_BUNDLE_MODULES.j()
+            local Settings = __DARKLUA_BUNDLE_MODULES.k()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Page = {}
 
@@ -1601,12 +1760,86 @@ do
                 macro:Toggle({
                     Title = 'Auto Join Macro Equipper',
                     Desc =
-[[Coming soon: equip the units a recorded macro needs before joining a stage]],
-                    Value = false,
-                    Locked = true,
+[[Automatically equip the macro's units before joining a stage]],
+                    Value = saved.macroEquip.enabled == true,
+                    Locked = runtime == nil or type(runtime.getMacroOptions) ~= 'function',
+                    Callback = Settings.setMacroEquipEnabled,
                 })
 
+                local macroRows = {}
+
+                for _, name in definitions do
+                    local row = {
+                        name = name,
+                        signature = nil,
+                        current = 'None',
+                    }
+
+                    row.dropdown = macro:Dropdown({
+                        Title = name .. ' Joiner',
+                        Values = {
+                            'None',
+                        },
+                        Value = 'None',
+                        Callback = function(label)
+                            if syncing or label == row.current then
+                                return
+                            end
+                            if Settings.setMacroForJoiner(row.name, if label == 'None'then nil else label) then
+                                row.current = label
+                                row.signature = nil
+                            end
+                        end,
+                    })
+
+                    table.insert(macroRows, row)
+                end
+
+                local function refreshMacros()
+                    local files = if runtime and type(runtime.getMacroOptions) == 'function'then(runtime.getMacroOptions)()else nil
+
+                    if type(files) ~= 'table' then
+                        return
+                    end
+
+                    local chosen = Settings.get().macroEquip.macros
+                    local labels = {
+                        'None',
+                    }
+
+                    for _, file in files do
+                        table.insert(labels, file)
+                    end
+                    for _, row in macroRows do
+                        local selected = chosen[row.name]
+
+                        if selected == nil or not table.find(labels, selected) then
+                            selected = 'None'
+                        end
+
+                        local signature = selected .. '|' .. table.concat(labels, '|')
+
+                        if row.signature ~= signature then
+                            row.signature = signature
+                            row.current = selected
+                            syncing = true
+
+                            local dropdown = row.dropdown
+
+                            if type(dropdown.Select) == 'function' then
+                                pcall(dropdown.Select, dropdown, selected)
+                            end
+                            if type(dropdown.Refresh) == 'function' then
+                                pcall(dropdown.Refresh, dropdown, labels)
+                            end
+
+                            syncing = false
+                        end
+                    end
+                end
                 local function refresh()
+                    refreshMacros()
+
                     local options = if runtime and type(runtime.getTeamOptions) == 'function'then(runtime.getTeamOptions)()else nil
 
                     if not options then
@@ -1981,14 +2214,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.k()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.k
+        function __DARKLUA_BUNDLE_MODULES.l()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.l
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.k = v
+                __DARKLUA_BUNDLE_MODULES.cache.l = v
             end
 
             return v.c
@@ -1996,7 +2229,7 @@ do
     end
     do
         local function __modImpl()
-            local FileStorage = __DARKLUA_BUNDLE_MODULES.i()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.j()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local ActivityState = {}
             local STORAGE_KEY = 'AnimeVanguardsActivityState'
@@ -2197,14 +2430,468 @@ do
             return ActivityState
         end
 
-        function __DARKLUA_BUNDLE_MODULES.l()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.l
+        function __DARKLUA_BUNDLE_MODULES.m()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.m
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.l = v
+                __DARKLUA_BUNDLE_MODULES.cache.m = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
+            local Document = {}
+            local KINDS = {
+                voteStart = true,
+                place = true,
+                upgrade = true,
+                sell = true,
+                ability = true,
+                priority = true,
+                autoUpgrade = true,
+                autoAbility = true,
+                upgradePriority = true,
+            }
+            local MAX_ACTIONS = 2000
+
+            local function rounded(value)
+                local result = math.floor(value * 1000000 + 0.5) / 1000000
+
+                return if result == 0 then 0 else result
+            end
+            local function finite(value)
+                return type(value) == 'number' and value == value and value ~= math.huge and value ~=
+-math.huge
+            end
+            local function short(value, limit)
+                return type(value) == 'string' and #value > 0 and #value <= limit
+            end
+            local function validCFrame(value)
+                if type(value) ~= 'table' or #value ~= 12 then
+                    return false
+                end
+
+                for index = 1, 12 do
+                    if not finite(value[index]) then
+                        return false
+                    end
+                end
+
+                return true
+            end
+
+            function Document.fromPose(position, rotation)
+                if type(position) ~= 'table' or not finite(position.x) or not finite(position.y) or not finite(position.z) or not finite(rotation) then
+                    return nil
+                end
+
+                local yaw = math.rad(rotation)
+                local cosine, sine = math.cos(yaw), math.sin(yaw)
+
+                return {
+                    rounded(position.x),
+                    rounded(position.y),
+                    rounded(position.z),
+                    rounded(cosine),
+                    0,
+                    rounded(sine),
+                    0,
+                    1,
+                    0,
+                    rounded(-sine),
+                    0,
+                    rounded(cosine),
+                }
+            end
+            function Document.toPose(components)
+                if not validCFrame(components) then
+                    return nil, nil
+                end
+
+                local yaw = math.deg(math.atan2(components[6], components[4])) % 360
+
+                return {
+                    x = components[1],
+                    y = components[2],
+                    z = components[3],
+                }, yaw
+            end
+            function Document.empty(name)
+                return {
+                    schemaVersion = 2,
+                    name = name,
+                    game = 'AnimeVanguards',
+                    match = {},
+                    units = {},
+                    actions = {},
+                }
+            end
+            function Document.validate(data)
+                if type(data) ~= 'table' or (data.schemaVersion ~= 1 and data.schemaVersion ~= 2) or data.game ~= 'AnimeVanguards' then
+                    return nil, 'MACRO_SCHEMA_UNSUPPORTED'
+                end
+                if not short(data.name, 64) or type(data.match) ~= 'table' or type(data.units) ~= 'table' or type(data.actions) ~= 'table' or #data.actions > MAX_ACTIONS then
+                    return nil, 'MACRO_INVALID'
+                end
+
+                local result = Document.empty(data.name)
+
+                if short(data.match.mode, 100) then
+                    result.match.mode = data.match.mode
+                end
+                if short(data.match.map, 100) then
+                    result.match.map = data.match.map
+                end
+
+                for _, unitName in data.units do
+                    if not short(unitName, 100) then
+                        return nil, 'MACRO_INVALID'
+                    end
+
+                    table.insert(result.units, unitName)
+                end
+
+                local levelsByRef = {}
+
+                for index, action in data.actions do
+                    if type(action) ~= 'table' or not KINDS[action.kind] or action.index ~= index or not finite(action.wave) or action.wave < 0 or not finite(action.yen) or action.yen < 0 or not finite(action.time) or action.time < 0 or (action.kind ~= 'voteStart' and not short(action.unitRef, 100)) then
+                        return nil, 'MACRO_ACTION_INVALID'
+                    end
+
+                    local normalized = {
+                        index = index,
+                        kind = action.kind,
+                        wave = action.wave,
+                        yen = action.yen,
+                        time = action.time,
+                        unitRef = if action.kind == 'voteStart'then nil else action.unitRef,
+                    }
+
+                    if action.kind == 'place' then
+                        local components = action.cframe
+
+                        if data.schemaVersion == 1 then
+                            components = Document.fromPose(action.position, action.rotation)
+                        end
+                        if not short(action.unitName, 100) or not validCFrame(components) or not finite(action.slotIndex) or action.slotIndex < 1 or action.slotIndex > 8 or action.slotIndex % 1 ~= 0 then
+                            return nil, 'MACRO_ACTION_INVALID'
+                        end
+
+                        normalized.unitName = action.unitName
+                        normalized.cframe = table.clone(components)
+                        normalized.slotIndex = action.slotIndex
+
+                        local initialLevel = action.initialLevel
+
+                        if initialLevel == nil then
+                            initialLevel = 0
+                        end
+                        if not finite(initialLevel) or initialLevel % 1 ~= 0 or initialLevel < 0 or initialLevel > 2000 then
+                            return nil, 'MACRO_ACTION_INVALID'
+                        end
+
+                        normalized.initialLevel = initialLevel
+                        levelsByRef[action.unitRef] = initialLevel
+                    elseif action.kind == 'upgrade' then
+                        local previousLevel = levelsByRef[action.unitRef] or 0
+                        local level = action.level
+
+                        if level == nil then
+                            level = previousLevel + 1
+                        end
+                        if not finite(level) or level % 1 ~= 0 or level <= previousLevel or level > 2000 then
+                            return nil, 'MACRO_ACTION_INVALID'
+                        end
+
+                        normalized.level = level
+                        levelsByRef[action.unitRef] = level
+                    elseif action.kind == 'ability' then
+                        if not short(action.abilityName, 100) then
+                            return nil, 'MACRO_ACTION_INVALID'
+                        end
+
+                        normalized.abilityName = action.abilityName
+                    elseif action.kind == 'priority' then
+                        if not table.find({
+                            'First',
+                            'Closest',
+                            'Last',
+                            'Strongest',
+                            'Weakest',
+                            'Bosses',
+                        }, action.priorityName) then
+                            return nil, 'MACRO_ACTION_INVALID'
+                        end
+
+                        normalized.priorityName = action.priorityName
+                    elseif action.kind == 'autoUpgrade' then
+                        if type(action.enabled) ~= 'boolean' then
+                            return nil, 'MACRO_ACTION_INVALID'
+                        end
+
+                        normalized.enabled = action.enabled
+                    elseif action.kind == 'autoAbility' then
+                        if type(action.enabled) ~= 'boolean' or not short(action.abilityName, 100) then
+                            return nil, 'MACRO_ACTION_INVALID'
+                        end
+
+                        normalized.enabled = action.enabled
+                        normalized.abilityName = action.abilityName
+                    elseif action.kind == 'upgradePriority' then
+                        if not finite(action.upgradePriority) or action.upgradePriority % 1 ~= 0 or action.upgradePriority < 1 or action.upgradePriority > 6 then
+                            return nil, 'MACRO_ACTION_INVALID'
+                        end
+
+                        normalized.upgradePriority = action.upgradePriority
+                    end
+
+                    table.insert(result.actions, normalized)
+                end
+
+                return result, nil
+            end
+            function Document.importLegacy(data, name)
+                if type(data) ~= 'table' or type(data.Marco_Data) ~= 'table' then
+                    return nil, 'MACRO_LEGACY_INVALID'
+                end
+
+                local result = Document.empty(name)
+
+                result.match = {
+                    map = data.Map,
+                    mode = data.Mode,
+                }
+
+                for _, row in data.Marco_Data do
+                    if type(row) == 'table' then
+                        local kind = if row.Method == 'SpawnTower'then'place'else if row.Method == 'UpgradeTower'then'upgrade'else if row.Method == 'SellTower'then'sell'else if row.Method == 'Use Ability'then'ability'else nil
+
+                        if kind then
+                            local action = {
+                                index = #result.actions + 1,
+                                kind = kind,
+                                wave = tonumber(row.Wave) or 0,
+                                yen = 0,
+                                time = tonumber(row.Time) or 0,
+                                unitRef = tostring(row.UnitValue or ''),
+                            }
+
+                            if kind == 'place' then
+                                local x, y, z = tostring(row.Position):match('^%s*([%-%d%.]+)%s*,%s*([%-%d%.]+)%s*,%s*([%-%d%.]+)%s*$')
+
+                                action.unitName = tostring(row.Unit or '')
+                                action.cframe = Document.fromPose({
+                                    x = tonumber(x),
+                                    y = tonumber(y),
+                                    z = tonumber(z),
+                                }, tonumber(row.Rotation) or 0)
+
+                                local slot = tonumber(row.Slot) or tonumber(row.SlotIndex) or tonumber(row.UnitValue) or 1
+
+                                action.slotIndex = if slot >= 1 and slot <= 8 then slot else((slot - 1) % 6 + 1)
+                            elseif kind == 'ability' then
+                                action.abilityName = tostring(row.Ability or '')
+                            end
+
+                            table.insert(result.actions, action)
+                        end
+                    end
+                end
+
+                return Document.validate(result)
+            end
+
+            return Document
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.n()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.n
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.n = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
+            local Document = __DARKLUA_BUNDLE_MODULES.n()
+            local Storage = {}
+            local ROOT = 'ViperHubNextGen/macro/AnimeVanguards'
+            local MAX_BYTES = 1024 * 1024
+
+            local function validName(name)
+                return type(name) == 'string' and #name > 0 and #name <= 64 and (name):match('^[%w_%-]+$') ~= nil
+            end
+
+            function Storage.new(env, codec)
+                for _, key in {
+                    'readfile',
+                    'writefile',
+                    'isfile',
+                    'isfolder',
+                    'makefolder',
+                    'listfiles',
+                    'delfile',
+                }do
+                    if type(env[key]) ~= 'function' then
+                        return nil
+                    end
+                end
+
+                local self = {}
+
+                local function path(name)
+                    return ROOT .. '/' .. name .. '.json'
+                end
+                local function folders()
+                    local ok = pcall(function()
+                        for _, folder in {
+                            'ViperHubNextGen',
+                            'ViperHubNextGen/macro',
+                            ROOT,
+                        }do
+                            if not env.isfolder(folder) then
+                                env.makefolder(folder)
+                            end
+                        end
+                    end)
+
+                    return ok
+                end
+
+                function self.list()
+                    if not folders() then
+                        return {}
+                    end
+
+                    local ok, files = pcall(env.listfiles, ROOT)
+
+                    if not ok or type(files) ~= 'table' then
+                        return {}
+                    end
+
+                    local names = {}
+
+                    for _, file in files do
+                        if type(file) == 'string' then
+                            local name = file:gsub('\\', '/'):match('([^/]+)%.[jJ][sS][oO][nN]$')
+
+                            if validName(name) then
+                                table.insert(names, name)
+                            end
+                        end
+                    end
+
+                    table.sort(names)
+
+                    return names
+                end
+                function self.read(name)
+                    if not validName(name) then
+                        return nil, 'MACRO_NAME_INVALID'
+                    end
+
+                    local ok, body = pcall(env.readfile, path(name))
+
+                    if not ok or type(body) ~= 'string' or #body > MAX_BYTES then
+                        return nil, 'MACRO_READ_FAILED'
+                    end
+
+                    local decoded, data = pcall(codec.JSONDecode, codec, body)
+
+                    if not decoded then
+                        return nil, 'MACRO_JSON_INVALID'
+                    end
+
+                    local document, err = Document.validate(data)
+
+                    if document and document.name ~= name then
+                        document.name = name
+                    end
+
+                    return document, err
+                end
+                function self.write(name, document, overwrite)
+                    if not validName(name) then
+                        return false, 'MACRO_NAME_INVALID'
+                    end
+
+                    local candidate = document
+
+                    if type(document) == 'table' and document.name ~= name then
+                        candidate = table.clone(document)
+                        candidate.name = name
+                    end
+
+                    local checked, err = Document.validate(candidate)
+
+                    if not checked then
+                        return false, err
+                    end
+                    if not folders() then
+                        return false, 'MACRO_FOLDER_FAILED'
+                    end
+                    if not overwrite and env.isfile(path(name)) then
+                        return false, 'MACRO_EXISTS'
+                    end
+
+                    local ok, body = pcall(codec.JSONEncode, codec, checked)
+
+                    if not ok or type(body) ~= 'string' or #body > MAX_BYTES then
+                        return false, 'MACRO_SIZE_INVALID'
+                    end
+
+                    local wrote = pcall(env.writefile, path(name), body)
+
+                    if not wrote then
+                        return false, 'MACRO_WRITE_FAILED'
+                    end
+
+                    local readback = self.read(name)
+
+                    if not readback then
+                        return false, 'MACRO_READBACK_FAILED'
+                    end
+
+                    return true, nil
+                end
+                function self.delete(name)
+                    if not validName(name) then
+                        return false, 'MACRO_NAME_INVALID'
+                    end
+                    if not env.isfile(path(name)) then
+                        return false, 'MACRO_MISSING'
+                    end
+
+                    local ok = pcall(env.delfile, path(name))
+
+                    return ok and not env.isfile(path(name)), if ok then nil else'MACRO_DELETE_FAILED'
+                end
+
+                return self
+            end
+
+            return Storage
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.o()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.o
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.o = v
             end
 
             return v.c
@@ -2262,6 +2949,7 @@ do
                     teamsData = optionalModule(starter, config.instancePaths.teamsData),
                     lobbyTeams = optionalModule(replicated, config.instancePaths.lobbyTeamsClient),
                     gameUnits = optionalModule(replicated, config.instancePaths.gameUnitsClient),
+                    unitActions = optionalModule(replicated, config.instancePaths.lobbyUnitActionsClient),
                 }
             end
 
@@ -2364,6 +3052,90 @@ do
                         table.clear(connections)
                     end
                 end
+                function self.ownedUnitList()
+                    local d = deps()
+                    local owned = d and d.ownedUnits
+
+                    if not owned or type(owned.GetOwnedUnits) ~= 'function' or type(owned.GetUnitObject) ~= 'function' then
+                        return {}
+                    end
+
+                    local ok, all = pcall(owned.GetOwnedUnits)
+
+                    if not ok or type(all) ~= 'table' then
+                        return {}
+                    end
+
+                    local list = {}
+
+                    for guid in all do
+                        local okUnit, unit = pcall(owned.GetUnitObject, guid)
+
+                        if okUnit and type(unit) == 'table' and type(unit.UnitData) == 'table' then
+                            local name = unit.UnitData.Name
+
+                            if type(guid) == 'string' and type(name) == 'string' then
+                                table.insert(list, {
+                                    guid = guid,
+                                    name = name,
+                                    level = if type(unit.Level) == 'number'then unit.Level else 0,
+                                    subTrait = if type(unit.SubTrait) == 'string'then unit.SubTrait else'None',
+                                    ascensions = if type(unit.Ascensions) == 'number'then unit.Ascensions else 0,
+                                    takedowns = if type(unit.Takedowns) == 'number'then unit.Takedowns else 0,
+                                })
+                            end
+                        end
+                    end
+
+                    return list
+                end
+                function self.equippedList()
+                    local d = deps()
+                    local owned = d and d.ownedUnits
+                    local equipped = self.getEquipped()
+                    local list = {}
+
+                    for slot = 1, 6 do
+                        local guid = equipped[slot]
+
+                        if type(guid) == 'string' and owned and type(owned.GetUnitObject) == 'function' then
+                            local ok, unit = pcall(owned.GetUnitObject, guid)
+
+                            if ok and type(unit) == 'table' and type(unit.UnitData) == 'table' and type(unit.UnitData.Name) == 'string' then
+                                table.insert(list, {
+                                    guid = guid,
+                                    name = unit.UnitData.Name,
+                                })
+                            end
+                        end
+                    end
+
+                    return list
+                end
+                function self.unequipAll()
+                    local d = deps()
+                    local remote = d and d.unitActions and d.unitActions[config.remoteNames.unequipAllUnits]
+
+                    if not remote or type(remote.Fire) ~= 'function' then
+                        return false
+                    end
+
+                    return (pcall(remote.Fire, {NonFarmsOnly = false}))
+                end
+                function self.equipUnit(guid)
+                    if type(guid) ~= 'string' or guid == '' then
+                        return false
+                    end
+
+                    local d = deps()
+                    local remote = d and d.unitActions and d.unitActions[config.remoteNames.equipUnit]
+
+                    if not remote or type(remote.Fire) ~= 'function' then
+                        return false
+                    end
+
+                    return (pcall(remote.Fire, {UnitGUID = guid}))
+                end
                 function self.loadTeam(key)
                     if not TeamEquip.validKey(key) then
                         return false
@@ -2385,14 +3157,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.m()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.m
+        function __DARKLUA_BUNDLE_MODULES.p()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.p
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.m = v
+                __DARKLUA_BUNDLE_MODULES.cache.p = v
             end
 
             return v.c
@@ -2400,10 +3172,12 @@ do
     end
     do
         local function __modImpl()
-            local Settings = __DARKLUA_BUNDLE_MODULES.j()
-            local ActivityState = __DARKLUA_BUNDLE_MODULES.l()
+            local Settings = __DARKLUA_BUNDLE_MODULES.k()
+            local ActivityState = __DARKLUA_BUNDLE_MODULES.m()
             local TeamEquip = __DARKLUA_BUNDLE_MODULES.f()
-            local TeamAdapter = __DARKLUA_BUNDLE_MODULES.m()
+            local MacroEquip = __DARKLUA_BUNDLE_MODULES.g()
+            local MacroStorage = __DARKLUA_BUNDLE_MODULES.o()
+            local TeamAdapter = __DARKLUA_BUNDLE_MODULES.p()
             local metadata = __DARKLUA_BUNDLE_MODULES.b()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Runtime = {}
@@ -2545,6 +3319,8 @@ do
                     gameSettings = nil,
                     changeAttempt = nil,
                     teamAttempt = nil,
+                    macroAttempt = nil,
+                    macroStore = nil,
                 }
 
                 local function setStatus(value)
@@ -2658,6 +3434,128 @@ do
 
                     return 'wait'
                 end
+                local function getMacroStore()
+                    local deps = self.dependencies
+
+                    if deps and deps.macroStore then
+                        return deps.macroStore
+                    end
+                    if not self.macroStore then
+                        local env = getfenv()
+                        local okHttp, http = pcall(function()
+                            return env.game:GetService('HttpService')
+                        end)
+
+                        if okHttp and http then
+                            local ok, store = pcall(MacroStorage.new, env, http)
+
+                            if ok then
+                                self.macroStore = store
+                            end
+                        end
+                    end
+
+                    return self.macroStore
+                end
+
+                function self.getMacroOptions()
+                    local store = getMacroStore()
+
+                    if not store then
+                        return {}
+                    end
+
+                    local ok, names = pcall(store.list)
+
+                    return if ok and type(names) == 'table'then names else{}
+                end
+
+                local function macroStep(name, now)
+                    local deps = self.dependencies
+                    local settings = Settings.get()
+                    local file = settings.macroEquip.macros[name]
+                    local adapter = deps and deps.teamAdapter
+
+                    if not settings.macroEquip.enabled or not file or not adapter then
+                        return 'go'
+                    end
+
+                    local store = getMacroStore()
+                    local document = if store then store.read(file)else nil
+
+                    if not document then
+                        setStatus(string.format('Macro Equipper: macro %s could not be read (%s)', file, name))
+
+                        return 'skip'
+                    end
+
+                    local names = MacroEquip.names(document.units)
+                    local plan = MacroEquip.plan(names, adapter.equippedList(), adapter.ownedUnitList())
+
+                    if plan.state == 'match' then
+                        self.macroAttempt = nil
+
+                        if #plan.missing > 0 then
+                            setStatus('Macro Equipper: missing units ' .. table.concat(plan.missing, ', ') .. '; joining with the units available')
+                        end
+
+                        return 'go'
+                    end
+
+                    local attempt = self.macroAttempt
+
+                    if not attempt or attempt.key ~= file then
+                        attempt = {
+                            key = file,
+                            sent = 0,
+                            last = -math.huge,
+                            backoff = -math.huge,
+                        }
+                        self.macroAttempt = attempt
+                    end
+                    if now < attempt.backoff then
+                        return 'skip'
+                    end
+                    if attempt.sent > 0 and now - attempt.last < TEAM_LOAD_TIMEOUT_SECONDS then
+                        setStatus(string.format('Macro Equipper: waiting for %s units to equip', file))
+
+                        return 'wait'
+                    end
+                    if attempt.sent >= TEAM_LOAD_ATTEMPTS then
+                        attempt.sent = 0
+                        attempt.backoff = now + RETRY_SECONDS
+
+                        setStatus(string.format('Macro Equipper: %s units were not confirmed; skipping %s', file, name))
+
+                        return 'skip'
+                    end
+
+                    attempt.sent += 1
+
+                    attempt.last = now
+
+                    local ok = adapter.unequipAll()
+
+                    for _, guid in plan.steps do
+                        ok = adapter.equipUnit(guid) and ok
+                    end
+
+                    setStatus(if ok then string.format('Macro Equipper: equipping %s units (%d/%d)', file, attempt.sent, TEAM_LOAD_ATTEMPTS)else'Macro Equipper: equip request failed')
+
+                    return 'wait'
+                end
+                local function equipStep(name, now, inMatch)
+                    local settings = Settings.get()
+
+                    if settings.teamEquip.enabled and settings.teamEquip.teams[name] then
+                        return teamStep(name, now)
+                    end
+                    if inMatch then
+                        return 'go'
+                    end
+
+                    return macroStep(name, now)
+                end
                 local function inMatchTeam(settings, matchData, now, bounty)
                     local deps = self.dependencies
 
@@ -2671,7 +3569,7 @@ do
                         return false
                     end
 
-                    return teamStep(row, now) == 'wait'
+                    return equipStep(row, now, true) == 'wait'
                 end
                 local function isBountyMatch(settings, matchData)
                     local run = settings.bountyRun
@@ -3173,7 +4071,7 @@ do
                                             end
                                         end
                                         if targetGuid then
-                                            local teamState = teamStep(name, now)
+                                            local teamState = equipStep(name, now, false)
 
                                             if teamState == 'wait' then
                                                 return
@@ -3214,7 +4112,7 @@ do
                             local okCurrent, current = pcall(deps.bossRotation.GetCurrentBossEvent)
 
                             if okCurrent and current == choice.eventName and type(deps.bossNetwork[config.remoteNames.bossEventStart]) == 'table' then
-                                local teamState = teamStep(name, now)
+                                local teamState = equipStep(name, now, false)
 
                                 if teamState == 'wait' then
                                     return
@@ -3268,7 +4166,7 @@ do
                                     if completed then
                                         setStatus('Worldline: selected worldline already completed')
                                     elseif okProgress and type(progress) == 'table' and progress.Ready == true then
-                                        local teamState = teamStep(name, now)
+                                        local teamState = equipStep(name, now, false)
 
                                         if teamState == 'wait' then
                                             return
@@ -3314,7 +4212,7 @@ do
 
                                 if okProgress and unlocked ~= nil then
                                     local difficulty = if bounty.mode == 'LegendStage'then'Nightmare'else'Normal'
-                                    local teamState = teamStep(name, now)
+                                    local teamState = equipStep(name, now, false)
 
                                     if teamState == 'wait' then
                                         return
@@ -3393,7 +4291,7 @@ do
                                     local okStage, stage = pcall(deps.challengeStages.GetChallengeStage, targetChallengeName)
 
                                     if okStage and type(stage) == 'table' and type(stage.StageType) == 'string' and type(stage.Stage) == 'string' and type(stage.Act) == 'string' then
-                                        local teamState = teamStep(name, now)
+                                        local teamState = equipStep(name, now, false)
 
                                         if teamState == 'wait' then
                                             return
@@ -3439,7 +4337,7 @@ do
                             local okProgress, unlocked = pcall(deps.progress.GetActData, mode, choice.stage, choice.act)
 
                             if okProgress and unlocked ~= nil then
-                                local teamState = teamStep(name, now)
+                                local teamState = equipStep(name, now, false)
 
                                 if teamState == 'wait' then
                                     return
@@ -3681,14 +4579,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.n()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.n
+        function __DARKLUA_BUNDLE_MODULES.q()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.q
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.n = v
+                __DARKLUA_BUNDLE_MODULES.cache.q = v
             end
 
             return v.c
@@ -3696,462 +4594,8 @@ do
     end
     do
         local function __modImpl()
-            local Document = {}
-            local KINDS = {
-                voteStart = true,
-                place = true,
-                upgrade = true,
-                sell = true,
-                ability = true,
-                priority = true,
-                autoUpgrade = true,
-                autoAbility = true,
-                upgradePriority = true,
-            }
-            local MAX_ACTIONS = 2000
-
-            local function rounded(value)
-                local result = math.floor(value * 1000000 + 0.5) / 1000000
-
-                return if result == 0 then 0 else result
-            end
-            local function finite(value)
-                return type(value) == 'number' and value == value and value ~= math.huge and value ~=
--math.huge
-            end
-            local function short(value, limit)
-                return type(value) == 'string' and #value > 0 and #value <= limit
-            end
-            local function validCFrame(value)
-                if type(value) ~= 'table' or #value ~= 12 then
-                    return false
-                end
-
-                for index = 1, 12 do
-                    if not finite(value[index]) then
-                        return false
-                    end
-                end
-
-                return true
-            end
-
-            function Document.fromPose(position, rotation)
-                if type(position) ~= 'table' or not finite(position.x) or not finite(position.y) or not finite(position.z) or not finite(rotation) then
-                    return nil
-                end
-
-                local yaw = math.rad(rotation)
-                local cosine, sine = math.cos(yaw), math.sin(yaw)
-
-                return {
-                    rounded(position.x),
-                    rounded(position.y),
-                    rounded(position.z),
-                    rounded(cosine),
-                    0,
-                    rounded(sine),
-                    0,
-                    1,
-                    0,
-                    rounded(-sine),
-                    0,
-                    rounded(cosine),
-                }
-            end
-            function Document.toPose(components)
-                if not validCFrame(components) then
-                    return nil, nil
-                end
-
-                local yaw = math.deg(math.atan2(components[6], components[4])) % 360
-
-                return {
-                    x = components[1],
-                    y = components[2],
-                    z = components[3],
-                }, yaw
-            end
-            function Document.empty(name)
-                return {
-                    schemaVersion = 2,
-                    name = name,
-                    game = 'AnimeVanguards',
-                    match = {},
-                    units = {},
-                    actions = {},
-                }
-            end
-            function Document.validate(data)
-                if type(data) ~= 'table' or (data.schemaVersion ~= 1 and data.schemaVersion ~= 2) or data.game ~= 'AnimeVanguards' then
-                    return nil, 'MACRO_SCHEMA_UNSUPPORTED'
-                end
-                if not short(data.name, 64) or type(data.match) ~= 'table' or type(data.units) ~= 'table' or type(data.actions) ~= 'table' or #data.actions > MAX_ACTIONS then
-                    return nil, 'MACRO_INVALID'
-                end
-
-                local result = Document.empty(data.name)
-
-                if short(data.match.mode, 100) then
-                    result.match.mode = data.match.mode
-                end
-                if short(data.match.map, 100) then
-                    result.match.map = data.match.map
-                end
-
-                for _, unitName in data.units do
-                    if not short(unitName, 100) then
-                        return nil, 'MACRO_INVALID'
-                    end
-
-                    table.insert(result.units, unitName)
-                end
-
-                local levelsByRef = {}
-
-                for index, action in data.actions do
-                    if type(action) ~= 'table' or not KINDS[action.kind] or action.index ~= index or not finite(action.wave) or action.wave < 0 or not finite(action.yen) or action.yen < 0 or not finite(action.time) or action.time < 0 or (action.kind ~= 'voteStart' and not short(action.unitRef, 100)) then
-                        return nil, 'MACRO_ACTION_INVALID'
-                    end
-
-                    local normalized = {
-                        index = index,
-                        kind = action.kind,
-                        wave = action.wave,
-                        yen = action.yen,
-                        time = action.time,
-                        unitRef = if action.kind == 'voteStart'then nil else action.unitRef,
-                    }
-
-                    if action.kind == 'place' then
-                        local components = action.cframe
-
-                        if data.schemaVersion == 1 then
-                            components = Document.fromPose(action.position, action.rotation)
-                        end
-                        if not short(action.unitName, 100) or not validCFrame(components) or not finite(action.slotIndex) or action.slotIndex < 1 or action.slotIndex > 8 or action.slotIndex % 1 ~= 0 then
-                            return nil, 'MACRO_ACTION_INVALID'
-                        end
-
-                        normalized.unitName = action.unitName
-                        normalized.cframe = table.clone(components)
-                        normalized.slotIndex = action.slotIndex
-
-                        local initialLevel = action.initialLevel
-
-                        if initialLevel == nil then
-                            initialLevel = 0
-                        end
-                        if not finite(initialLevel) or initialLevel % 1 ~= 0 or initialLevel < 0 or initialLevel > 2000 then
-                            return nil, 'MACRO_ACTION_INVALID'
-                        end
-
-                        normalized.initialLevel = initialLevel
-                        levelsByRef[action.unitRef] = initialLevel
-                    elseif action.kind == 'upgrade' then
-                        local previousLevel = levelsByRef[action.unitRef] or 0
-                        local level = action.level
-
-                        if level == nil then
-                            level = previousLevel + 1
-                        end
-                        if not finite(level) or level % 1 ~= 0 or level <= previousLevel or level > 2000 then
-                            return nil, 'MACRO_ACTION_INVALID'
-                        end
-
-                        normalized.level = level
-                        levelsByRef[action.unitRef] = level
-                    elseif action.kind == 'ability' then
-                        if not short(action.abilityName, 100) then
-                            return nil, 'MACRO_ACTION_INVALID'
-                        end
-
-                        normalized.abilityName = action.abilityName
-                    elseif action.kind == 'priority' then
-                        if not table.find({
-                            'First',
-                            'Closest',
-                            'Last',
-                            'Strongest',
-                            'Weakest',
-                            'Bosses',
-                        }, action.priorityName) then
-                            return nil, 'MACRO_ACTION_INVALID'
-                        end
-
-                        normalized.priorityName = action.priorityName
-                    elseif action.kind == 'autoUpgrade' then
-                        if type(action.enabled) ~= 'boolean' then
-                            return nil, 'MACRO_ACTION_INVALID'
-                        end
-
-                        normalized.enabled = action.enabled
-                    elseif action.kind == 'autoAbility' then
-                        if type(action.enabled) ~= 'boolean' or not short(action.abilityName, 100) then
-                            return nil, 'MACRO_ACTION_INVALID'
-                        end
-
-                        normalized.enabled = action.enabled
-                        normalized.abilityName = action.abilityName
-                    elseif action.kind == 'upgradePriority' then
-                        if not finite(action.upgradePriority) or action.upgradePriority % 1 ~= 0 or action.upgradePriority < 1 or action.upgradePriority > 6 then
-                            return nil, 'MACRO_ACTION_INVALID'
-                        end
-
-                        normalized.upgradePriority = action.upgradePriority
-                    end
-
-                    table.insert(result.actions, normalized)
-                end
-
-                return result, nil
-            end
-            function Document.importLegacy(data, name)
-                if type(data) ~= 'table' or type(data.Marco_Data) ~= 'table' then
-                    return nil, 'MACRO_LEGACY_INVALID'
-                end
-
-                local result = Document.empty(name)
-
-                result.match = {
-                    map = data.Map,
-                    mode = data.Mode,
-                }
-
-                for _, row in data.Marco_Data do
-                    if type(row) == 'table' then
-                        local kind = if row.Method == 'SpawnTower'then'place'else if row.Method == 'UpgradeTower'then'upgrade'else if row.Method == 'SellTower'then'sell'else if row.Method == 'Use Ability'then'ability'else nil
-
-                        if kind then
-                            local action = {
-                                index = #result.actions + 1,
-                                kind = kind,
-                                wave = tonumber(row.Wave) or 0,
-                                yen = 0,
-                                time = tonumber(row.Time) or 0,
-                                unitRef = tostring(row.UnitValue or ''),
-                            }
-
-                            if kind == 'place' then
-                                local x, y, z = tostring(row.Position):match('^%s*([%-%d%.]+)%s*,%s*([%-%d%.]+)%s*,%s*([%-%d%.]+)%s*$')
-
-                                action.unitName = tostring(row.Unit or '')
-                                action.cframe = Document.fromPose({
-                                    x = tonumber(x),
-                                    y = tonumber(y),
-                                    z = tonumber(z),
-                                }, tonumber(row.Rotation) or 0)
-
-                                local slot = tonumber(row.Slot) or tonumber(row.SlotIndex) or tonumber(row.UnitValue) or 1
-
-                                action.slotIndex = if slot >= 1 and slot <= 8 then slot else((slot - 1) % 6 + 1)
-                            elseif kind == 'ability' then
-                                action.abilityName = tostring(row.Ability or '')
-                            end
-
-                            table.insert(result.actions, action)
-                        end
-                    end
-                end
-
-                return Document.validate(result)
-            end
-
-            return Document
-        end
-
-        function __DARKLUA_BUNDLE_MODULES.o()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.o
-
-            if not v then
-                v = {
-                    c = __modImpl(),
-                }
-                __DARKLUA_BUNDLE_MODULES.cache.o = v
-            end
-
-            return v.c
-        end
-    end
-    do
-        local function __modImpl()
-            local Document = __DARKLUA_BUNDLE_MODULES.o()
-            local Storage = {}
-            local ROOT = 'ViperHubNextGen/macro/AnimeVanguards'
-            local MAX_BYTES = 1024 * 1024
-
-            local function validName(name)
-                return type(name) == 'string' and #name > 0 and #name <= 64 and (name):match('^[%w_%-]+$') ~= nil
-            end
-
-            function Storage.new(env, codec)
-                for _, key in {
-                    'readfile',
-                    'writefile',
-                    'isfile',
-                    'isfolder',
-                    'makefolder',
-                    'listfiles',
-                    'delfile',
-                }do
-                    if type(env[key]) ~= 'function' then
-                        return nil
-                    end
-                end
-
-                local self = {}
-
-                local function path(name)
-                    return ROOT .. '/' .. name .. '.json'
-                end
-                local function folders()
-                    local ok = pcall(function()
-                        for _, folder in {
-                            'ViperHubNextGen',
-                            'ViperHubNextGen/macro',
-                            ROOT,
-                        }do
-                            if not env.isfolder(folder) then
-                                env.makefolder(folder)
-                            end
-                        end
-                    end)
-
-                    return ok
-                end
-
-                function self.list()
-                    if not folders() then
-                        return {}
-                    end
-
-                    local ok, files = pcall(env.listfiles, ROOT)
-
-                    if not ok or type(files) ~= 'table' then
-                        return {}
-                    end
-
-                    local names = {}
-
-                    for _, file in files do
-                        if type(file) == 'string' then
-                            local name = file:gsub('\\', '/'):match('([^/]+)%.[jJ][sS][oO][nN]$')
-
-                            if validName(name) then
-                                table.insert(names, name)
-                            end
-                        end
-                    end
-
-                    table.sort(names)
-
-                    return names
-                end
-                function self.read(name)
-                    if not validName(name) then
-                        return nil, 'MACRO_NAME_INVALID'
-                    end
-
-                    local ok, body = pcall(env.readfile, path(name))
-
-                    if not ok or type(body) ~= 'string' or #body > MAX_BYTES then
-                        return nil, 'MACRO_READ_FAILED'
-                    end
-
-                    local decoded, data = pcall(codec.JSONDecode, codec, body)
-
-                    if not decoded then
-                        return nil, 'MACRO_JSON_INVALID'
-                    end
-
-                    local document, err = Document.validate(data)
-
-                    if document and document.name ~= name then
-                        document.name = name
-                    end
-
-                    return document, err
-                end
-                function self.write(name, document, overwrite)
-                    if not validName(name) then
-                        return false, 'MACRO_NAME_INVALID'
-                    end
-
-                    local candidate = document
-
-                    if type(document) == 'table' and document.name ~= name then
-                        candidate = table.clone(document)
-                        candidate.name = name
-                    end
-
-                    local checked, err = Document.validate(candidate)
-
-                    if not checked then
-                        return false, err
-                    end
-                    if not folders() then
-                        return false, 'MACRO_FOLDER_FAILED'
-                    end
-                    if not overwrite and env.isfile(path(name)) then
-                        return false, 'MACRO_EXISTS'
-                    end
-
-                    local ok, body = pcall(codec.JSONEncode, codec, checked)
-
-                    if not ok or type(body) ~= 'string' or #body > MAX_BYTES then
-                        return false, 'MACRO_SIZE_INVALID'
-                    end
-
-                    local wrote = pcall(env.writefile, path(name), body)
-
-                    if not wrote then
-                        return false, 'MACRO_WRITE_FAILED'
-                    end
-
-                    local readback = self.read(name)
-
-                    if not readback then
-                        return false, 'MACRO_READBACK_FAILED'
-                    end
-
-                    return true, nil
-                end
-                function self.delete(name)
-                    if not validName(name) then
-                        return false, 'MACRO_NAME_INVALID'
-                    end
-                    if not env.isfile(path(name)) then
-                        return false, 'MACRO_MISSING'
-                    end
-
-                    local ok = pcall(env.delfile, path(name))
-
-                    return ok and not env.isfile(path(name)), if ok then nil else'MACRO_DELETE_FAILED'
-                end
-
-                return self
-            end
-
-            return Storage
-        end
-
-        function __DARKLUA_BUNDLE_MODULES.p()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.p
-
-            if not v then
-                v = {
-                    c = __modImpl(),
-                }
-                __DARKLUA_BUNDLE_MODULES.cache.p = v
-            end
-
-            return v.c
-        end
-    end
-    do
-        local function __modImpl()
-            local Storage = __DARKLUA_BUNDLE_MODULES.p()
-            local Document = __DARKLUA_BUNDLE_MODULES.o()
+            local Storage = __DARKLUA_BUNDLE_MODULES.o()
+            local Document = __DARKLUA_BUNDLE_MODULES.n()
             local Page = {}
 
             local function humanError(code)
@@ -4594,14 +5038,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.q()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.q
+        function __DARKLUA_BUNDLE_MODULES.r()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.r
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.q = v
+                __DARKLUA_BUNDLE_MODULES.cache.r = v
             end
 
             return v.c
@@ -4610,7 +5054,7 @@ do
     do
         local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Document = __DARKLUA_BUNDLE_MODULES.o()
+            local Document = __DARKLUA_BUNDLE_MODULES.n()
             local Adapter = {}
             local Vector3 = ((getfenv())).Vector3
             local task = ((getfenv())).task
@@ -5435,14 +5879,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.r()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.r
+        function __DARKLUA_BUNDLE_MODULES.s()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.s
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.r = v
+                __DARKLUA_BUNDLE_MODULES.cache.s = v
             end
 
             return v.c
@@ -5450,8 +5894,8 @@ do
     end
     do
         local function __modImpl()
-            local Document = __DARKLUA_BUNDLE_MODULES.o()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.r()
+            local Document = __DARKLUA_BUNDLE_MODULES.n()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.s()
             local Runtime = {}
             local POLL_SECONDS = 0.2
             local ACTION_TIMEOUT = 12
@@ -6510,14 +6954,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.s()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.s
+        function __DARKLUA_BUNDLE_MODULES.t()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.t
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.s = v
+                __DARKLUA_BUNDLE_MODULES.cache.t = v
             end
 
             return v.c
@@ -6659,14 +7103,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.t()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.t
+        function __DARKLUA_BUNDLE_MODULES.u()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.u
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.t = v
+                __DARKLUA_BUNDLE_MODULES.cache.u = v
             end
 
             return v.c
@@ -6675,7 +7119,7 @@ do
     do
         local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local FileStorage = __DARKLUA_BUNDLE_MODULES.i()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.j()
             local Adapter = {}
             local SETTINGS_STORAGE_KEY = 'AnimeVanguardsGameSettings'
             local SCHEMA_VERSION = 1
@@ -7076,14 +7520,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.u()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.u
+        function __DARKLUA_BUNDLE_MODULES.v()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.v
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.u = v
+                __DARKLUA_BUNDLE_MODULES.cache.v = v
             end
 
             return v.c
@@ -7355,14 +7799,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.v()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.v
+        function __DARKLUA_BUNDLE_MODULES.w()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.w
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.v = v
+                __DARKLUA_BUNDLE_MODULES.cache.w = v
             end
 
             return v.c
@@ -7514,14 +7958,14 @@ do
             return Rules
         end
 
-        function __DARKLUA_BUNDLE_MODULES.w()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.w
+        function __DARKLUA_BUNDLE_MODULES.x()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.x
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.w = v
+                __DARKLUA_BUNDLE_MODULES.cache.x = v
             end
 
             return v.c
@@ -7530,7 +7974,7 @@ do
     do
         local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Rules = __DARKLUA_BUNDLE_MODULES.w()
+            local Rules = __DARKLUA_BUNDLE_MODULES.x()
             local Adapter = {}
 
             local function resolve(root, path)
@@ -7955,14 +8399,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.x()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.x
+        function __DARKLUA_BUNDLE_MODULES.y()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.y
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.x = v
+                __DARKLUA_BUNDLE_MODULES.cache.y = v
             end
 
             return v.c
@@ -7970,10 +8414,10 @@ do
     end
     do
         local function __modImpl()
-            local FileStorage = __DARKLUA_BUNDLE_MODULES.i()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.j()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.x()
-            local Rules = __DARKLUA_BUNDLE_MODULES.w()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.y()
+            local Rules = __DARKLUA_BUNDLE_MODULES.x()
             local Runtime = {}
             local STORAGE_KEY = 'AnimeVanguardsAutoPlay'
             local SCHEMA_VERSION = 3
@@ -8542,14 +8986,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.y()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.y
+        function __DARKLUA_BUNDLE_MODULES.z()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.z
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.y = v
+                __DARKLUA_BUNDLE_MODULES.cache.z = v
             end
 
             return v.c
@@ -8977,14 +9421,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.z()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.z
+        function __DARKLUA_BUNDLE_MODULES.A()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.A
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.z = v
+                __DARKLUA_BUNDLE_MODULES.cache.A = v
             end
 
             return v.c
@@ -8995,15 +9439,15 @@ end
 local Types = __DARKLUA_BUNDLE_MODULES.a()
 local metadata = __DARKLUA_BUNDLE_MODULES.b()
 local config = __DARKLUA_BUNDLE_MODULES.c()
-local JoinerPage = __DARKLUA_BUNDLE_MODULES.k()
-local JoinerRuntime = __DARKLUA_BUNDLE_MODULES.n()
-local MacroPage = __DARKLUA_BUNDLE_MODULES.q()
-local MacroRuntime = __DARKLUA_BUNDLE_MODULES.s()
-local GamePage = __DARKLUA_BUNDLE_MODULES.t()
-local GameAdapter = __DARKLUA_BUNDLE_MODULES.u()
-local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.v()
-local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.y()
-local StatusPage = __DARKLUA_BUNDLE_MODULES.z()
+local JoinerPage = __DARKLUA_BUNDLE_MODULES.l()
+local JoinerRuntime = __DARKLUA_BUNDLE_MODULES.q()
+local MacroPage = __DARKLUA_BUNDLE_MODULES.r()
+local MacroRuntime = __DARKLUA_BUNDLE_MODULES.t()
+local GamePage = __DARKLUA_BUNDLE_MODULES.u()
+local GameAdapter = __DARKLUA_BUNDLE_MODULES.v()
+local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.w()
+local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.z()
+local StatusPage = __DARKLUA_BUNDLE_MODULES.A()
 local active = false
 local joiner = JoinerRuntime.new()
 local macro = MacroRuntime.new()

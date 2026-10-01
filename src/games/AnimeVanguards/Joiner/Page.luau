@@ -458,7 +458,7 @@ local function addBounty(tab: any, runtime: any?): () -> ()
 end
 
 -- Auto Join Equipper: Team Equipper rows (one dropdown of owned saved teams per joiner) plus the locked
--- Macro Equipper placeholder. Returns an update function the page loop calls to follow team changes.
+-- Macro Equipper (macro file per joiner). Returns an update function the page loop calls to follow team changes.
 local function addEquipper(tab: any, runtime: any?): () -> ()
     local section = tab:Section({ Title = "Auto Join Equipper", Opened = false })
     local function subsection(title: string): any
@@ -501,11 +501,65 @@ local function addEquipper(tab: any, runtime: any?): () -> ()
     local macro: any = subsection("Macro Equipper")
     macro:Toggle({
         Title = "Auto Join Macro Equipper",
-        Desc = "Coming soon: equip the units a recorded macro needs before joining a stage",
-        Value = false,
-        Locked = true,
+        Desc = "Automatically equip the macro's units before joining a stage",
+        Value = saved.macroEquip.enabled == true,
+        Locked = runtime == nil or type(runtime.getMacroOptions) ~= "function",
+        Callback = Settings.setMacroEquipEnabled,
     })
+    local macroRows: { any } = {}
+    for _, name in definitions do
+        local row: any = { name = name, signature = nil, current = "None" }
+        row.dropdown = macro:Dropdown({
+            Title = name .. " Joiner",
+            Values = { "None" },
+            Value = "None",
+            Callback = function(label: string)
+                if syncing or label == row.current then
+                    return
+                end
+                if Settings.setMacroForJoiner(row.name, if label == "None" then nil else label) then
+                    row.current = label
+                    row.signature = nil
+                end
+            end,
+        })
+        table.insert(macroRows, row)
+    end
+    local function refreshMacros()
+        local files: any = if runtime and type(runtime.getMacroOptions) == "function"
+            then (runtime.getMacroOptions :: any)()
+            else nil
+        if type(files) ~= "table" then
+            return
+        end
+        local chosen = Settings.get().macroEquip.macros
+        local labels: { string } = { "None" }
+        for _, file in files do
+            table.insert(labels, file)
+        end
+        for _, row in macroRows do
+            local selected = chosen[row.name]
+            if selected == nil or not table.find(labels, selected) then
+                selected = "None"
+            end
+            local signature = selected .. "|" .. table.concat(labels, "|")
+            if row.signature ~= signature then
+                row.signature = signature
+                row.current = selected
+                syncing = true
+                local dropdown = row.dropdown
+                if type(dropdown.Select) == "function" then
+                    pcall(dropdown.Select :: any, dropdown, selected)
+                end
+                if type(dropdown.Refresh) == "function" then
+                    pcall(dropdown.Refresh :: any, dropdown, labels)
+                end
+                syncing = false
+            end
+        end
+    end
     local function refresh()
+        refreshMacros()
         local options: any = if runtime and type(runtime.getTeamOptions) == "function"
             then (runtime.getTeamOptions :: any)()
             else nil

@@ -8,6 +8,7 @@ Dependencies: Definitions; FileStorage
 
 local definitions = require("./Definitions")
 local TeamEquip = require("./TeamEquip")
+local MacroEquip = require("./MacroEquip")
 local FileStorage = require("../../../platform/FileStorage")
 local Settings = {}
 local DEFAULT_COOLDOWN = 0
@@ -41,6 +42,8 @@ local selection: { [string]: any } = {}
 local changeStageInMatch = true
 local teamEquipEnabled = false
 local teamEquipTeams: { [string]: string } = {}
+local macroEquipEnabled = false
+local macroEquipMacros: { [string]: string } = {}
 local bountyRun: any = nil
 local storage: FileStorage.Storage? = nil
 local encode: ((any) -> string)? = nil
@@ -65,6 +68,7 @@ local function save()
         changeStageInMatch = changeStageInMatch,
         bountyRun = bountyRun,
         teamEquip = { enabled = teamEquipEnabled, teams = teamEquipTeams },
+        macroEquip = { enabled = macroEquipEnabled, macros = macroEquipMacros },
     })
     if ok and type(body) == "string" then
         activeStorage.write(body)
@@ -134,6 +138,18 @@ function Settings.init(env: any)
             for name, key in data.teamEquip.teams do
                 if type(name) == "string" and known(name) and TeamEquip.validKey(key) then
                     teamEquipTeams[name] = key :: string
+                end
+            end
+        end
+    end
+    if type(data.macroEquip) == "table" then
+        if type(data.macroEquip.enabled) == "boolean" then
+            macroEquipEnabled = data.macroEquip.enabled
+        end
+        if type(data.macroEquip.macros) == "table" then
+            for name, file in data.macroEquip.macros do
+                if type(name) == "string" and known(name) and MacroEquip.validName(file) then
+                    macroEquipMacros[name] = file :: string
                 end
             end
         end
@@ -257,6 +273,7 @@ function Settings.get()
         changeStageInMatch = changeStageInMatch,
         bountyRun = bountyRun,
         teamEquip = { enabled = teamEquipEnabled, teams = table.clone(teamEquipTeams) },
+        macroEquip = { enabled = macroEquipEnabled, macros = table.clone(macroEquipMacros) },
         persistent = storage ~= nil,
     }
 end
@@ -267,6 +284,32 @@ function Settings.setTeamEquipEnabled(value: boolean): boolean
         return false
     end
     teamEquipEnabled = value
+    save()
+    return true
+end
+
+--- Turns the Macro Equipper on or off (it also needs a macro file chosen for the joiner).
+function Settings.setMacroEquipEnabled(value: boolean): boolean
+    if type(value) ~= "boolean" then
+        return false
+    end
+    macroEquipEnabled = value
+    save()
+    return true
+end
+
+--- Chooses the macro file whose units are equipped before joining; file nil clears it (None).
+function Settings.setMacroForJoiner(name: string, file: string?): boolean
+    if type(name) ~= "string" or not known(name) then
+        return false
+    end
+    if file == nil then
+        macroEquipMacros[name] = nil
+    elseif MacroEquip.validName(file) then
+        macroEquipMacros[name] = file
+    else
+        return false
+    end
     save()
     return true
 end

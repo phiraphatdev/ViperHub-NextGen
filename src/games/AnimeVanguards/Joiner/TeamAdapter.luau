@@ -2,7 +2,7 @@
 --[[
 Purpose: Read the player's saved teams and equipped units and ask the game to load a saved team
 Input: Game modules (OwnedUnitsHandler, TeamsDataHandler, lobby and match team networks); optional injected test doubles
-Output: Team adapter with getTeams, isSlotOwned, ownsUnit, getEquipped, onChanged and loadTeam
+Output: Team adapter with getTeams, isSlotOwned, ownsUnit, getEquipped, onChanged, loadTeam and unit equip helpers
 Dependencies: Config; TeamEquip
 ]]
 
@@ -49,6 +49,7 @@ local function liveDependencies(): any?
         teamsData = optionalModule(starter, config.instancePaths.teamsData),
         lobbyTeams = optionalModule(replicated, config.instancePaths.lobbyTeamsClient),
         gameUnits = optionalModule(replicated, config.instancePaths.gameUnitsClient),
+        unitActions = optionalModule(replicated, config.instancePaths.lobbyUnitActionsClient),
     }
 end
 
@@ -135,6 +136,87 @@ function Adapter.new(injected: any?, inMatch: boolean?): any
             end
             table.clear(connections)
         end
+    end
+
+    --- Returns every owned unit as {guid, name, level, subTrait, ascensions, takedowns}.
+    function self.ownedUnitList(): { any }
+        local d = deps()
+        local owned = d and d.ownedUnits
+        if
+            not owned
+            or type(owned.GetOwnedUnits) ~= "function"
+            or type(owned.GetUnitObject) ~= "function"
+        then
+            return {}
+        end
+        local ok, all = pcall(owned.GetOwnedUnits)
+        if not ok or type(all) ~= "table" then
+            return {}
+        end
+        local list: { any } = {}
+        for guid in all do
+            local okUnit, unit = pcall(owned.GetUnitObject, guid)
+            if okUnit and type(unit) == "table" and type(unit.UnitData) == "table" then
+                local name = unit.UnitData.Name
+                if type(guid) == "string" and type(name) == "string" then
+                    table.insert(list, {
+                        guid = guid,
+                        name = name,
+                        level = if type(unit.Level) == "number" then unit.Level else 0,
+                        subTrait = if type(unit.SubTrait) == "string" then unit.SubTrait else "None",
+                        ascensions = if type(unit.Ascensions) == "number" then unit.Ascensions else 0,
+                        takedowns = if type(unit.Takedowns) == "number" then unit.Takedowns else 0,
+                    })
+                end
+            end
+        end
+        return list
+    end
+
+    --- Returns the equipped units in slot order as {guid, name}.
+    function self.equippedList(): { any }
+        local d = deps()
+        local owned = d and d.ownedUnits
+        local equipped = self.getEquipped()
+        local list: { any } = {}
+        for slot = 1, 6 do
+            local guid = equipped[slot]
+            if type(guid) == "string" and owned and type(owned.GetUnitObject) == "function" then
+                local ok, unit = pcall(owned.GetUnitObject, guid)
+                if
+                    ok
+                    and type(unit) == "table"
+                    and type(unit.UnitData) == "table"
+                    and type(unit.UnitData.Name) == "string"
+                then
+                    table.insert(list, { guid = guid, name = unit.UnitData.Name })
+                end
+            end
+        end
+        return list
+    end
+
+    --- Unequips every unit (observed payload {NonFarmsOnly = false}); confirmation is a later readback.
+    function self.unequipAll(): boolean
+        local d = deps()
+        local remote = d and d.unitActions and d.unitActions[config.remoteNames.unequipAllUnits]
+        if not remote or type(remote.Fire) ~= "function" then
+            return false
+        end
+        return (pcall(remote.Fire, { NonFarmsOnly = false }))
+    end
+
+    --- Equips a unit into the first free slot (observed payload {UnitGUID = guid}); ignored by the game when full.
+    function self.equipUnit(guid: string): boolean
+        if type(guid) ~= "string" or guid == "" then
+            return false
+        end
+        local d = deps()
+        local remote = d and d.unitActions and d.unitActions[config.remoteNames.equipUnit]
+        if not remote or type(remote.Fire) ~= "function" then
+            return false
+        end
+        return (pcall(remote.Fire, { UnitGUID = guid }))
     end
 
     --- Asks the game to load a saved team (observed payload {TeamKey = "TeamN"}); confirmation is a later readback.
