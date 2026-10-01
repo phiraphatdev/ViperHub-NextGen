@@ -57,6 +57,11 @@ end
 --- Compares equipped unit GUIDs with a team: "unusable" when it holds no unit the player still owns,
 --- "match" when every owned slot (and every empty slot) agrees, otherwise "mismatch".
 --- Slots whose GUID is no longer owned are ignored so partly lost teams can still be played.
+-- The game reports an empty slot as nil, "" or the string "None".
+local function isEmptySlot(value: any): boolean
+    return value == nil or value == "" or value == "None"
+end
+
 function TeamEquip.evaluate(team: any, ownsUnit: (string) -> boolean, equipped: any): string
     if type(team) ~= "table" or type(team.Units) ~= "table" then
         return "unusable"
@@ -66,14 +71,14 @@ function TeamEquip.evaluate(team: any, ownsUnit: (string) -> boolean, equipped: 
     for slot = 1, SLOT_COUNT do
         local guid = team.Units[slot]
         local current = if type(equipped) == "table" then equipped[slot] else nil
-        if type(guid) == "string" and guid ~= "" then
+        if type(guid) == "string" and not isEmptySlot(guid) then
             if ownsUnit(guid) then
                 usable += 1
                 if current ~= guid then
                     mismatch = true
                 end
             end
-        elseif current ~= nil then
+        elseif not isEmptySlot(current) then
             mismatch = true
         end
     end

@@ -5019,4 +5019,106 @@ test("Stage Preset Rules page lists one dropdown per mode and locks it with Auto
     assert(dropdowns.Story.Locked == false)
     fresh.runtime.stop()
 end)
+test(
+    "Regressions: empty slots, empty preset snapshot, stage-change retry per match, stale bounty marker",
+    function()
+        -- Empty slots may be nil, "" or the string "None" on either side.
+        local owned: { [string]: boolean } = { g1 = true }
+        local function ownsUnit(guid: string): boolean
+            return owned[guid] == true
+        end
+        assert(
+            TeamEquip.evaluate(
+                { Units = { "g1", "None", "None", "None", "None", "None" } },
+                ownsUnit,
+                { "g1", "None", "None" }
+            ) == "match"
+        )
+        assert(
+            TeamEquip.evaluate({ Units = { "g1" } }, ownsUnit, { "g1", "None", "", nil, "None", "None" })
+                == "match"
+        )
+        assert(TeamEquip.evaluate({ Units = { "g1" } }, ownsUnit, { "g1", "g2" }) == "mismatch")
+
+        -- A transient empty preset list must not erase the saved Stage Preset Rules.
+        local h = presetHarness({ Story = { id = "P6", name = "Raid" } })
+        h.presetsCallback({ active = "", max = 12, order = {}, names = {} })
+        assert(h.runtime.getRule("Story") ~= nil, "empty snapshot keeps the rules")
+        h.presetsCallback(presetsSnapshot("P1"))
+        assert(h.runtime.getRule("Story") ~= nil, "a loaded list that still contains the preset keeps it")
+        h.runtime.stop()
+
+        -- Stage-change attempts restart for a new match id (restart) instead of staying exhausted.
+        local fired: { any } = {}
+        local matchData: any = { StageType = "Raid", Stage = "Stage1", Act = "Act1", Host = 42 }
+        local gameHandler: any =
+            { IsGameLoaded = true, IsMatchStarted = false, GameData = matchData, MatchId = 1 }
+        local runtime = JoinerRuntime.new({
+            game = {
+                PlaceId = 16277809958,
+                GetService = function(): any
+                    return {
+                        GetAttribute = function(): any
+                            return false
+                        end,
+                    }
+                end,
+            },
+            task = { spawn = function() end, wait = function() end },
+            clock = function()
+                return 100
+            end,
+            userId = 42,
+            gameHandler = gameHandler,
+            lobbyReturn = {
+                RequestStartMatch = {
+                    Fire = function(payload: any)
+                        table.insert(fired, payload)
+                    end,
+                },
+            },
+        })
+        for _, other in { "Legend Stage", "Raid", "Dungeon", "Worldline", "Boss Event", "Boss Bounties" } do
+            JoinerSettings.setEnabled(other, false)
+        end
+        JoinerSettings.setPaused(false)
+        JoinerSettings.setBountyRun(nil)
+        runtime.setSelection("Stage", "Stage1", "Act1", "Normal")
+        runtime.setEnabled("Stage", true)
+        runtime.start({ alive = true })
+        runtime.step(100)
+        runtime.step(107)
+        runtime.step(114)
+        assert(#fired == 2, "two attempts for the first match")
+        gameHandler.MatchId = 2
+        runtime.step(121)
+        assert(#fired == 3, "a restart (new match id) is tried again")
+        runtime.stop()
+        runtime.setEnabled("Stage", false)
+
+        -- A marker left from a finished bounty is cleared once the joiner is back in the lobby with nothing in flight.
+        JoinerSettings.setBountyRun({ mode = "LegendStage", stage = "Stage5", act = "Act2", at = os.time() })
+        local lobby = JoinerRuntime.new({
+            game = { PlaceId = 16146832113 },
+            task = { spawn = function() end, wait = function() end },
+            clock = function()
+                return 100
+            end,
+            userId = 42,
+            lobby = { IsHosting = false, IsInLobby = false },
+            network = {
+                MatchConfirmed = {
+                    On = function()
+                        return function() end
+                    end,
+                },
+            },
+        })
+        lobby.start({ alive = true })
+        lobby.step(100)
+        assert(JoinerSettings.get().bountyRun == nil)
+        lobby.stop()
+        JoinerSettings.setPaused(true)
+    end
+)
 print(string.format("PASS: %d unit scenarios", passed))

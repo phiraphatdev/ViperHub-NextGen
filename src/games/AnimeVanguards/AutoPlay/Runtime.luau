@@ -189,7 +189,8 @@ function Runtime.new(
     end
 
     local function onPresetsSnapshot(snapshot: Rules.Presets)
-        if Rules.prune(self.rules, snapshot) > 0 then
+        -- An empty list is treated as "not loaded yet": pruning it would erase every stored rule.
+        if #snapshot.order > 0 and Rules.prune(self.rules, snapshot) > 0 then
             save()
             setStatus("Stage preset rule cleared: preset was deleted or renamed")
         end

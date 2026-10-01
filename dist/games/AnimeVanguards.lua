@@ -329,6 +329,11 @@ do
 
                 return options
             end
+
+            local function isEmptySlot(value)
+                return value == nil or value == '' or value == 'None'
+            end
+
             function TeamEquip.evaluate(team, ownsUnit, equipped)
                 if type(team) ~= 'table' or type(team.Units) ~= 'table' then
                     return 'unusable'
@@ -341,7 +346,7 @@ do
                     local guid = team.Units[slot]
                     local current = if type(equipped) == 'table'then equipped[slot]else nil
 
-                    if type(guid) == 'string' and guid ~= '' then
+                    if type(guid) == 'string' and not isEmptySlot(guid) then
                         if ownsUnit(guid) then
                             usable += 1
 
@@ -349,7 +354,7 @@ do
                                 mismatch = true
                             end
                         end
-                    elseif current ~= nil then
+                    elseif not isEmptySlot(current) then
                         mismatch = true
                     end
                 end
@@ -3040,11 +3045,31 @@ do
                     return self.dependencies
                 end
 
-                function self.getTeams()
+                function self.isReady()
                     local d = deps()
                     local data = d and d.teamsData
 
                     if not data or type(data.GetTeams) ~= 'function' then
+                        return false
+                    end
+                    if data.Loaded == false then
+                        return false
+                    end
+                    if type(data.GetOwnedSlots) == 'function' then
+                        local ok, slots = pcall(data.GetOwnedSlots)
+
+                        if not ok or type(slots) ~= 'table' then
+                            return false
+                        end
+                    end
+
+                    return true
+                end
+                function self.getTeams()
+                    local d = deps()
+                    local data = d and d.teamsData
+
+                    if not data or type(data.GetTeams) ~= 'function' or not self.isReady() then
                         return nil
                     end
 
@@ -3268,6 +3293,7 @@ do
             local TEAM_LOAD_TIMEOUT_SECONDS = (config).thresholds.teamLoadTimeoutSeconds
             local TEAM_LOAD_ATTEMPTS = (config).thresholds.teamLoadAttempts
             local BOUNTY_RUN_MAX_AGE_SECONDS = 10800
+            local MACRO_LIST_CACHE_SECONDS = 5
             local CHANGE_STAGE_RETRY_SECONDS = 6
             local CHANGE_STAGE_ATTEMPTS = 2
             local SWITCHABLE_STAGE_TYPES = {
@@ -3400,6 +3426,8 @@ do
                     teamAttempt = nil,
                     macroAttempt = nil,
                     macroStore = nil,
+                    macroCache = nil,
+                    macroOptionsCache = nil,
                 }
 
                 local function setStatus(value)
@@ -3453,7 +3481,14 @@ do
                     end
 
                     local teams = adapter.getTeams()
-                    local team = if teams then teams[key]else nil
+
+                    if not teams then
+                        setStatus('Team Equipper: team data is not loaded yet (' .. name .. ')')
+
+                        return 'skip'
+                    end
+
+                    local team = teams[key]
                     local number = TeamEquip.number(key)
 
                     if not team or not number or not adapter.isSlotOwned(number) then
@@ -3538,6 +3573,13 @@ do
                 end
 
                 function self.getMacroOptions()
+                    local cached = self.macroOptionsCache
+                    local clock = os.clock()
+
+                    if cached and clock - cached.at < MACRO_LIST_CACHE_SECONDS then
+                        return cached.names
+                    end
+
                     local store = getMacroStore()
 
                     if not store then
@@ -3545,8 +3587,14 @@ do
                     end
 
                     local ok, names = pcall(store.list)
+                    local result = if ok and type(names) == 'table'then names else{}
 
-                    return if ok and type(names) == 'table'then names else{}
+                    self.macroOptionsCache = {
+                        names = result,
+                        at = clock,
+                    }
+
+                    return result
                 end
 
                 local function macroStep(name, now)
@@ -3559,9 +3607,21 @@ do
                         return 'go'
                     end
 
-                    local store = getMacroStore()
-                    local document = if store then store.read(file)else nil
+                    local cache = self.macroCache
+                    local document = nil
 
+                    if cache and cache.file == file and now - cache.at < 5 then
+                        document = cache.document
+                    else
+                        local store = getMacroStore()
+
+                        document = if store then store.read(file)else nil
+                        self.macroCache = if document then{
+                            file = file,
+                            document = document,
+                            at = now,
+                        }else nil
+                    end
                     if not document then
                         setStatus(string.format('Macro Equipper: macro %s could not be read (%s)', file, name))
 
@@ -3717,10 +3777,12 @@ do
 
                     local key = target.StageType .. '/' .. target.Stage .. '/' .. target.Act .. '/' .. target.Difficulty
                     local attempt = self.changeAttempt
+                    local matchId = deps.gameHandler.MatchId
 
-                    if not attempt or attempt.key ~= key then
+                    if not attempt or attempt.key ~= key or attempt.matchId ~= matchId then
                         attempt = {
                             key = key,
+                            matchId = matchId,
                             sent = 0,
                             last = -math.huge,
                         }
@@ -3970,6 +4032,9 @@ do
                         self.stepInMatch(now)
 
                         return
+                    end
+                    if not self.confirmed and not self.pending and Settings.get().bountyRun ~= nil then
+                        Settings.setBountyRun(nil)
                     end
                     if deps.activityState and now - self.lastActivityRead >= RIFT_POLL_SECONDS then
                         local states = {}
@@ -8683,7 +8748,7 @@ do
                 end
 
                 local function onPresetsSnapshot(snapshot)
-                    if Rules.prune(self.rules, snapshot) > 0 then
+                    if #snapshot.order > 0 and Rules.prune(self.rules, snapshot) > 0 then
                         save()
                         setStatus('Stage preset rule cleared: preset was deleted or renamed')
                     end

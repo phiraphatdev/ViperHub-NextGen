@@ -23,6 +23,7 @@ local ACK_TIMEOUT_SECONDS = 10
 local TEAM_LOAD_TIMEOUT_SECONDS: number = (config :: any).thresholds.teamLoadTimeoutSeconds
 local TEAM_LOAD_ATTEMPTS: number = (config :: any).thresholds.teamLoadAttempts
 local BOUNTY_RUN_MAX_AGE_SECONDS = 10800
+local MACRO_LIST_CACHE_SECONDS = 5
 local CHANGE_STAGE_RETRY_SECONDS = 6
 local CHANGE_STAGE_ATTEMPTS = 2
 -- Only these match types may be switched to another joiner target before Vote Start.
@@ -159,6 +160,8 @@ function Runtime.new(dependencies: any?): any
         teamAttempt = nil,
         macroAttempt = nil,
         macroStore = nil,
+        macroCache = nil,
+        macroOptionsCache = nil,
     }
     local function setStatus(value: string)
         self.status = value
@@ -206,7 +209,11 @@ function Runtime.new(dependencies: any?): any
             return "go"
         end
         local teams = adapter.getTeams()
-        local team = if teams then teams[key] else nil
+        if not teams then
+            setStatus("Team Equipper: team data is not loaded yet (" .. name .. ")")
+            return "skip"
+        end
+        local team = teams[key]
         local number = TeamEquip.number(key)
         if not team or not number or not adapter.isSlotOwned(number) then
             setStatus(string.format("Team Equipper: %s is not available (%s)", key, name))
@@ -277,12 +284,20 @@ function Runtime.new(dependencies: any?): any
 
     --- Returns the macro file names available to the Macro Equipper (empty when files are unavailable).
     function self.getMacroOptions(): { string }
+        -- Listing the folder touches the disk; the page asks every second, so reuse the answer briefly.
+        local cached: any = self.macroOptionsCache
+        local clock = os.clock()
+        if cached and clock - cached.at < MACRO_LIST_CACHE_SECONDS then
+            return cached.names
+        end
         local store = getMacroStore()
         if not store then
             return {}
         end
         local ok, names = pcall(store.list)
-        return if ok and type(names) == "table" then names else {}
+        local result: { string } = if ok and type(names) == "table" then names else {}
+        self.macroOptionsCache = { names = result, at = clock }
+        return result
     end
 
     -- Macro Equipper step for one joiner row (lobby only): same "go" / "wait" / "skip" contract as teamStep.
@@ -295,8 +310,16 @@ function Runtime.new(dependencies: any?): any
         if not settings.macroEquip.enabled or not file or not adapter then
             return "go"
         end
-        local store = getMacroStore()
-        local document = if store then store.read(file) else nil
+        -- Reading and validating a macro file is costly; reuse it for a few seconds between steps.
+        local cache: any = self.macroCache
+        local document: any = nil
+        if cache and cache.file == file and now - cache.at < 5 then
+            document = cache.document
+        else
+            local store = getMacroStore()
+            document = if store then store.read(file) else nil
+            self.macroCache = if document then { file = file, document = document, at = now } else nil
+        end
         if not document then
             setStatus(string.format("Macro Equipper: macro %s could not be read (%s)", file, name))
             return "skip"
@@ -457,8 +480,10 @@ function Runtime.new(dependencies: any?): any
         end
         local key = target.StageType .. "/" .. target.Stage .. "/" .. target.Act .. "/" .. target.Difficulty
         local attempt = self.changeAttempt
-        if not attempt or attempt.key ~= key then
-            attempt = { key = key, sent = 0, last = -math.huge }
+        local matchId = deps.gameHandler.MatchId
+        -- A new pre-start (restart or another match) gets a fresh set of attempts.
+        if not attempt or attempt.key ~= key or attempt.matchId ~= matchId then
+            attempt = { key = key, matchId = matchId, sent = 0, last = -math.huge }
             self.changeAttempt = attempt
         end
         if attempt.sent >= CHANGE_STAGE_ATTEMPTS then
@@ -731,6 +756,10 @@ function Runtime.new(dependencies: any?): any
         if deps.game and deps.game.PlaceId ~= LOBBY_PLACE_ID then
             self.stepInMatch(now)
             return
+        end
+        -- Back in the lobby with nothing in flight: the previous bounty match marker is no longer valid.
+        if not self.confirmed and not self.pending and Settings.get().bountyRun ~= nil then
+            Settings.setBountyRun(nil)
         end
         if deps.activityState and now - self.lastActivityRead >= RIFT_POLL_SECONDS then
             local states: { [string]: any } = {}

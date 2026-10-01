@@ -127,11 +127,30 @@ function Adapter.new(injected: any?, inMatch: boolean?): any
         return self.dependencies
     end
 
+    --- True once the game has loaded both the saved teams and the owned team slots.
+    function self.isReady(): boolean
+        local d = deps()
+        local data = d and d.teamsData
+        if not data or type(data.GetTeams) ~= "function" then
+            return false
+        end
+        if data.Loaded == false then
+            return false
+        end
+        if type(data.GetOwnedSlots) == "function" then
+            local ok, slots = pcall(data.GetOwnedSlots)
+            if not ok or type(slots) ~= "table" then
+                return false
+            end
+        end
+        return true
+    end
+
     --- Returns the saved teams table (TeamN -> {Name, Units}), or nil until the game has loaded it.
     function self.getTeams(): any
         local d = deps()
         local data = d and d.teamsData
-        if not data or type(data.GetTeams) ~= "function" then
+        if not data or type(data.GetTeams) ~= "function" or not self.isReady() then
             return nil
         end
         local ok, teams = pcall(data.GetTeams)
