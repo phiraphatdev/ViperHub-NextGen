@@ -88,6 +88,19 @@ loadstring(game:HttpGet("http://127.0.0.1:8766/runtime-smoke.lua"))()
 มีเฉพาะฟิลด์ config ที่รู้จักเท่านั้นที่โหลดกลับ; ค่าผิดชนิดหรือเกินช่วงจะถูกปรับเป็นค่าที่ปลอดภัย
 การอ่านกลับหลัง Save ไม่เท่ากับยืนยัน persistence หลังปิดเกมหรือ rejoin
 
+### Auto Play (Anime Vanguards)
+
+| รายการ | วิธีใช้ |
+| --- | --- |
+| Auto play - ingame | เปิดแล้ว vote start และเปิด Auto Play ของเกมให้ในแมตช์ ใช้พร้อม Play Macro ไม่ได้ |
+| Stage Preset Rules | เลือก preset ที่บันทึกไว้ในเกมต่อโหมด (None = ไม่เปลี่ยน preset) แก้ได้เฉพาะตอนปิด Auto play - ingame; กฎทำงานเฉพาะตอนเปิด และจะเปลี่ยน preset ก่อนเปิด Auto Play ของเกม ถ้า preset ถูกลบหรือเปลี่ยนชื่อ กฎจะกลับเป็น None |
+
+### Joiner เพิ่มเติม
+
+- **Boss Bounties:** เข้า bounty ประจำวันที่เกมสุ่มให้ตราบที่ยังเหลือรอบ (Legend Stage ใช้ Nightmare, Story ใช้ Normal) ถ้าเปิด Auto Replay ของเกมไว้ รอบถัดไปจะเปลี่ยนไป bounty ใหม่ก่อน vote start ถ้าไม่เปิด จะกลับ lobby หลังจบแมตช์
+- **Change Stage in Match:** เมื่อเป็น host และยังไม่ vote start ใน Story, Legend Stage, Raid, Dungeon จะเปลี่ยนเป็นด่านของ joiner ที่ priority สูงสุดที่เปิดอยู่ (โหมดที่เกมไม่อนุญาตให้เปลี่ยนในแมตช์ เช่น Challenge ไม่ถูกแตะ)
+- **Worldline:** ข้าม worldline ที่เกมรายงานว่าจบแล้ว
+
 ### Diagnostics
 
 แท็บแสดง status code ของ session ปัจจุบันหลัง startup; กด **Refresh** เพื่อดูเหตุการณ์ใหม่ ข้อมูลนี้เป็น code แบบจำกัดจำนวน
