@@ -460,15 +460,30 @@ end
 -- Auto Join Equipper: Team Equipper rows (one dropdown of owned saved teams per joiner) plus the locked
 -- Macro Equipper (macro file per joiner). Returns an update function the page loop calls to follow team changes.
 local function addEquipper(tab: any, runtime: any?): () -> ()
-    local section = tab:Section({ Title = "Auto Join Equipper", Opened = true })
-    local function subsection(title: string): any
+    local section = tab:Section({
+        Title = "Auto Join Equipper",
+        Icon = "layout-grid",
+        Box = true,
+        BoxBorder = true,
+        TextSize = 20,
+        TextTransparency = 0,
+        Opened = true,
+    })
+    -- Sub-headings are smaller, dimmer and carry their own icon so they read as children of the boxed heading.
+    local function subsection(title: string, icon: string): any
         local host: any = section
         if type(host.Section) == "function" then
-            return (host.Section :: any)(host, { Title = title, Opened = true })
+            return (host.Section :: any)(host, {
+                Title = title,
+                Icon = icon,
+                TextSize = 15,
+                TextTransparency = 0.35,
+                Opened = true,
+            })
         end
         return host
     end
-    local nested: any = subsection("Team Equipper")
+    local nested: any = subsection("Team Equipper", "users")
     local saved = Settings.get()
     nested:Toggle({
         Title = "Auto Join Team Equipper",
@@ -498,7 +513,7 @@ local function addEquipper(tab: any, runtime: any?): () -> ()
         })
         table.insert(rows, row)
     end
-    local macro: any = subsection("Macro Equipper")
+    local macro: any = subsection("Macro Equipper", "list")
     macro:Toggle({
         Title = "Auto Join Macro Equipper",
         Desc = "Automatically equip the macro's units before joining a stage",

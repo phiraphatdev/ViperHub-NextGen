@@ -1752,15 +1752,23 @@ do
             local function addEquipper(tab, runtime)
                 local section = tab:Section({
                     Title = 'Auto Join Equipper',
+                    Icon = 'layout-grid',
+                    Box = true,
+                    BoxBorder = true,
+                    TextSize = 20,
+                    TextTransparency = 0,
                     Opened = true,
                 })
 
-                local function subsection(title)
+                local function subsection(title, icon)
                     local host = section
 
                     if type(host.Section) == 'function' then
                         return (host.Section)(host, {
                             Title = title,
+                            Icon = icon,
+                            TextSize = 15,
+                            TextTransparency = 0.35,
                             Opened = true,
                         })
                     end
@@ -1768,7 +1776,7 @@ do
                     return host
                 end
 
-                local nested = subsection('Team Equipper')
+                local nested = subsection('Team Equipper', 'users')
                 local saved = Settings.get()
 
                 nested:Toggle({
@@ -1813,7 +1821,7 @@ do
                     table.insert(rows, row)
                 end
 
-                local macro = subsection('Macro Equipper')
+                local macro = subsection('Macro Equipper', 'list')
 
                 macro:Toggle({
                     Title = 'Auto Join Macro Equipper',
