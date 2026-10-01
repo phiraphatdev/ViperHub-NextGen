@@ -781,14 +781,14 @@ function Runtime.new(dependencies: any?): any
 
         local snapshot = deps.activityState and deps.activityState.load(now, deps.challengeData)
         local states = if snapshot and type(snapshot.states) == "table" then snapshot.states else {}
-        -- The lobby records Rift as available only when the room is open AND attempts remain. An open room alone
-        -- (attempts used up) must not send the player back, so the match place trusts that record and never
-        -- infers availability from the open flag; a stale record is dropped once the room closes.
+        -- An open Rift room makes Rift available (it can open mid-match), unless the lobby recorded this hour's
+        -- attempts as used up; otherwise the player would be sent back for a Rift that cannot be joined.
         local ws: any = deps.game and deps.game:GetService("Workspace")
+        local riftSpent = snapshot ~= nil and snapshot.riftSpent == true
         if ws and ws.GetAttribute then
             local okAttr, attrVal = pcall(ws.GetAttribute, ws, config.attributes.riftOpen)
-            if okAttr and attrVal ~= true then
-                states.Rift = nil
+            if okAttr and attrVal == true and not riftSpent then
+                states.Rift = { status = "available" }
             end
         end
         for _, name in settings.priority do

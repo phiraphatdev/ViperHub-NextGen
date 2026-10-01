@@ -169,14 +169,14 @@ function ActivityState.new(env: any, userId: number): any
         -- 3. Rift handling: open on the hour (0-10m) unless confirmed cleared in this exact hour
         local currentHour = math.floor(now / 3600)
         local isOpenWindow = (now % 3600 < (config.thresholds.riftSnapshotSeconds or 600))
-        if isOpenWindow then
-            local alreadyCompletedThisHour = false
-            local rInfo = value.riftInfo
-            if type(rInfo) == "table" and finite(rInfo.attempts) and finite(rInfo.hour) then
-                if rInfo.attempts == 0 and rInfo.hour == currentHour then
-                    alreadyCompletedThisHour = true
-                end
+        local alreadyCompletedThisHour = false
+        local rInfo = value.riftInfo
+        if type(rInfo) == "table" and finite(rInfo.attempts) and finite(rInfo.hour) then
+            if rInfo.attempts == 0 and rInfo.hour == currentHour then
+                alreadyCompletedThisHour = true
             end
+        end
+        if isOpenWindow then
             if not alreadyCompletedThisHour then
                 states.Rift = { status = "available" }
             else
@@ -187,6 +187,7 @@ function ActivityState.new(env: any, userId: number): any
         end
         return {
             states = states,
+            riftSpent = alreadyCompletedThisHour,
         }
     end
 

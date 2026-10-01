@@ -2572,16 +2572,15 @@ do
 
                     local currentHour = math.floor(now / 3600)
                     local isOpenWindow = (now % 3600 < (config.thresholds.riftSnapshotSeconds or 600))
+                    local alreadyCompletedThisHour = false
+                    local rInfo = value.riftInfo
 
-                    if isOpenWindow then
-                        local alreadyCompletedThisHour = false
-                        local rInfo = value.riftInfo
-
-                        if type(rInfo) == 'table' and finite(rInfo.attempts) and finite(rInfo.hour) then
-                            if rInfo.attempts == 0 and rInfo.hour == currentHour then
-                                alreadyCompletedThisHour = true
-                            end
+                    if type(rInfo) == 'table' and finite(rInfo.attempts) and finite(rInfo.hour) then
+                        if rInfo.attempts == 0 and rInfo.hour == currentHour then
+                            alreadyCompletedThisHour = true
                         end
+                    end
+                    if isOpenWindow then
                         if not alreadyCompletedThisHour then
                             states.Rift = {
                                 status = 'available',
@@ -2597,7 +2596,10 @@ do
                         }
                     end
 
-                    return {states = states}
+                    return {
+                        states = states,
+                        riftSpent = alreadyCompletedThisHour,
+                    }
                 end
 
                 return self
@@ -4227,12 +4229,15 @@ do
                     local snapshot = deps.activityState and deps.activityState.load(now, deps.challengeData)
                     local states = if snapshot and type(snapshot.states) == 'table'then snapshot.states else{}
                     local ws = deps.game and deps.game:GetService('Workspace')
+                    local riftSpent = snapshot ~= nil and snapshot.riftSpent == true
 
                     if ws and ws.GetAttribute then
                         local okAttr, attrVal = pcall(ws.GetAttribute, ws, config.attributes.riftOpen)
 
-                        if okAttr and attrVal ~= true then
-                            states.Rift = nil
+                        if okAttr and attrVal == true and not riftSpent then
+                            states.Rift = {
+                                status = 'available',
+                            }
                         end
                     end
 

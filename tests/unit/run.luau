@@ -3218,7 +3218,7 @@ test("Joiner runtime in match triggers immediate return and suspends macro", fun
         userId = 42,
         activityState = {
             load = function(): any
-                return { states = if riftRecorded then { Rift = { status = "available" } } else {} }
+                return { states = {}, riftSpent = not riftRecorded }
             end,
         },
         lobbyReturn = {
