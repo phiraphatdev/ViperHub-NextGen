@@ -5885,4 +5885,75 @@ test("Webhook pings @everyone for rare drops only when allowed and counts unknow
         string.find(text, "Secret Ghost", 1, true) ~= nil and string.find(text, "**Gold**", 1, true) ~= nil
     )
 end)
+test("Activity state treats a challenge started by the joiner as used until the period changes", function()
+    local values: { [string]: any } = {}
+    local count = 0
+    local stored: string? = nil
+    local http: any = {
+        JSONEncode = function(_self: any, value: any): string
+            count += 1
+            local key = "K" .. count
+            values[key] = value
+            return key
+        end,
+        JSONDecode = function(_self: any, body: string): any
+            return values[body]
+        end,
+    }
+    local env: any = {
+        isfile = function()
+            return stored ~= nil
+        end,
+        readfile = function()
+            return stored
+        end,
+        writefile = function(_p: string, body: string)
+            stored = body
+        end,
+        isfolder = function()
+            return true
+        end,
+        makefolder = function() end,
+        game = {
+            GetService = function(): any
+                return http
+            end,
+        },
+    }
+    local store = ActivityState.new(env, 42)
+    local period = 20000
+    local data: any = {
+        GetChallengeSeed = function()
+            return period
+        end,
+    }
+    assert(store.save(1000, { Daily = { status = "available", period = 20000 } }, { Daily = 19999 }, nil))
+    assert(store.load(1100, data).states.Daily.status == "available")
+    assert(store.markUsed("Daily", 20000))
+    assert(store.load(1100, data).states.Daily.status == "unavailable", "started challenge is used")
+    assert(store.save(1200, { Daily = { status = "available", period = 20000 } }, { Daily = 19999 }, nil))
+    assert(store.load(1300, data).states.Daily.status == "unavailable", "lobby refresh keeps the mark")
+    period = 20001
+    assert(store.save(1400, { Daily = { status = "available", period = 20001 } }, { Daily = 19999 }, nil))
+    assert(store.load(1500, data).states.Daily.status == "available", "a new period clears the mark")
+    assert(not store.markUsed("Rift", 1))
+end)
+test("Joiner report lists every mode in priority order with off and decision states", function()
+    local runtime = JoinerRuntime.new({
+        clock = function()
+            return 100
+        end,
+    })
+    JoinerSettings.setPaused(true)
+    local lines = runtime.getReport()
+    assert(string.find(lines[1], "disabled", 1, true) ~= nil, "pause is reported first")
+    assert(#lines == #JoinerSettings.get().priority + 1)
+    JoinerSettings.setPaused(false)
+    runtime.setEnabled("Rift", true)
+    local report = table.concat(runtime.getReport(), "\n")
+    assert(string.find(report, "Rift — no decision yet", 1, true) ~= nil)
+    assert(string.find(report, "Daily Challenge — off", 1, true) ~= nil)
+    runtime.setEnabled("Rift", false)
+    JoinerSettings.setPaused(true)
+end)
 print(string.format("PASS: %d unit scenarios", passed))

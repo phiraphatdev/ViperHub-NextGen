@@ -165,7 +165,20 @@ function Runtime.new(dependencies: any?): any
         macroOptionsCache = nil,
     }
     local statusListeners: { (string) -> () } = {}
+    local reportEntries: { [string]: { text: string, at: number } } = {}
+
+    -- Remembers the latest decision per mode for the Joiner Report ("Mode: text" status lines and silent skips).
+    local function note(name: string, text: string)
+        local clockFn: any = if self.dependencies then self.dependencies.clock else nil
+        reportEntries[name] =
+            { text = text, at = if type(clockFn) == "function" then (clockFn :: any)() else os.time() }
+    end
+
     local function setStatus(value: string)
+        local prefix = string.match(value, "^([%w ]+): ")
+        if prefix and table.find(Settings.get().priority, prefix) then
+            note(prefix, string.sub(value, #prefix + 3))
+        end
         self.status = value
         if self.onStatus then
             pcall(self.onStatus, value)
@@ -173,6 +186,30 @@ function Runtime.new(dependencies: any?): any
         for _, listener in table.clone(statusListeners) do
             pcall(listener, value)
         end
+    end
+
+    --- Returns report lines in priority order: what each mode last decided and how long ago.
+    function self.getReport(): { string }
+        local lines: { string } = {}
+        local clockFn: any = if self.dependencies then self.dependencies.clock else nil
+        local now: number = if type(clockFn) == "function" then (clockFn :: any)() else os.time()
+        local settings = Settings.get()
+        for _, name in settings.priority do
+            local entry = reportEntries[name]
+            local line: string
+            if not self.enabled[name] then
+                line = "• " .. name .. " — off"
+            elseif entry then
+                line = string.format("• %s — %s (%ds ago)", name, entry.text, math.max(0, now - entry.at))
+            else
+                line = "• " .. name .. " — no decision yet"
+            end
+            table.insert(lines, line)
+        end
+        if settings.paused then
+            table.insert(lines, 1, "Joiners are disabled (Disable Auto Joiners is on).")
+        end
+        return lines
     end
 
     --- Subscribes to every status change (used by the webhook); returns a function that unsubscribes.
@@ -961,7 +998,7 @@ function Runtime.new(dependencies: any?): any
             if name == "Rift" and self.enabled[name] and deps.specialEvents and deps.riftsData then
                 local currentHour = math.floor(now / 3600)
                 if self.lastCompletedRiftHour == currentHour then
-                    -- Already completed this hour, fall through to next priority
+                    note(name, "no attempts left this hour")
                 else
                     local ws: any = deps.game:GetService("Workspace")
                     local isRiftOpenAttr = nil
@@ -975,7 +1012,7 @@ function Runtime.new(dependencies: any?): any
                         then (isRiftOpenAttr == true)
                         else (now % 3600 < 600)
                     if not isOpen then
-                        -- Rift not open, fall through
+                        note(name, "closed (opens at the start of each hour)")
                     else
                         local okAtt, attRes = pcall(function()
                             return deps.specialEvents[config.remoteNames.getRiftAttempts]
@@ -988,7 +1025,7 @@ function Runtime.new(dependencies: any?): any
                             and (attRes.AttemptsRemaining or 0) <= 0
                         then
                             self.lastCompletedRiftHour = currentHour
-                            -- No attempts remaining, fall through
+                            note(name, "no attempts left this hour")
                         elseif
                             okAtt
                             and type(attRes) == "table"
@@ -1049,6 +1086,7 @@ function Runtime.new(dependencies: any?): any
                 end
             end
             if cooldownActive then
+                note(name, "waiting for the joiner cooldown")
                 return
             end
             if
@@ -1206,9 +1244,16 @@ function Runtime.new(dependencies: any?): any
             end
             if CHALLENGES[name] and self.enabled[name] and choice then
                 local kind = CHALLENGES[name]
-                local availability = ActivityState.challenge(deps.challengeAttempts, deps.challengeData, kind)
+                local availability, challengePeriod =
+                    ActivityState.challenge(deps.challengeAttempts, deps.challengeData, kind)
                 if availability ~= "available" then
                     -- Missing or already-used game-recorded period data cannot authorize a join.
+                    note(
+                        name,
+                        if availability == "unavailable"
+                            then "already played this period"
+                            else "availability unknown (game data not ready)"
+                    )
                 else
                     local targetChallengeName = choice.challengeName or name
                     local rewardMap: { [string]: string } = (Settings.REGULAR_REWARD_MAP :: any) or {}
@@ -1281,6 +1326,10 @@ function Runtime.new(dependencies: any?): any
                                     self.pending = nil
                                     setStatus(name .. ": request failed")
                                 else
+                                    -- The match place cannot read the game's challenge seed, so remember the start.
+                                    if challengePeriod and deps.activityState then
+                                        pcall(deps.activityState.markUsed, kind, challengePeriod)
+                                    end
                                     setStatus(name .. ": waiting for server confirmation")
                                 end
                             end

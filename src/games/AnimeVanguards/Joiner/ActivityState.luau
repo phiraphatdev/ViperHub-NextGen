@@ -75,6 +75,19 @@ function ActivityState.new(env: any, userId: number): any
     local http = env.game and env.game:GetService("HttpService")
     local self = {}
 
+    -- Reads and decodes the stored file without any validity checks; nil when missing or malformed.
+    local function readRaw(): any
+        if not storage or not http then
+            return nil
+        end
+        local body = storage.read()
+        if not body then
+            return nil
+        end
+        local ok, value = pcall(http.JSONDecode, http, body)
+        return if ok and type(value) == "table" then value else nil
+    end
+
     function self.save(
         now: number,
         states: { [string]: any },
@@ -84,6 +97,22 @@ function ActivityState.new(env: any, userId: number): any
         if not storage or not http or not finite(now) or not finite(userId) then
             return false
         end
+        -- Keep "started in a match" marks while they still describe the live period.
+        local used: { [string]: number } = {}
+        local previous = readRaw()
+        if previous and type(previous.used) == "table" then
+            for kind, period in previous.used do
+                local live = states[kind]
+                if
+                    type(kind) == "string"
+                    and finite(period)
+                    and type(live) == "table"
+                    and live.period == period
+                then
+                    used[kind] = period :: number
+                end
+            end
+        end
         local ok, body = pcall(http.JSONEncode, http, {
             schemaVersion = SCHEMA_VERSION,
             userId = userId,
@@ -91,8 +120,27 @@ function ActivityState.new(env: any, userId: number): any
             states = states,
             challengeSeeds = challengeSeeds,
             riftInfo = riftInfo,
+            used = used,
         })
         return ok and type(body) == "string" and storage.write(body)
+    end
+
+    --- Records that a challenge of this kind was started in the current period; the match place then treats it as
+    --- used until the lobby reads the game's own seed again (the match place cannot read that seed).
+    function self.markUsed(kind: string, period: number): boolean
+        if not CHALLENGES[kind] or not finite(period) or not storage or not http then
+            return false
+        end
+        local current = readRaw()
+        if not current then
+            return false
+        end
+        local used = if type(current.used) == "table" then current.used else {}
+        used[kind] = period
+        current.used = used
+        local ok, body = pcall(http.JSONEncode, http, current)
+        local target = storage
+        return ok and type(body) == "string" and target ~= nil and target.write(body)
     end
 
     function self.load(now: number, challengeData: any): any?
@@ -136,6 +184,20 @@ function ActivityState.new(env: any, userId: number): any
                             states[kind] = { status = "unavailable", period = currentPeriod }
                         end
                     end
+                end
+            end
+        end
+        -- A challenge this script started in the current period is used, whatever the stale stored seed says.
+        if
+            type(value.used) == "table"
+            and challengeData
+            and type(challengeData.GetChallengeSeed) == "function"
+        then
+            for _, kind in { "Regular", "Daily", "Weekly" } do
+                local usedPeriod = value.used[kind]
+                local okPeriod, period = pcall(challengeData.GetChallengeSeed, kind)
+                if finite(usedPeriod) and okPeriod and finite(period) and usedPeriod == period then
+                    states[kind] = { status = "unavailable", period = period }
                 end
             end
         end

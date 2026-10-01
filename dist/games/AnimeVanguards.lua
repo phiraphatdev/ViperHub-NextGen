@@ -1384,6 +1384,7 @@ do
             local Settings = __DARKLUA_BUNDLE_MODULES.l()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Page = {}
+            local STARTUP_WAIT_TICKS = 60
 
             local function orderText()
                 return table.concat(Settings.get().priority, ' > ')
@@ -2181,10 +2182,10 @@ do
                 end
 
                 section:Toggle({
-                    Title = 'Back to Lobby when Challenge Resets',
+                    Title = 'Back to Lobby when Challenge is Available',
                     Value = backToLobby,
                     Desc =
-[[Returns from active match to lobby when this challenge resets.]],
+[[Returns from an active match to the lobby when this challenge can be played again (Return Mode decides when).]],
                     Callback = function(value)
                         backToLobby = value
 
@@ -2235,6 +2236,17 @@ do
 
                     runtime.onStatus = function(value)
                         status:SetDesc(value)
+                    end
+                end
+
+                local reportPara = if runtime and type(runtime.getReport) == 'function'then tab:Paragraph({
+                    Title = 'Joiner Report',
+                    Desc = 'Waiting for the first check...',
+                })else nil
+
+                local function updateReport()
+                    if reportPara and runtime then
+                        reportPara:SetDesc(table.concat(runtime.getReport(), '\n'))
                     end
                 end
 
@@ -2330,10 +2342,27 @@ do
                         local starterPlayer = gameObject and gameObject:GetService('StarterPlayer')
                         local cd = if rep then optionalModule(rep, 'Modules.Data.Challenges.ChallengesData')else nil
                         local cah = if starterPlayer then optionalModule(starterPlayer, 'Modules.Gameplay.Challenges.ChallengesAttemptsHandler')else nil
-                        local mountedContext = runtime and runtime.context
+                        local mountedContext = nil
+                        local idleTicks = 0
 
                         local function alive()
-                            return mountedContext ~= nil and mountedContext.alive == true and runtime.context == mountedContext
+                            if not runtime then
+                                return false
+                            end
+
+                            local current = runtime.context
+
+                            if mountedContext == nil then
+                                if current ~= nil and current.alive == true then
+                                    mountedContext = current
+                                else
+                                    idleTicks += 1
+
+                                    return idleTicks <= STARTUP_WAIT_TICKS
+                                end
+                            end
+
+                            return mountedContext.alive == true and runtime.context == mountedContext
                         end
 
                         while alive() do
@@ -2395,6 +2424,7 @@ do
 
                             pcall(updateBounty)
                             pcall(updateEquipper)
+                            pcall(updateReport)
 
                             local waitFn = taskApi.wait
 
@@ -2488,9 +2518,38 @@ do
                 local http = env.game and env.game:GetService('HttpService')
                 local self = {}
 
+                local function readRaw()
+                    if not storage or not http then
+                        return nil
+                    end
+
+                    local body = storage.read()
+
+                    if not body then
+                        return nil
+                    end
+
+                    local ok, value = pcall(http.JSONDecode, http, body)
+
+                    return if ok and type(value) == 'table'then value else nil
+                end
+
                 function self.save(now, states, challengeSeeds, riftInfo)
                     if not storage or not http or not finite(now) or not finite(userId) then
                         return false
+                    end
+
+                    local used = {}
+                    local previous = readRaw()
+
+                    if previous and type(previous.used) == 'table' then
+                        for kind, period in previous.used do
+                            local live = states[kind]
+
+                            if type(kind) == 'string' and finite(period) and type(live) == 'table' and live.period == period then
+                                used[kind] = period
+                            end
+                        end
                     end
 
                     local ok, body = pcall(http.JSONEncode, http, {
@@ -2500,9 +2559,31 @@ do
                         states = states,
                         challengeSeeds = challengeSeeds,
                         riftInfo = riftInfo,
+                        used = used,
                     })
 
                     return ok and type(body) == 'string' and storage.write(body)
+                end
+                function self.markUsed(kind, period)
+                    if not CHALLENGES[kind] or not finite(period) or not storage or not http then
+                        return false
+                    end
+
+                    local current = readRaw()
+
+                    if not current then
+                        return false
+                    end
+
+                    local used = if type(current.used) == 'table'then current.used else{}
+
+                    used[kind] = period
+                    current.used = used
+
+                    local ok, body = pcall(http.JSONEncode, http, current)
+                    local target = storage
+
+                    return ok and type(body) == 'string' and target ~= nil and target.write(body)
                 end
                 function self.load(now, challengeData)
                     if not storage or not http or not finite(now) then
@@ -2554,6 +2635,23 @@ do
                                         }
                                     end
                                 end
+                            end
+                        end
+                    end
+                    if type(value.used) == 'table' and challengeData and type(challengeData.GetChallengeSeed) == 'function' then
+                        for _, kind in {
+                            'Regular',
+                            'Daily',
+                            'Weekly',
+                        }do
+                            local usedPeriod = value.used[kind]
+                            local okPeriod, period = pcall(challengeData.GetChallengeSeed, kind)
+
+                            if finite(usedPeriod) and okPeriod and finite(period) and usedPeriod == period then
+                                states[kind] = {
+                                    status = 'unavailable',
+                                    period = period,
+                                }
                             end
                         end
                     end
@@ -3638,8 +3736,23 @@ do
                     macroOptionsCache = nil,
                 }
                 local statusListeners = {}
+                local reportEntries = {}
 
+                local function note(name, text)
+                    local clockFn = if self.dependencies then self.dependencies.clock else nil
+
+                    reportEntries[name] = {
+                        text = text,
+                        at = if type(clockFn) == 'function'then(clockFn)()else os.time(),
+                    }
+                end
                 local function setStatus(value)
+                    local prefix = string.match(value, '^([%w ]+): ')
+
+                    if prefix and table.find(Settings.get().priority, prefix) then
+                        note(prefix, string.sub(value, #prefix + 3))
+                    end
+
                     self.status = value
 
                     if self.onStatus then
@@ -3651,6 +3764,33 @@ do
                     end
                 end
 
+                function self.getReport()
+                    local lines = {}
+                    local clockFn = if self.dependencies then self.dependencies.clock else nil
+                    local now = if type(clockFn) == 'function'then(clockFn)()else os.time()
+                    local settings = Settings.get()
+
+                    for _, name in settings.priority do
+                        local entry = reportEntries[name]
+                        local line
+
+                        if not self.enabled[name] then
+                            line = '\u{2022} ' .. name .. ' \u{2014} off'
+                        elseif entry then
+                            line = string.format('\u{2022} %s \u{2014} %s (%ds ago)', name, entry.text, math.max(0, now - entry.at))
+                        else
+                            line = '\u{2022} ' .. name .. ' \u{2014} no decision yet'
+                        end
+
+                        table.insert(lines, line)
+                    end
+
+                    if settings.paused then
+                        table.insert(lines, 1, 'Joiners are disabled (Disable Auto Joiners is on).')
+                    end
+
+                    return lines
+                end
                 function self.addStatusListener(listener)
                     table.insert(statusListeners, listener)
 
@@ -4451,6 +4591,7 @@ do
                             local currentHour = math.floor(now / 3600)
 
                             if self.lastCompletedRiftHour == currentHour then
+                                note(name, 'no attempts left this hour')
                             else
                                 local ws = deps.game:GetService('Workspace')
                                 local isRiftOpenAttr = nil
@@ -4466,6 +4607,7 @@ do
                                 local isOpen = if isRiftOpenAttr ~= nil then(isRiftOpenAttr == true)else(now % 3600 < 600)
 
                                 if not isOpen then
+                                    note(name, 'closed (opens at the start of each hour)')
                                 else
                                     local okAtt, attRes = pcall(function()
                                         return deps.specialEvents[config.remoteNames.getRiftAttempts] and deps.specialEvents[config.remoteNames.getRiftAttempts].Invoke()
@@ -4473,6 +4615,8 @@ do
 
                                     if okAtt and type(attRes) == 'table' and attRes.Ready and (attRes.AttemptsRemaining or 0) <= 0 then
                                         self.lastCompletedRiftHour = currentHour
+
+                                        note(name, 'no attempts left this hour')
                                     elseif okAtt and type(attRes) == 'table' and attRes.Ready and (attRes.AttemptsRemaining or 0) > 0 then
                                         local rifts = if type(deps.riftsData.GetRifts) == 'function'then(deps.riftsData.GetRifts)()else nil
                                         local targetGuid = nil
@@ -4522,6 +4666,8 @@ do
                             end
                         end
                         if cooldownActive then
+                            note(name, 'waiting for the joiner cooldown')
+
                             return
                         end
                         if name == 'Boss Event' and self.enabled[name] and choice and deps.bossRotation and deps.bossNetwork then
@@ -4671,9 +4817,10 @@ do
                         end
                         if CHALLENGES[name] and self.enabled[name] and choice then
                             local kind = CHALLENGES[name]
-                            local availability = ActivityState.challenge(deps.challengeAttempts, deps.challengeData, kind)
+                            local availability, challengePeriod = ActivityState.challenge(deps.challengeAttempts, deps.challengeData, kind)
 
                             if availability ~= 'available' then
+                                note(name, if availability == 'unavailable'then'already played this period'else'availability unknown (game data not ready)')
                             else
                                 local targetChallengeName = choice.challengeName or name
                                 local rewardMap = (Settings.REGULAR_REWARD_MAP) or {}
@@ -4738,6 +4885,10 @@ do
 
                                                 setStatus(name .. ': request failed')
                                             else
+                                                if challengePeriod and deps.activityState then
+                                                    pcall(deps.activityState.markUsed, kind, challengePeriod)
+                                                end
+
                                                 setStatus(name .. ': waiting for server confirmation')
                                             end
                                         end

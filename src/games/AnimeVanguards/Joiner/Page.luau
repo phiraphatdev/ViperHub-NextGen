@@ -12,6 +12,8 @@ local definitions = require("./Definitions")
 local Settings = require("./Settings")
 local config = require("../Config")
 local Page = {}
+
+local STARTUP_WAIT_TICKS = 60
 local function orderText(): string
     return table.concat(Settings.get().priority, " > ")
 end
@@ -673,9 +675,9 @@ local function addChallenge(tab: any, kind: string, choices: any, runtime: any?)
     end
 
     section:Toggle({
-        Title = "Back to Lobby when Challenge Resets",
+        Title = "Back to Lobby when Challenge is Available",
         Value = backToLobby,
-        Desc = "Returns from active match to lobby when this challenge resets.",
+        Desc = "Returns from an active match to the lobby when this challenge can be played again (Return Mode decides when).",
         Callback = function(value: boolean)
             backToLobby = value
             Settings.setBackToLobby(name, backToLobby, returnMode)
@@ -710,6 +712,15 @@ function Page.mount(tab: any, stageDataOverride: any?, runtime: any?, challengeC
         local status = tab:Paragraph({ Title = "Join status", Desc = runtime.status })
         runtime.onStatus = function(value: string)
             status:SetDesc(value)
+        end
+    end
+    -- Why each mode was or was not joined, in priority order (refreshed every second below).
+    local reportPara = if runtime and type(runtime.getReport) == "function"
+        then tab:Paragraph({ Title = "Joiner Report", Desc = "Waiting for the first check..." })
+        else nil
+    local function updateReport()
+        if reportPara and runtime then
+            reportPara:SetDesc(table.concat(runtime.getReport(), "\n"))
         end
     end
     -- Equipper first so the Team and Macro Equipper controls are the first thing on the tab.
@@ -799,11 +810,23 @@ function Page.mount(tab: any, stageDataOverride: any?, runtime: any?, challengeC
             local cah = if starterPlayer
                 then optionalModule(starterPlayer, "Modules.Gameplay.Challenges.ChallengesAttemptsHandler")
                 else nil
-            local mountedContext = runtime and runtime.context
+            -- The page is built before the runtime starts, so wait for its context; stop once that context ends.
+            local mountedContext: any = nil
+            local idleTicks = 0
             local function alive(): boolean
-                return mountedContext ~= nil
-                    and mountedContext.alive == true
-                    and runtime.context == mountedContext
+                if not runtime then
+                    return false
+                end
+                local current: any = runtime.context
+                if mountedContext == nil then
+                    if current ~= nil and current.alive == true then
+                        mountedContext = current
+                    else
+                        idleTicks += 1
+                        return idleTicks <= STARTUP_WAIT_TICKS
+                    end
+                end
+                return mountedContext.alive == true and runtime.context == mountedContext
             end
             while alive() do
                 local now = os.time()
@@ -863,6 +886,7 @@ function Page.mount(tab: any, stageDataOverride: any?, runtime: any?, challengeC
                 end
                 pcall(updateBounty)
                 pcall(updateEquipper)
+                pcall(updateReport)
                 local waitFn: any = taskApi.wait
                 waitFn(1)
             end
