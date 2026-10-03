@@ -2321,7 +2321,7 @@ do
                 settings:Toggle({
                     Title = 'Change Stage in Match',
                     Desc =
-[[As host before Vote Start, switch the match to the highest-priority enabled stage joiner's stage instead of returning to the lobby.]],
+[[As host before Vote Start, switch a joiner-created match to the highest-priority stage joiner (Stage, Legend Stage, Raid, Dungeon, Boss Bounties). Not done when a higher-priority Rift or challenge is playable; its Back to Lobby setting decides instead.]],
                     Value = state.changeStageInMatch ~= false,
                     Callback = Settings.setChangeStageInMatch,
                 })
@@ -4217,6 +4217,37 @@ do
 
                     return type(run) == 'table' and type(matchData) == 'table' and matchData.StageType == run.mode and matchData.Stage == run.stage and matchData.Act == run.act and os.time() - run.at >= 0 and os.time() - run.at < JOINER_RUN_MAX_AGE_SECONDS
                 end
+                local function matchStates(now)
+                    local deps = self.dependencies
+                    local cached = self.activityCache
+                    local snapshot
+
+                    if cached and now - cached.at < ACTIVITY_CACHE_SECONDS then
+                        snapshot = cached.snapshot
+                    else
+                        snapshot = deps.activityState and deps.activityState.load(now, deps.challengeData)
+                        self.activityCache = {
+                            at = now,
+                            snapshot = snapshot,
+                        }
+                    end
+
+                    local states = if snapshot and type(snapshot.states) == 'table'then table.clone(snapshot.states)else{}
+                    local ws = deps.game and deps.game:GetService('Workspace')
+                    local riftSpent = snapshot ~= nil and snapshot.riftSpent == true
+
+                    if ws and ws.GetAttribute then
+                        local okAttr, attrVal = pcall(ws.GetAttribute, ws, config.attributes.riftOpen)
+
+                        if okAttr and attrVal == true and not riftSpent then
+                            states.Rift = {
+                                status = 'available',
+                            }
+                        end
+                    end
+
+                    return states
+                end
                 local function tryChangeStage(settings, matchData, now)
                     local deps = self.dependencies
 
@@ -4226,10 +4257,21 @@ do
 
                     local target = nil
                     local targetName = nil
+                    local states = matchStates(now)
 
                     for _, name in settings.priority do
                         local choice = settings.selection[name]
+                        local playable = states[CHALLENGES[name] or name]
 
+                        if (CHALLENGES[name] or name == 'Rift') and settings.enabled[name] and type(playable) == 'table' and playable.status == 'available' then
+                            if self.changeSkippedFor ~= name then
+                                self.changeSkippedFor = name
+
+                                setStatus(name .. ': available; stage not changed in match')
+                            end
+
+                            return false
+                        end
                         if name == 'Boss Bounties' and settings.enabled[name] then
                             local bounty = self.readBounty()
 
@@ -4258,6 +4300,8 @@ do
                             break
                         end
                     end
+
+                    self.changeSkippedFor = nil
 
                     if not target then
                         return false
@@ -4509,32 +4553,7 @@ do
                         return
                     end
 
-                    local cached = self.activityCache
-                    local snapshot
-
-                    if cached and now - cached.at < ACTIVITY_CACHE_SECONDS then
-                        snapshot = cached.snapshot
-                    else
-                        snapshot = deps.activityState and deps.activityState.load(now, deps.challengeData)
-                        self.activityCache = {
-                            at = now,
-                            snapshot = snapshot,
-                        }
-                    end
-
-                    local states = if snapshot and type(snapshot.states) == 'table'then table.clone(snapshot.states)else{}
-                    local ws = deps.game and deps.game:GetService('Workspace')
-                    local riftSpent = snapshot ~= nil and snapshot.riftSpent == true
-
-                    if ws and ws.GetAttribute then
-                        local okAttr, attrVal = pcall(ws.GetAttribute, ws, config.attributes.riftOpen)
-
-                        if okAttr and attrVal == true and not riftSpent then
-                            states.Rift = {
-                                status = 'available',
-                            }
-                        end
-                    end
+                    local states = matchStates(now)
 
                     for _, name in settings.priority do
                         local choice = settings.selection[name]

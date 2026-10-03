@@ -6001,4 +6001,102 @@ test("Webhook prefers the game's end summary status over the end screen title", 
         "unknown status falls back to the screen"
     )
 end)
+test("Change Stage in Match yields to a higher-priority playable challenge or Rift", function()
+    local fired: { any } = {}
+    local dailyState = "available"
+    local riftOpen = false
+    local matchData: any = { StageType = "Story", Stage = "Stage1", Act = "Act1", Host = 42 }
+    local runtime = JoinerRuntime.new({
+        game = {
+            PlaceId = 16277809958,
+            GetService = function(): any
+                return {
+                    GetAttribute = function(_self: any, name: string): any
+                        return if name == "IsRiftOpen" then riftOpen else false
+                    end,
+                }
+            end,
+        },
+        task = { spawn = function() end, wait = function() end },
+        clock = function()
+            return 100
+        end,
+        userId = 42,
+        gameHandler = { IsGameLoaded = true, IsMatchStarted = false, GameData = matchData, MatchId = 1 },
+        bountyState = {
+            GetData = function()
+                return { BountySeed = 1, BountiesLeft = 5 }
+            end,
+        },
+        bountyData = {
+            GetBountyFromSeed = function()
+                return { Act = "Act2", StageType = "LegendStage", Stage = "Stage5" }
+            end,
+        },
+        activityState = {
+            load = function(): any
+                return { states = { Daily = { status = dailyState, period = 1 } }, riftSpent = false }
+            end,
+        },
+        lobbyReturn = {
+            RequestStartMatch = {
+                Fire = function(payload: any)
+                    table.insert(fired, payload)
+                end,
+            },
+        },
+    })
+    runtime.setMacro(nil)
+    runtime.gameSettings = {
+        get = function()
+            return true
+        end,
+    }
+    for _, other in
+        {
+            "Stage",
+            "Legend Stage",
+            "Raid",
+            "Dungeon",
+            "Worldline",
+            "Boss Event",
+            "Weekly Challenge",
+            "Regular Challenge",
+        }
+    do
+        JoinerSettings.setEnabled(other, false)
+    end
+    JoinerSettings.resetPriority() -- Rift > Weekly > Daily > Regular > ... > Boss Bounties
+    JoinerSettings.setPaused(false)
+    JoinerSettings.setBountyRun(nil)
+    JoinerSettings.setJoinerRun({ mode = "Story", stage = "Stage1", act = "Act1", at = os.time() })
+    runtime.setEnabled("Boss Bounties", true)
+    runtime.setEnabled("Daily Challenge", true)
+    runtime.setEnabled("Rift", true)
+    runtime.start({ alive = true })
+
+    runtime.step(100)
+    assert(#fired == 0, "a playable higher-priority challenge keeps this match unchanged")
+    assert(string.find(runtime.status, "Daily Challenge: available", 1, true) ~= nil, runtime.status)
+
+    dailyState = "unavailable"
+    runtime.step(111) -- after the 10 s activity cache
+    assert(
+        #fired == 1 and fired[1].StageType == "LegendStage",
+        "nothing higher is playable: switch to the bounty"
+    )
+
+    matchData.MatchId = 2
+    riftOpen = true
+    runtime.dependencies.gameHandler.MatchId = 2
+    runtime.step(130)
+    assert(#fired == 1, "an open Rift with attempts also blocks the switch")
+
+    runtime.stop()
+    for _, name in { "Boss Bounties", "Daily Challenge", "Rift" } do
+        runtime.setEnabled(name, false)
+    end
+    JoinerSettings.setJoinerRun(nil)
+    JoinerSettings.setPaused(true)
+end)
 print(string.format("PASS: %d unit scenarios", passed))

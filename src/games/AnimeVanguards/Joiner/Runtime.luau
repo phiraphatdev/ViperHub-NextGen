@@ -554,6 +554,34 @@ function Runtime.new(dependencies: any?): any
             and os.time() - run.at < JOINER_RUN_MAX_AGE_SECONDS
     end
 
+    -- What the match place knows is playable now: challenges from the lobby's record (with "used" marks) and Rift
+    -- when its room is open and this hour's attempts were not recorded as spent. Keys: Regular/Daily/Weekly/Rift.
+    local function matchStates(now: number): { [string]: any }
+        local deps = self.dependencies
+        local cached: any = self.activityCache
+        local snapshot: any
+        if cached and now - cached.at < ACTIVITY_CACHE_SECONDS then
+            snapshot = cached.snapshot
+        else
+            snapshot = deps.activityState and deps.activityState.load(now, deps.challengeData)
+            self.activityCache = { at = now, snapshot = snapshot }
+        end
+        local states: { [string]: any } = if snapshot and type(snapshot.states) == "table"
+            then table.clone(snapshot.states :: any)
+            else {}
+        -- An open Rift room makes Rift available (it can open mid-match), unless the lobby recorded this hour's
+        -- attempts as used up; otherwise the player would be sent back for a Rift that cannot be joined.
+        local ws: any = deps.game and deps.game:GetService("Workspace")
+        local riftSpent = snapshot ~= nil and snapshot.riftSpent == true
+        if ws and ws.GetAttribute then
+            local okAttr, attrVal = pcall(ws.GetAttribute, ws, config.attributes.riftOpen)
+            if okAttr and attrVal == true and not riftSpent then
+                states.Rift = { status = "available" }
+            end
+        end
+        return states
+    end
+
     -- Before Vote Start the host may switch this match to the highest-priority stage joiner's target.
     local function tryChangeStage(settings: any, matchData: any, now: number): boolean
         local deps = self.dependencies
@@ -574,8 +602,24 @@ function Runtime.new(dependencies: any?): any
         end
         local target: any = nil
         local targetName: string? = nil
+        local states = matchStates(now)
         for _, name in settings.priority do
             local choice = settings.selection[name]
+            local playable = states[CHALLENGES[name] or name]
+            if
+                (CHALLENGES[name] or name == "Rift")
+                and settings.enabled[name]
+                and type(playable) == "table"
+                and playable.status == "available"
+            then
+                -- A higher-priority mode that cannot be started from inside a match is playable: do not replace this
+                -- match with a lower-priority stage; that mode's Back to Lobby setting decides whether to leave.
+                if self.changeSkippedFor ~= name then
+                    self.changeSkippedFor = name
+                    setStatus(name .. ": available; stage not changed in match")
+                end
+                return false
+            end
             if name == "Boss Bounties" and settings.enabled[name] then
                 local bounty = self.readBounty()
                 if bounty and bounty.left > 0 then
@@ -603,6 +647,7 @@ function Runtime.new(dependencies: any?): any
                 break
             end
         end
+        self.changeSkippedFor = nil
         if not target then
             return false
         end
@@ -878,27 +923,7 @@ function Runtime.new(dependencies: any?): any
             return
         end
 
-        local cached: any = self.activityCache
-        local snapshot: any
-        if cached and now - cached.at < ACTIVITY_CACHE_SECONDS then
-            snapshot = cached.snapshot
-        else
-            snapshot = deps.activityState and deps.activityState.load(now, deps.challengeData)
-            self.activityCache = { at = now, snapshot = snapshot }
-        end
-        local states: { [string]: any } = if snapshot and type(snapshot.states) == "table"
-            then table.clone(snapshot.states :: any)
-            else {}
-        -- An open Rift room makes Rift available (it can open mid-match), unless the lobby recorded this hour's
-        -- attempts as used up; otherwise the player would be sent back for a Rift that cannot be joined.
-        local ws: any = deps.game and deps.game:GetService("Workspace")
-        local riftSpent = snapshot ~= nil and snapshot.riftSpent == true
-        if ws and ws.GetAttribute then
-            local okAttr, attrVal = pcall(ws.GetAttribute, ws, config.attributes.riftOpen)
-            if okAttr and attrVal == true and not riftSpent then
-                states.Rift = { status = "available" }
-            end
-        end
+        local states = matchStates(now)
         for _, name in settings.priority do
             local choice = settings.selection[name]
             local state = states[CHALLENGES[name] or name]

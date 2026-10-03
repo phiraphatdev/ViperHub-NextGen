@@ -751,7 +751,7 @@ function Page.mount(tab: any, stageDataOverride: any?, runtime: any?, challengeC
     settings:Toggle({ Title = "Disable Auto Joiners", Value = state.paused, Callback = Settings.setPaused })
     settings:Toggle({
         Title = "Change Stage in Match",
-        Desc = "As host before Vote Start, switch the match to the highest-priority enabled stage joiner's stage instead of returning to the lobby.",
+        Desc = "As host before Vote Start, switch a joiner-created match to the highest-priority stage joiner (Stage, Legend Stage, Raid, Dungeon, Boss Bounties). Not done when a higher-priority Rift or challenge is playable; its Back to Lobby setting decides instead.",
         Value = state.changeStageInMatch ~= false,
         Callback = Settings.setChangeStageInMatch,
     })
