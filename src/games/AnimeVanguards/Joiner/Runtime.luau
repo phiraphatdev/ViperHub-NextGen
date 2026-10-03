@@ -198,6 +198,25 @@ function Runtime.new(dependencies: any?): any
         if #traceLines > TRACE_LINES then
             table.remove(traceLines, 1)
         end
+        -- Continue the previous session's trace (each place/reload is a new runtime) instead of replacing it.
+        if not self.traceLoaded then
+            self.traceLoaded = true
+            local readFile: any = env.readfile
+            local isFile: any = env.isfile
+            if type(readFile) == "function" and type(isFile) == "function" then
+                pcall(function()
+                    if (isFile :: any)(TRACE_FILE) then
+                        local previous: { string } = {}
+                        for line in string.gmatch((readFile :: any)(TRACE_FILE), "[^\n]+") do
+                            table.insert(previous, line)
+                        end
+                        for index = math.max(1, #previous - TRACE_LINES + 2), #previous do
+                            table.insert(traceLines, #traceLines, previous[index])
+                        end
+                    end
+                end)
+            end
+        end
         local writeFile: any = env.writefile
         local isFolder: any = env.isfolder
         local makeFolder: any = env.makefolder

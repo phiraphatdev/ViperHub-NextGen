@@ -1162,15 +1162,18 @@ function Runtime.new(injected: any?): any
         then
             local spawnTask: any = taskApi.spawn
             local waitTask: any = taskApi.wait
+            -- Discord cannot load Roblox redirect links, so ask the thumbnails API for the real image URL once.
+            -- This runs in its own thread: an HTTP failure there must never stop the session notice or the loop.
             spawnTask(function()
-                -- Discord cannot load Roblox redirect links, so ask the thumbnails API for the real image URL once.
-                local fetched: any = call("fetchAvatar")
-                if type(fetched) == "string" then
+                local okFetch, fetched = pcall(call, "fetchAvatar")
+                if okFetch and type(fetched) == "string" then
                     self.avatarUrl = fetched
                 end
+            end)
+            spawnTask(function()
                 waitTask(SESSION_DELAY_SECONDS)
                 if self.context == ctx and ctx.alive then
-                    self.notify("session", {
+                    pcall(self.notify, "session", {
                         place = if d.isLobby then "Lobby" else "Match",
                         placeName = if env.game then tostring(env.game.PlaceId) else nil,
                     })

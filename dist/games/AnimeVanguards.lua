@@ -3830,6 +3830,28 @@ do
                     if #traceLines > TRACE_LINES then
                         table.remove(traceLines, 1)
                     end
+                    if not self.traceLoaded then
+                        self.traceLoaded = true
+
+                        local readFile = env.readfile
+                        local isFile = env.isfile
+
+                        if type(readFile) == 'function' and type(isFile) == 'function' then
+                            pcall(function()
+                                if (isFile)(TRACE_FILE) then
+                                    local previous = {}
+
+                                    for line in string.gmatch((readFile)(TRACE_FILE), '[^\n]+')do
+                                        table.insert(previous, line)
+                                    end
+
+                                    for index = math.max(1, #previous - TRACE_LINES + 2), #previous do
+                                        table.insert(traceLines, #traceLines, previous[index])
+                                    end
+                                end
+                            end)
+                        end
+                    end
 
                     local writeFile = env.writefile
                     local isFolder = env.isfolder
@@ -12677,16 +12699,17 @@ do
                         local waitTask = taskApi.wait
 
                         spawnTask(function()
-                            local fetched = call('fetchAvatar')
+                            local okFetch, fetched = pcall(call, 'fetchAvatar')
 
-                            if type(fetched) == 'string' then
+                            if okFetch and type(fetched) == 'string' then
                                 self.avatarUrl = fetched
                             end
-
+                        end)
+                        spawnTask(function()
                             waitTask(SESSION_DELAY_SECONDS)
 
                             if self.context == ctx and ctx.alive then
-                                self.notify('session', {
+                                pcall(self.notify, 'session', {
                                     place = if d.isLobby then'Lobby'else'Match',
                                     placeName = if env.game then tostring(env.game.PlaceId)else nil,
                                 })
