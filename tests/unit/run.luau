@@ -3256,17 +3256,18 @@ test("Joiner runtime in match triggers immediate return and suspends macro", fun
     riftRecorded = true
 
     -- When rift opens -> immediate return triggered + macro suspended!
+    -- (the activity record is cached for 10 s in the match place, so the change is seen on the next read)
     isRiftOpen = true
-    runtime.step(101)
+    runtime.step(111)
     assert(teleportFired == 1 and macroSuspended)
     assert(runtime.status:find("Rift is open") ~= nil)
 
     -- Subsequent ticks before 12s -> does not spam teleport
-    runtime.step(105)
+    runtime.step(115)
     assert(teleportFired == 1)
 
     -- Retries after 12s if not teleported yet
-    runtime.step(115)
+    runtime.step(125)
     assert(teleportFired == 2)
 
     runtime.stop()

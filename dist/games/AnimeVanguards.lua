@@ -971,12 +971,17 @@ do
                 end
 
                 local http = env.game:GetService('HttpService')
+                local body, readError = activeStorage.read()
+
+                if readError then
+                    storage = nil
+
+                    return
+                end
 
                 encode = function(value)
                     return http:JSONEncode(value)
                 end
-
-                local body = activeStorage.read()
 
                 if not body then
                     return
@@ -987,6 +992,9 @@ do
                 end)
 
                 if not ok or type(data) ~= 'table' or data.schemaVersion ~= 1 then
+                    storage = nil
+                    encode = nil
+
                     return
                 end
                 if type(data.paused) == 'boolean' then
@@ -3599,6 +3607,8 @@ do
             local Runtime = {}
             local TRACE_FILE = 'ViperHubNextGen/AnimeVanguardsJoinerTrace.txt'
             local TRACE_LINES = 60
+            local TRACE_RECENT = 12
+            local ACTIVITY_CACHE_SECONDS = 10
             local LOBBY_PLACE_ID = metadata.placeIds[1]
             local RETRY_SECONDS = 30
             local POLL_SECONDS = 1
@@ -3753,13 +3763,20 @@ do
 
                 local traceLines = {}
                 local lastTraced = ''
+                local recentTraced = {}
 
                 local function trace(value)
-                    if value == lastTraced then
+                    if value == lastTraced or table.find(recentTraced, value) then
                         return
                     end
 
                     lastTraced = value
+
+                    table.insert(recentTraced, value)
+
+                    if #recentTraced > TRACE_RECENT then
+                        table.remove(recentTraced, 1)
+                    end
 
                     local env = getfenv()
                     local place = if self.dependencies and self.dependencies.game then self.dependencies.game.PlaceId else 0
@@ -4426,8 +4443,20 @@ do
                         return
                     end
 
-                    local snapshot = deps.activityState and deps.activityState.load(now, deps.challengeData)
-                    local states = if snapshot and type(snapshot.states) == 'table'then snapshot.states else{}
+                    local cached = self.activityCache
+                    local snapshot
+
+                    if cached and now - cached.at < ACTIVITY_CACHE_SECONDS then
+                        snapshot = cached.snapshot
+                    else
+                        snapshot = deps.activityState and deps.activityState.load(now, deps.challengeData)
+                        self.activityCache = {
+                            at = now,
+                            snapshot = snapshot,
+                        }
+                    end
+
+                    local states = if snapshot and type(snapshot.states) == 'table'then table.clone(snapshot.states)else{}
                     local ws = deps.game and deps.game:GetService('Workspace')
                     local riftSpent = snapshot ~= nil and snapshot.riftSpent == true
 
@@ -5080,11 +5109,6 @@ do
                                 self.matchEndConnection = (ghMod.MatchEnded.Connect)(ghMod.MatchEnded, function(
                                 )
                                     if self.returnOnMatchEnd then
-                                        if self.gameSettings and type(self.gameSettings.set) == 'function' then
-                                            pcall(self.gameSettings.set, 'AutoReplay', false)
-                                            pcall(self.gameSettings.set, 'AutoNext', false)
-                                        end
-
                                         setStatus('Match ended; waiting 2.5s for rewards...')
 
                                         local taskApi = (if self.dependencies and self.dependencies.task then self.dependencies.task else nil) or ((getfenv())).task
@@ -7944,10 +7968,45 @@ do
                     end
                 end
 
+                local loadedSaved = false
+
+                local function loadSaved()
+                    if loadedSaved then
+                        return
+                    end
+
+                    loadedSaved = true
+
+                    local env = getfenv()
+
+                    pcall(function()
+                        storage = FileStorage.new(env, SETTINGS_STORAGE_KEY)
+                        httpService = env.game and env.game:GetService('HttpService')
+
+                        if storage and httpService then
+                            local body = storage.read()
+
+                            if body then
+                                local ok, data = pcall(httpService.JSONDecode, httpService, body)
+
+                                if ok and type(data) == 'table' and data.schemaVersion == SCHEMA_VERSION then
+                                    if type(data.autoBackToLobby) == 'boolean' then
+                                        self.autoBackToLobby = data.autoBackToLobby
+                                    end
+                                end
+                            end
+                        end
+                    end)
+                end
+
                 function self.getAutoBackToLobby()
+                    loadSaved()
+
                     return self.autoBackToLobby == true
                 end
                 function self.setAutoBackToLobby(val)
+                    loadSaved()
+
                     self.autoBackToLobby = val == true
 
                     saveSettings()
@@ -7973,24 +8032,7 @@ do
 
                     local env = getfenv()
 
-                    pcall(function()
-                        storage = FileStorage.new(env, SETTINGS_STORAGE_KEY)
-                        httpService = env.game and env.game:GetService('HttpService')
-
-                        if storage and httpService then
-                            local body = storage.read()
-
-                            if body then
-                                local ok, data = pcall(httpService.JSONDecode, httpService, body)
-
-                                if ok and type(data) == 'table' and data.schemaVersion == SCHEMA_VERSION then
-                                    if type(data.autoBackToLobby) == 'boolean' then
-                                        self.autoBackToLobby = data.autoBackToLobby
-                                    end
-                                end
-                            end
-                        end
-                    end)
+                    loadSaved()
 
                     local deps = getDeps()
 
@@ -10056,6 +10098,10 @@ do
 
                                 if existing and type(existing.SetDesc) == 'function' then
                                     pcall(existing.SetDesc, existing, desc)
+
+                                    if type(existing.SetTitle) == 'function' then
+                                        pcall(existing.SetTitle, existing, title)
+                                    end
                                 else
                                     local p = sec:Paragraph({
                                         Title = title,
@@ -11491,6 +11537,7 @@ do
                     onStatus = nil,
                     storage = nil,
                     cooldowns = {},
+                    lastNotice = {},
                     seenUnits = {},
                     seenCount = 0,
                     unitReadyAt = math.huge,
@@ -11942,7 +11989,22 @@ do
                     end
 
                     local kind, key, data = classify(source, text)
+                    local subject = string.match(text, '^([^:]+):') or source
 
+                    if kind and key and kind ~= 'join' and key ~= 'autoPlay-active' then
+                        if self.lastNotice[subject] == text then
+                            return
+                        end
+
+                        self.lastNotice[subject] = text
+
+                        self.notify(kind, data)
+
+                        return
+                    end
+                    if not kind then
+                        self.lastNotice[subject] = nil
+                    end
                     if kind and key then
                         local cooldown = THRESHOLDS.webhookProblemCooldownSeconds
 

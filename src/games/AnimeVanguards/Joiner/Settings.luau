@@ -85,10 +85,15 @@ function Settings.init(env: any)
         return
     end
     local http = env.game:GetService("HttpService")
+    local body, readError = activeStorage.read()
+    if readError then
+        -- Unreadable right now: keep the file as it is (session-only changes) instead of overwriting it.
+        storage = nil
+        return
+    end
     encode = function(value: any): string
         return http:JSONEncode(value)
     end
-    local body = activeStorage.read()
     if not body then
         return
     end
@@ -96,6 +101,8 @@ function Settings.init(env: any)
         return http:JSONDecode(body)
     end)
     if not ok or type(data) ~= "table" or data.schemaVersion ~= 1 then
+        storage = nil
+        encode = nil
         return
     end
     if type(data.paused) == "boolean" then

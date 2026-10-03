@@ -18,6 +18,9 @@ local Runtime = {}
 
 local TRACE_FILE = "ViperHubNextGen/AnimeVanguardsJoinerTrace.txt"
 local TRACE_LINES = 60
+-- Lines repeated within this many recent distinct messages are not written again.
+local TRACE_RECENT = 12
+local ACTIVITY_CACHE_SECONDS = 10
 local LOBBY_PLACE_ID = metadata.placeIds[1]
 local RETRY_SECONDS = 30
 local POLL_SECONDS = 1
@@ -180,11 +183,16 @@ function Runtime.new(dependencies: any?): any
     -- Bounded action trace kept in an executor file so a disconnect can be analysed afterwards.
     local traceLines: { string } = {}
     local lastTraced = ""
+    local recentTraced: { string } = {}
     local function trace(value: string)
-        if value == lastTraced then
+        if value == lastTraced or table.find(recentTraced, value) then
             return
         end
         lastTraced = value
+        table.insert(recentTraced, value)
+        if #recentTraced > TRACE_RECENT then
+            table.remove(recentTraced, 1)
+        end
         local env: any = getfenv()
         local place = if self.dependencies and self.dependencies.game
             then self.dependencies.game.PlaceId
@@ -857,8 +865,17 @@ function Runtime.new(dependencies: any?): any
             return
         end
 
-        local snapshot = deps.activityState and deps.activityState.load(now, deps.challengeData)
-        local states = if snapshot and type(snapshot.states) == "table" then snapshot.states else {}
+        local cached: any = self.activityCache
+        local snapshot: any
+        if cached and now - cached.at < ACTIVITY_CACHE_SECONDS then
+            snapshot = cached.snapshot
+        else
+            snapshot = deps.activityState and deps.activityState.load(now, deps.challengeData)
+            self.activityCache = { at = now, snapshot = snapshot }
+        end
+        local states: { [string]: any } = if snapshot and type(snapshot.states) == "table"
+            then table.clone(snapshot.states :: any)
+            else {}
         -- An open Rift room makes Rift available (it can open mid-match), unless the lobby recorded this hour's
         -- attempts as used up; otherwise the player would be sent back for a Rift that cannot be joined.
         local ws: any = deps.game and deps.game:GetService("Workspace")
@@ -1522,10 +1539,8 @@ function Runtime.new(dependencies: any?): any
                 if ghMod and ghMod.MatchEnded and type(ghMod.MatchEnded.Connect) == "function" then
                     self.matchEndConnection = (ghMod.MatchEnded.Connect :: any)(ghMod.MatchEnded, function()
                         if self.returnOnMatchEnd then
-                            if self.gameSettings and type(self.gameSettings.set) == "function" then
-                                pcall(self.gameSettings.set :: any, "AutoReplay", false)
-                                pcall(self.gameSettings.set :: any, "AutoNext", false)
-                            end
+                            -- Auto Replay / Auto Next are switched off only after deciding to leave (a Worldline with
+                            -- Next available keeps them, otherwise the game would stop on the end screen).
                             setStatus("Match ended; waiting 2.5s for rewards...")
                             local taskApi = (
                                 if self.dependencies and self.dependencies.task

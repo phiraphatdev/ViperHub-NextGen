@@ -1468,7 +1468,23 @@ do
                         })
 
                         if page.render then
-                            page.render(tab, window)
+                            local render = page.render
+                            local ok = pcall(render, tab, window)
+
+                            if not ok then
+                                local log = context.log
+
+                                if type(log) == 'function' then
+                                    (log)('PAGE_RENDER_FAILED')
+                                end
+
+                                pcall(function()
+                                    tab:Paragraph({
+                                        Title = page.title,
+                                        Desc = 'This page could not be shown.',
+                                    })
+                                end)
+                            end
                         else
                             tab:Paragraph({
                                 Title = page.title,

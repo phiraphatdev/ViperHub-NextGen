@@ -28,7 +28,18 @@ function App.mount(
         for _, page in pages do
             local tab = window:Tab({ Title = page.title, Icon = page.icon or "layout-grid" })
             if page.render then
-                page.render(tab, window)
+                -- A broken page must not take the other tabs (or startup) down with it.
+                local render: any = page.render
+                local ok = pcall(render, tab, window)
+                if not ok then
+                    local log: any = context.log
+                    if type(log) == "function" then
+                        (log :: any)("PAGE_RENDER_FAILED")
+                    end
+                    pcall(function()
+                        tab:Paragraph({ Title = page.title, Desc = "This page could not be shown." })
+                    end)
+                end
             else
                 tab:Paragraph({ Title = page.title, Desc = page.description })
             end

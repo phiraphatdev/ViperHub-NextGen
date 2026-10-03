@@ -165,6 +165,7 @@ function Runtime.new(injected: any?): any
         onStatus = nil,
         storage = nil,
         cooldowns = {} :: { [string]: number },
+        lastNotice = {} :: { [string]: string },
         seenUnits = {} :: { [string]: boolean },
         seenCount = 0,
         unitReadyAt = math.huge,
@@ -590,6 +591,20 @@ function Runtime.new(injected: any?): any
             return
         end
         local kind, key, data = classify(source, text)
+        local subject = string.match(text, "^([^:]+):") or source
+        -- Problems and "none left" are states that repeat every joiner step: report each one once until that
+        -- mode reports something else, instead of re-sending it every cooldown period.
+        if kind and key and kind ~= "join" and key ~= "autoPlay-active" then
+            if self.lastNotice[subject] == text then
+                return
+            end
+            self.lastNotice[subject] = text
+            self.notify(kind, data)
+            return
+        end
+        if not kind then
+            self.lastNotice[subject] = nil
+        end
         if kind and key then
             local cooldown = THRESHOLDS.webhookProblemCooldownSeconds
             if kind == "join" then

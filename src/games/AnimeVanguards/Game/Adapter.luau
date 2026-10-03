@@ -158,11 +158,38 @@ function Adapter.new(injectedDeps: any?): any
         end
     end
 
+    -- Loads the saved Auto Back to Lobby value once; the Game page is built before start() runs.
+    local loadedSaved = false
+    local function loadSaved()
+        if loadedSaved then
+            return
+        end
+        loadedSaved = true
+        local env: any = getfenv()
+        pcall(function()
+            storage = FileStorage.new(env, SETTINGS_STORAGE_KEY)
+            httpService = env.game and env.game:GetService("HttpService")
+            if storage and httpService then
+                local body = storage.read()
+                if body then
+                    local ok, data = pcall(httpService.JSONDecode, httpService, body)
+                    if ok and type(data) == "table" and data.schemaVersion == SCHEMA_VERSION then
+                        if type(data.autoBackToLobby) == "boolean" then
+                            self.autoBackToLobby = data.autoBackToLobby
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
     function self.getAutoBackToLobby(): boolean
+        loadSaved()
         return self.autoBackToLobby == true
     end
 
     function self.setAutoBackToLobby(val: boolean)
+        loadSaved()
         self.autoBackToLobby = val == true
         saveSettings()
     end
@@ -184,21 +211,7 @@ function Adapter.new(injectedDeps: any?): any
         self.context = context
         self.teleportCancelled = false
         local env: any = getfenv()
-        pcall(function()
-            storage = FileStorage.new(env, SETTINGS_STORAGE_KEY)
-            httpService = env.game and env.game:GetService("HttpService")
-            if storage and httpService then
-                local body = storage.read()
-                if body then
-                    local ok, data = pcall(httpService.JSONDecode, httpService, body)
-                    if ok and type(data) == "table" and data.schemaVersion == SCHEMA_VERSION then
-                        if type(data.autoBackToLobby) == "boolean" then
-                            self.autoBackToLobby = data.autoBackToLobby
-                        end
-                    end
-                end
-            end
-        end)
+        loadSaved()
         local deps = getDeps()
         if
             deps

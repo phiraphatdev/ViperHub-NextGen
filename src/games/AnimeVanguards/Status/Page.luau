@@ -446,6 +446,9 @@ function Page.mount(tab: any)
                     local existing = paragraphs[item.name]
                     if existing and type(existing.SetDesc) == "function" then
                         pcall(existing.SetDesc, existing, desc)
+                        if type(existing.SetTitle) == "function" then
+                            pcall(existing.SetTitle, existing, title)
+                        end
                     else
                         local p = sec:Paragraph({ Title = title, Desc = desc })
                         paragraphs[item.name] = p
