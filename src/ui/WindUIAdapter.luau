@@ -66,11 +66,18 @@ local function tagLayers(library: any, tags: { string }?)
 end
 
 --- Creates a window for an already-owned library; returns its UI handle.
-function WindUIAdapter.create(library: any, context: Types.Context, config: any, windowTags: { string }?): any
+--- author is the small line under the title (for example the module version).
+function WindUIAdapter.create(
+    library: any,
+    context: Types.Context,
+    config: any,
+    windowTags: { string }?,
+    author: string?
+): any
     tagLayers(library, windowTags)
     local window = (library.CreateWindow :: any)(library, {
         Title = "ViperHub NextGen",
-        Author = "Foundation 0.2.2",
+        Author = author or "ViperHub NextGen",
         Folder = "ViperHubNextGen",
         Theme = "Dark",
         NewElements = false,

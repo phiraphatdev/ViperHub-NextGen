@@ -760,6 +760,22 @@ function Runtime.new(injected: any?): any
         return earnings, rows, gains
     end
 
+    --- Records the game's own end-of-match summary status ("Finished" / "Failed"); the most reliable result source.
+    function self.onEndSummary(status: any)
+        local result = if type(status) == "string" then WEBHOOK.resultStatus[status] else nil
+        if result then
+            self.endStatus = { result = result, at = clock() }
+        end
+    end
+
+    local function summaryResult(): string?
+        local entry = self.endStatus
+        if entry and clock() - entry.at < 60 then
+            return entry.result
+        end
+        return nil
+    end
+
     --- Sends the match result from the MatchEnded arguments, the end screen and the match data.
     function self.onMatchEnded(...: any)
         local d = deps()
@@ -801,7 +817,8 @@ function Runtime.new(injected: any?): any
                     maxWave = wave
                 end
             end
-            info.result = argumentResult or info.result
+            info.result = summaryResult() or argumentResult or info.result
+            self.endStatus = nil
             if wave then
                 info.wave = wave
                 info.maxWave = maxWave
@@ -856,7 +873,9 @@ function Runtime.new(injected: any?): any
                     waitTask(END_SCREEN_POLL_SECONDS)
                     waited += END_SCREEN_POLL_SECONDS
                     screen = call("readEndScreen")
-                until (type(screen) == "table" and screen.result ~= nil) or waited >= END_SCREEN_DELAY_SECONDS
+                until (type(screen) == "table" and screen.result ~= nil)
+                    or summaryResult() ~= nil
+                    or waited >= END_SCREEN_DELAY_SECONDS
                 send(screen)
             end)
         else
@@ -882,6 +901,12 @@ function Runtime.new(injected: any?): any
                 local isLobby = gameObject.PlaceId == metadata.placeIds[1]
                 local ownedUnits = optionalModule(starter, config.instancePaths.ownedUnits)
                 local gameHandler = optionalModule(replicated, config.instancePaths.gameHandler)
+                local endScreenClient = if isLobby
+                    then nil
+                    else optionalModule(replicated, config.instancePaths.endScreenClient)
+                local endScreenCodec = if isLobby
+                    then nil
+                    else optionalModule(replicated, config.instancePaths.endScreenCodec)
                 local wavesHud = optionalModule(starter, config.instancePaths.wavesHud)
                 d = {
                     encode = function(value: any): string
@@ -984,6 +1009,25 @@ function Runtime.new(injected: any?): any
                         return if ok and type(value) == "boolean" then value else nil
                     end,
                     ownedUnitsModule = ownedUnits,
+                    -- Subscribes to the game's end-screen broadcast; returns a disconnect function or nil.
+                    onEndSummary = function(callback: (any) -> ()): any
+                        local event = endScreenClient and endScreenClient[config.remoteNames.showEndScreen]
+                        local decode = endScreenCodec and endScreenCodec.DecodeMatchEndSummary
+                        if
+                            type(event) ~= "table"
+                            or type(event.On) ~= "function"
+                            or type(decode) ~= "function"
+                        then
+                            return nil
+                        end
+                        local ok, disconnect = pcall(event.On, function(payload: any)
+                            local okDecode, summary = pcall(decode, payload)
+                            if okDecode and type(summary) == "table" and summary.IsFakeEndScreen ~= true then
+                                callback(summary.Status)
+                            end
+                        end)
+                        return if ok then disconnect else nil
+                    end,
                     gameHandlerModule = gameHandler,
                     isLobby = isLobby,
                 }
@@ -1075,6 +1119,12 @@ function Runtime.new(injected: any?): any
             end
         end
         self.unitReadyAt = clock() + THRESHOLDS.webhookUnitIgnoreSeconds
+        local endDisconnect: any = call("onEndSummary", function(status: any)
+            self.onEndSummary(status)
+        end)
+        if endDisconnect then
+            table.insert(self.connections, endDisconnect)
+        end
         if d.gameHandlerModule and not d.isLobby then
             for name, handler in
                 { MatchStarted = self.onMatchStarted, MatchEnded = self.onMatchEnded } :: { [string]: any }

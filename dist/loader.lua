@@ -1145,12 +1145,18 @@ do
                 end
             end
 
-            function WindUIAdapter.create(library, context, config, windowTags)
+            function WindUIAdapter.create(
+                library,
+                context,
+                config,
+                windowTags,
+                author
+            )
                 tagLayers(library, windowTags)
 
                 local window = (library.CreateWindow)(library, {
                     Title = 'ViperHub NextGen',
-                    Author = 'Foundation 0.2.2',
+                    Author = author or 'ViperHub NextGen',
                     Folder = 'ViperHubNextGen',
                     Theme = 'Dark',
                     NewElements = false,
@@ -1229,7 +1235,8 @@ do
 
                 tab:Paragraph({
                     Title = metadata.name,
-                    Desc = 'Game detected. Foundation only; no gameplay features.',
+                    Desc =
+[[Game detected. Features are in the tabs on the left (Joiner, Game, Auto Play, Macro, Webhook).]],
                 })
                 tab:Paragraph({
                     Title = 'Module ' .. metadata.version,
@@ -1456,7 +1463,7 @@ do
                 pages,
                 windowTags
             )
-                local window = Adapter.create(library, context, store.get(), windowTags)
+                local window = Adapter.create(library, context, store.get(), windowTags, tostring(metadata.name) .. ' \u{2022} v' .. tostring(metadata.version))
 
                 Overview.mount(window, metadata)
 

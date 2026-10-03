@@ -49,7 +49,7 @@ local function readStageData(): any
     local env: any = getfenv()
     local ok, result = pcall(function()
         local rep = env.game and env.game:GetService("ReplicatedStorage")
-        return optionalModule(rep, "Modules.Data.StagesData")
+        return optionalModule(rep, config.instancePaths.stagesData)
     end)
     return if ok then result else nil
 end
@@ -59,7 +59,7 @@ local function readChallengeChoices(): any
     local ok, result = pcall(function()
         local gameObject = env.game
         local rep = gameObject and gameObject:GetService("ReplicatedStorage")
-        local definitions = optionalModule(rep, "Modules.Data.Challenges.ChallengesData")
+        local definitions = optionalModule(rep, config.instancePaths.challengesData)
         local rows = {}
         for _, kind in { "Regular", "Daily", "Weekly" } do
             rows[kind] = {}
@@ -156,7 +156,10 @@ local function addSpecial(tab: any, name: string, rows: any, runtime: any?)
     end
     index = index or 1
     local selected = ids[index]
-    local option = if worldline then "Traits" else (previous and previous.difficulty) or "Normal"
+    -- Keep the saved choice (the page used to force "Traits" and overwrite a saved NoTraits on every load).
+    local option = if worldline
+        then (if previous and previous.traitsType == "NoTraits" then "NoTraits" else "Traits")
+        else (previous and previous.difficulty) or "Normal"
     local function update()
         if not runtime or not selected then
             return
@@ -203,6 +206,20 @@ local function addSpecial(tab: any, name: string, rows: any, runtime: any?)
             end
         end,
     })
+    if worldline then
+        section:Dropdown({
+            Title = "Traits",
+            Desc = "Traits enables unit traits in the Worldline; NoTraits disables them.",
+            Values = { "Traits", "NoTraits" },
+            Value = option,
+            Callback = function(value: string)
+                if value == "Traits" or value == "NoTraits" then
+                    option = value
+                    update()
+                end
+            end,
+        })
+    end
     if not worldline then
         section:Dropdown({
             Title = "Difficulty",
@@ -806,9 +823,9 @@ function Page.mount(tab: any, stageDataOverride: any?, runtime: any?, challengeC
             local gameObject = env.game
             local rep = gameObject and gameObject:GetService("ReplicatedStorage")
             local starterPlayer = gameObject and gameObject:GetService("StarterPlayer")
-            local cd = if rep then optionalModule(rep, "Modules.Data.Challenges.ChallengesData") else nil
+            local cd = if rep then optionalModule(rep, config.instancePaths.challengesData) else nil
             local cah = if starterPlayer
-                then optionalModule(starterPlayer, "Modules.Gameplay.Challenges.ChallengesAttemptsHandler")
+                then optionalModule(starterPlayer, config.instancePaths.challengeAttempts)
                 else nil
             -- The page is built before the runtime starts, so wait for its context; stop once that context ends.
             local mountedContext: any = nil

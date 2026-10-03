@@ -22,7 +22,13 @@ function App.mount(
     pages: { any }?,
     windowTags: { string }?
 ): (any, () -> ())
-    local window = Adapter.create(library, context, store.get(), windowTags)
+    local window = Adapter.create(
+        library,
+        context,
+        store.get(),
+        windowTags,
+        tostring(metadata.name) .. " • v" .. tostring(metadata.version)
+    )
     Overview.mount(window, metadata)
     if pages then
         for _, page in pages do

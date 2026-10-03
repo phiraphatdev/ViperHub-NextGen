@@ -20,6 +20,30 @@ local function position(value: any): any?
     end
     return nil
 end
+-- Walks a dotted child path below an instance; nil when any part is missing.
+local function find(root: any, path: string): any
+    local node: any = root
+    for part in string.gmatch(path, "[^%.]+") do
+        if node == nil then
+            return nil
+        end
+        local current: any = node
+        node = current:FindFirstChild(part)
+    end
+    return node
+end
+-- Requires a module at a config path; errors (caught by the caller) when the game moved it.
+local function need(root: any, path: string): any
+    local module = find(root, path)
+    if not module then
+        error("missing module " .. path)
+    end
+    return (require :: any)(module)
+end
+local function optional(root: any, path: string): any
+    local ok, result = pcall(need, root, path)
+    return if ok then result else nil
+end
 local function priorityName(priorities: any, unit: any): string?
     local data = unit.Data or unit.UnitData
     local value = data and data.Priority
@@ -67,7 +91,8 @@ function Adapter.new(): any
     local abilities = (require :: any)(replicated.NetworkCode[config.remoteNames.macroAbilityClient])
     local gameUnits = (require :: any)(replicated.NetworkCode[config.remoteNames.macroUnitsClient])
     local unitState = (require :: any)(replicated.NetworkCode[config.remoteNames.macroUnitStateClient])
-    local codec = (require :: any)(replicated.Modules.Shared.UnitSnapshotCodec)
+    local paths: any = config.instancePaths
+    local codec = need(replicated, paths.unitSnapshotCodec)
     local DEFAULT_PRIORITIES = table.freeze({
         "First",
         "Closest",
@@ -77,43 +102,24 @@ function Adapter.new(): any
         "Bosses",
     })
     local priorities = DEFAULT_PRIORITIES
-    pcall(function()
-        local ph = replicated:FindFirstChild("Modules")
-            and replicated.Modules:FindFirstChild("Gameplay")
-            and replicated.Modules.Gameplay:FindFirstChild("PriorityHandler")
-        if ph then
-            local mod = (require :: any)(ph)
-            if mod and mod.PRIORITIES then
-                priorities = mod.PRIORITIES
-            end
-        end
-    end)
-    local units = (require :: any)(starter.Modules.Gameplay.Units.ClientUnitHandler)
-    local yen = (require :: any)(starter.Modules.Gameplay.PlayerYenHandler)
-    local waves = (require :: any)(starter.Modules.Interface.Loader.HUD.Waves)
-    local hudUnits = (require :: any)(starter.Modules.Interface.Loader.HUD.Units)
-    local gameHandler = (require :: any)(replicated.Modules.Gameplay.GameHandler)
-    local wavesClient = (require :: any)(replicated.NetworkCode.GameWavesClient)
-    local endScreenClient = (require :: any)(replicated.NetworkCode.GameEndScreenClient)
-    local endScreenCodec = (require :: any)(replicated.Modules.Shared.EndScreenNetworkCodec)
-    local unitData = (require :: any)(replicated.Modules.Data.Entities.Units)
-    local upgradeButtons = (require :: any)(
-        starter.Modules.Gameplay.Units.UnitUpgradeHandler.Managers.ButtonsManager
-    )
-    local autoUpgrade = (require :: any)(
-        starter.Modules.Gameplay.UnitManager.AutoUpgrade.AutoUpgradeDataHandler
-    )
-    local matchFlow = (require :: any)(replicated.NetworkCode.GameMatchFlowClient)
-    local lobbyReturn = (require :: any)(replicated.NetworkCode.GameTeleportLobbyReturnClient)
-    local clientAbilityHandler = nil
-    pcall(function()
-        local mod = starter:FindFirstChild("Modules")
-            and starter.Modules:FindFirstChild("Gameplay")
-            and starter.Modules.Gameplay:FindFirstChild("ClientAbilityHandler")
-        if mod then
-            clientAbilityHandler = (require :: any)(mod)
-        end
-    end)
+    local priorityModule = optional(replicated, paths.priorityHandler)
+    if type(priorityModule) == "table" and type(priorityModule.PRIORITIES) == "table" then
+        priorities = priorityModule.PRIORITIES
+    end
+    local units = need(starter, paths.clientUnitHandler)
+    local yen = need(starter, paths.playerYenHandler)
+    local waves = need(starter, paths.wavesHud)
+    local hudUnits = need(starter, paths.hudUnits)
+    local gameHandler = need(replicated, paths.gameHandler)
+    local wavesClient = need(replicated, paths.wavesClient)
+    local endScreenClient = need(replicated, paths.endScreenClient)
+    local endScreenCodec = need(replicated, paths.endScreenCodec)
+    local unitData = need(replicated, paths.unitsData)
+    local upgradeButtons = need(starter, paths.upgradeButtons)
+    local autoUpgrade = need(starter, paths.autoUpgradeData)
+    local matchFlow = need(replicated, paths.matchFlowClient)
+    local lobbyReturn = need(replicated, paths.lobbyReturnClient)
+    local clientAbilityHandler = optional(starter, paths.clientAbilityHandler)
     local self: any = {}
     local abilityVersion = 0
     local abilityEvents: { [string]: number } = {}
@@ -145,15 +151,14 @@ function Adapter.new(): any
         and clientAbilityHandler.AbilityCooldownAdded
         and type(clientAbilityHandler.AbilityCooldownAdded.Connect) == "function"
     then
-        abilityConnection = clientAbilityHandler.AbilityCooldownAdded:Connect(
-            function(unitGuid: any, abilityName: any)
-                if type(unitGuid) == "string" and type(abilityName) == "string" then
-                    abilityVersion += 1
-                    local key = unitGuid .. ":" .. abilityName
-                    abilityEvents[key] = abilityVersion
-                end
+        local abilitySignal: any = clientAbilityHandler.AbilityCooldownAdded
+        abilityConnection = abilitySignal:Connect(function(unitGuid: any, abilityName: any)
+            if type(unitGuid) == "string" and type(abilityName) == "string" then
+                abilityVersion += 1
+                local key = unitGuid .. ":" .. abilityName
+                abilityEvents[key] = abilityVersion
             end
-        )
+        end)
     elseif
         abilities
         and abilities.AbilityLifecycleUpdated
@@ -214,10 +219,7 @@ function Adapter.new(): any
     end
     function self.getGameSetting(name: string): boolean?
         local ok, value = pcall(function()
-            local stateMod = starter:FindFirstChild("Modules")
-                and starter.Modules:FindFirstChild("Gameplay")
-                and starter.Modules.Gameplay:FindFirstChild("SettingsHandler")
-                and starter.Modules.Gameplay.SettingsHandler:FindFirstChild("SettingsState")
+            local stateMod = find(starter, paths.settingsState)
             if stateMod then
                 local settingsState = (require :: any)(stateMod)
                 return settingsState:GetSetting(name)
@@ -523,11 +525,10 @@ function Adapter.new(): any
                 and clientAbilityHandler.AbilityCooldownAdded
                 and type(clientAbilityHandler.AbilityCooldownAdded.Connect) == "function"
             then
-                local conn = clientAbilityHandler.AbilityCooldownAdded:Connect(
-                    function(guid: any, abilityName: any)
-                        callback({ guid = tostring(guid), abilityName = tostring(abilityName) })
-                    end
-                )
+                local abilitySignal: any = clientAbilityHandler.AbilityCooldownAdded
+                local conn = abilitySignal:Connect(function(guid: any, abilityName: any)
+                    callback({ guid = tostring(guid), abilityName = tostring(abilityName) })
+                end)
                 return function()
                     pcall(function()
                         conn:Disconnect()

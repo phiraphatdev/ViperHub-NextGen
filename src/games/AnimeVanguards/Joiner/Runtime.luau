@@ -89,7 +89,8 @@ local function liveDependencies(): any
     local gameObject = env.game
     local replicated = gameObject:GetService("ReplicatedStorage")
     local starterPlayer = gameObject:GetService("StarterPlayer")
-    local base = starterPlayer.Modules.Interface.Loader.Gameplay.LobbyHandler
+    local paths: any = config.instancePaths
+    local base = resolve(starterPlayer, paths.lobbyHandlerBase)
     local isLobby = gameObject.PlaceId == LOBBY_PLACE_ID
     return {
         game = gameObject,
@@ -97,20 +98,13 @@ local function liveDependencies(): any
         clock = os.time,
         userId = gameObject:GetService("Players").LocalPlayer.UserId,
         localPlayer = gameObject:GetService("Players").LocalPlayer,
-        network = if isLobby then optionalModule(replicated, "NetworkCode.LobbyMatchmakingClient") else nil,
+        network = if isLobby then optionalModule(replicated, paths.lobbyMatchmakingClient) else nil,
         lobby = if isLobby then optionalModule(base, "LobbyHandler") else nil,
         progress = if isLobby then optionalModule(base, "PlayerLobbyDataHandler") else nil,
-        challengeNetwork = if isLobby
-            then optionalModule(replicated, "NetworkCode.LobbyChallengesClient")
-            else nil,
-        challengeData = optionalModule(replicated, "Modules.Data.Challenges.ChallengesData"),
-        challengeStages = if isLobby
-            then optionalModule(starterPlayer, "Modules.Gameplay.Challenges.ChallengesDataHandler")
-            else nil,
-        challengeAttempts = optionalModule(
-            starterPlayer,
-            "Modules.Gameplay.Challenges.ChallengesAttemptsHandler"
-        ),
+        challengeNetwork = if isLobby then optionalModule(replicated, paths.lobbyChallengesClient) else nil,
+        challengeData = optionalModule(replicated, paths.challengesData),
+        challengeStages = if isLobby then optionalModule(starterPlayer, paths.challengesDataHandler) else nil,
+        challengeAttempts = optionalModule(starterPlayer, paths.challengeAttempts),
         teamAdapter = TeamAdapter.new(nil, not isLobby),
         bountyData = optionalModule(replicated, config.instancePaths.bountyData),
         bountyState = optionalModule(

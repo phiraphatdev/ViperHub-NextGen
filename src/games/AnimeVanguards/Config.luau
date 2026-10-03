@@ -25,6 +25,25 @@ return table.freeze({
         autoPlayClient = "NetworkCode.GameAutoPlayClient",
         wavesClient = "NetworkCode.GameWavesClient",
         wavesHud = "Modules.Interface.Loader.HUD.Waves",
+        endScreenClient = "NetworkCode.GameEndScreenClient",
+        endScreenCodec = "Modules.Shared.EndScreenNetworkCodec",
+        -- Match modules used by the macro recorder/player (ReplicatedStorage unless noted).
+        unitSnapshotCodec = "Modules.Shared.UnitSnapshotCodec",
+        priorityHandler = "Modules.Gameplay.PriorityHandler",
+        unitsData = "Modules.Data.Entities.Units",
+        matchFlowClient = "NetworkCode.GameMatchFlowClient",
+        clientUnitHandler = "Modules.Gameplay.Units.ClientUnitHandler", -- StarterPlayer
+        playerYenHandler = "Modules.Gameplay.PlayerYenHandler", -- StarterPlayer
+        hudUnits = "Modules.Interface.Loader.HUD.Units", -- StarterPlayer
+        upgradeButtons = "Modules.Gameplay.Units.UnitUpgradeHandler.Managers.ButtonsManager", -- StarterPlayer
+        autoUpgradeData = "Modules.Gameplay.UnitManager.AutoUpgrade.AutoUpgradeDataHandler", -- StarterPlayer
+        clientAbilityHandler = "Modules.Gameplay.ClientAbilityHandler", -- StarterPlayer
+        -- Lobby joiner modules.
+        lobbyHandlerBase = "Modules.Interface.Loader.Gameplay.LobbyHandler", -- StarterPlayer
+        lobbyMatchmakingClient = "NetworkCode.LobbyMatchmakingClient",
+        lobbyChallengesClient = "NetworkCode.LobbyChallengesClient",
+        challengesData = "Modules.Data.Challenges.ChallengesData",
+        challengesDataHandler = "Modules.Gameplay.Challenges.ChallengesDataHandler", -- StarterPlayer
         stagesData = "Modules.Data.StagesData",
         bountyData = "Modules.Data.BountyData",
         ownedUnits = "Modules.Gameplay.Units.OwnedUnitsHandler",
@@ -141,6 +160,8 @@ return table.freeze({
         waveMaxKeys = table.freeze({ "MaxWave", "WaveCount", "TotalWaves", "Waves" }),
         -- Possible fields in a MatchEnded argument table that say whether the match was won.
         resultKeys = table.freeze({ "Victory", "Won", "Win", "Success", "Result" }),
+        -- Match end summary Status (decoded ShowEndScreen payload, same source the macro recorder uses).
+        resultStatus = table.freeze({ Finished = "Victory", Failed = "Defeat" }),
     }),
     attributes = table.freeze({ riftOpen = "IsRiftOpen" }),
     thresholds = table.freeze({
@@ -191,5 +212,6 @@ return table.freeze({
         requestLoadTeam = "RequestLoadTeam",
         requestAutoPlayData = "RequestAutoPlayData",
         autoPlayPresetsUpdated = "AutoPlayPresetsUpdated",
+        showEndScreen = "ShowEndScreen",
     }),
 })

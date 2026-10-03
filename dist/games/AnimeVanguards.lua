@@ -73,6 +73,25 @@ do
                     autoPlayClient = 'NetworkCode.GameAutoPlayClient',
                     wavesClient = 'NetworkCode.GameWavesClient',
                     wavesHud = 'Modules.Interface.Loader.HUD.Waves',
+                    endScreenClient = 'NetworkCode.GameEndScreenClient',
+                    endScreenCodec = 'Modules.Shared.EndScreenNetworkCodec',
+                    unitSnapshotCodec = 'Modules.Shared.UnitSnapshotCodec',
+                    priorityHandler = 'Modules.Gameplay.PriorityHandler',
+                    unitsData = 'Modules.Data.Entities.Units',
+                    matchFlowClient = 'NetworkCode.GameMatchFlowClient',
+                    clientUnitHandler = 'Modules.Gameplay.Units.ClientUnitHandler',
+                    playerYenHandler = 'Modules.Gameplay.PlayerYenHandler',
+                    hudUnits = 'Modules.Interface.Loader.HUD.Units',
+                    upgradeButtons =
+[[Modules.Gameplay.Units.UnitUpgradeHandler.Managers.ButtonsManager]],
+                    autoUpgradeData =
+[[Modules.Gameplay.UnitManager.AutoUpgrade.AutoUpgradeDataHandler]],
+                    clientAbilityHandler = 'Modules.Gameplay.ClientAbilityHandler',
+                    lobbyHandlerBase = 'Modules.Interface.Loader.Gameplay.LobbyHandler',
+                    lobbyMatchmakingClient = 'NetworkCode.LobbyMatchmakingClient',
+                    lobbyChallengesClient = 'NetworkCode.LobbyChallengesClient',
+                    challengesData = 'Modules.Data.Challenges.ChallengesData',
+                    challengesDataHandler = 'Modules.Gameplay.Challenges.ChallengesDataHandler',
                     stagesData = 'Modules.Data.StagesData',
                     bountyData = 'Modules.Data.BountyData',
                     ownedUnits = 'Modules.Gameplay.Units.OwnedUnitsHandler',
@@ -240,6 +259,10 @@ do
                         'Success',
                         'Result',
                     }),
+                    resultStatus = table.freeze({
+                        Finished = 'Victory',
+                        Failed = 'Defeat',
+                    }),
                 }),
                 attributes = table.freeze({
                     riftOpen = 'IsRiftOpen',
@@ -290,6 +313,7 @@ do
                     requestLoadTeam = 'RequestLoadTeam',
                     requestAutoPlayData = 'RequestAutoPlayData',
                     autoPlayPresetsUpdated = 'AutoPlayPresetsUpdated',
+                    showEndScreen = 'ShowEndScreen',
                 }),
             })
         end
@@ -1436,7 +1460,7 @@ do
                 local ok, result = pcall(function()
                     local rep = env.game and env.game:GetService('ReplicatedStorage')
 
-                    return optionalModule(rep, 'Modules.Data.StagesData')
+                    return optionalModule(rep, config.instancePaths.stagesData)
                 end)
 
                 return if ok then result else nil
@@ -1446,7 +1470,7 @@ do
                 local ok, result = pcall(function()
                     local gameObject = env.game
                     local rep = gameObject and gameObject:GetService('ReplicatedStorage')
-                    local definitions = optionalModule(rep, 'Modules.Data.Challenges.ChallengesData')
+                    local definitions = optionalModule(rep, config.instancePaths.challengesData)
                     local rows = {}
 
                     for _, kind in {
@@ -1570,7 +1594,7 @@ do
                 index = index or 1
 
                 local selected = ids[index]
-                local option = if worldline then'Traits'else(previous and previous.difficulty) or 'Normal'
+                local option = if worldline then(if previous and previous.traitsType == 'NoTraits'then'NoTraits'else'Traits')else(previous and previous.difficulty) or 'Normal'
 
                 local function update()
                     if not runtime or not selected then
@@ -1629,6 +1653,25 @@ do
                     end,
                 })
 
+                if worldline then
+                    section:Dropdown({
+                        Title = 'Traits',
+                        Desc =
+[[Traits enables unit traits in the Worldline; NoTraits disables them.]],
+                        Values = {
+                            'Traits',
+                            'NoTraits',
+                        },
+                        Value = option,
+                        Callback = function(value)
+                            if value == 'Traits' or value == 'NoTraits' then
+                                option = value
+
+                                update()
+                            end
+                        end,
+                    })
+                end
                 if not worldline then
                     section:Dropdown({
                         Title = 'Difficulty',
@@ -2350,8 +2393,8 @@ do
                         local gameObject = env.game
                         local rep = gameObject and gameObject:GetService('ReplicatedStorage')
                         local starterPlayer = gameObject and gameObject:GetService('StarterPlayer')
-                        local cd = if rep then optionalModule(rep, 'Modules.Data.Challenges.ChallengesData')else nil
-                        local cah = if starterPlayer then optionalModule(starterPlayer, 'Modules.Gameplay.Challenges.ChallengesAttemptsHandler')else nil
+                        local cd = if rep then optionalModule(rep, config.instancePaths.challengesData)else nil
+                        local cah = if starterPlayer then optionalModule(starterPlayer, config.instancePaths.challengeAttempts)else nil
                         local mountedContext = nil
                         local idleTicks = 0
 
@@ -3688,7 +3731,8 @@ do
                 local gameObject = env.game
                 local replicated = gameObject:GetService('ReplicatedStorage')
                 local starterPlayer = gameObject:GetService('StarterPlayer')
-                local base = starterPlayer.Modules.Interface.Loader.Gameplay.LobbyHandler
+                local paths = config.instancePaths
+                local base = resolve(starterPlayer, paths.lobbyHandlerBase)
                 local isLobby = gameObject.PlaceId == LOBBY_PLACE_ID
 
                 return {
@@ -3697,13 +3741,13 @@ do
                     clock = os.time,
                     userId = gameObject:GetService('Players').LocalPlayer.UserId,
                     localPlayer = gameObject:GetService('Players').LocalPlayer,
-                    network = if isLobby then optionalModule(replicated, 'NetworkCode.LobbyMatchmakingClient')else nil,
+                    network = if isLobby then optionalModule(replicated, paths.lobbyMatchmakingClient)else nil,
                     lobby = if isLobby then optionalModule(base, 'LobbyHandler')else nil,
                     progress = if isLobby then optionalModule(base, 'PlayerLobbyDataHandler')else nil,
-                    challengeNetwork = if isLobby then optionalModule(replicated, 'NetworkCode.LobbyChallengesClient')else nil,
-                    challengeData = optionalModule(replicated, 'Modules.Data.Challenges.ChallengesData'),
-                    challengeStages = if isLobby then optionalModule(starterPlayer, 'Modules.Gameplay.Challenges.ChallengesDataHandler')else nil,
-                    challengeAttempts = optionalModule(starterPlayer, 'Modules.Gameplay.Challenges.ChallengesAttemptsHandler'),
+                    challengeNetwork = if isLobby then optionalModule(replicated, paths.lobbyChallengesClient)else nil,
+                    challengeData = optionalModule(replicated, paths.challengesData),
+                    challengeStages = if isLobby then optionalModule(starterPlayer, paths.challengesDataHandler)else nil,
+                    challengeAttempts = optionalModule(starterPlayer, paths.challengeAttempts),
                     teamAdapter = TeamAdapter.new(nil, not isLobby),
                     bountyData = optionalModule(replicated, config.instancePaths.bountyData),
                     bountyState = optionalModule(starterPlayer, if isLobby then config.instancePaths.bountyState else config.instancePaths.bountyStateMatch),
@@ -5742,6 +5786,35 @@ do
 
                 return nil
             end
+            local function find(root, path)
+                local node = root
+
+                for part in string.gmatch(path, '[^%.]+')do
+                    if node == nil then
+                        return nil
+                    end
+
+                    local current = node
+
+                    node = current:FindFirstChild(part)
+                end
+
+                return node
+            end
+            local function need(root, path)
+                local module = find(root, path)
+
+                if not module then
+                    error('missing module ' .. path)
+                end
+
+                return (require)(module)
+            end
+            local function optional(root, path)
+                local ok, result = pcall(need, root, path)
+
+                return if ok then result else nil
+            end
             local function priorityName(priorities, unit)
                 local data = unit.Data or unit.UnitData
                 local value = data and data.Priority
@@ -5795,7 +5868,8 @@ do
                 local abilities = (require)(replicated.NetworkCode[config.remoteNames.macroAbilityClient])
                 local gameUnits = (require)(replicated.NetworkCode[config.remoteNames.macroUnitsClient])
                 local unitState = (require)(replicated.NetworkCode[config.remoteNames.macroUnitStateClient])
-                local codec = (require)(replicated.Modules.Shared.UnitSnapshotCodec)
+                local paths = config.instancePaths
+                local codec = need(replicated, paths.unitSnapshotCodec)
                 local DEFAULT_PRIORITIES = table.freeze({
                     'First',
                     'Closest',
@@ -5805,42 +5879,26 @@ do
                     'Bosses',
                 })
                 local priorities = DEFAULT_PRIORITIES
+                local priorityModule = optional(replicated, paths.priorityHandler)
 
-                pcall(function()
-                    local ph = replicated:FindFirstChild('Modules') and replicated.Modules:FindFirstChild('Gameplay') and replicated.Modules.Gameplay:FindFirstChild('PriorityHandler')
+                if type(priorityModule) == 'table' and type(priorityModule.PRIORITIES) == 'table' then
+                    priorities = priorityModule.PRIORITIES
+                end
 
-                    if ph then
-                        local mod = (require)(ph)
-
-                        if mod and mod.PRIORITIES then
-                            priorities = mod.PRIORITIES
-                        end
-                    end
-                end)
-
-                local units = (require)(starter.Modules.Gameplay.Units.ClientUnitHandler)
-                local yen = (require)(starter.Modules.Gameplay.PlayerYenHandler)
-                local waves = (require)(starter.Modules.Interface.Loader.HUD.Waves)
-                local hudUnits = (require)(starter.Modules.Interface.Loader.HUD.Units)
-                local gameHandler = (require)(replicated.Modules.Gameplay.GameHandler)
-                local wavesClient = (require)(replicated.NetworkCode.GameWavesClient)
-                local endScreenClient = (require)(replicated.NetworkCode.GameEndScreenClient)
-                local endScreenCodec = (require)(replicated.Modules.Shared.EndScreenNetworkCodec)
-                local unitData = (require)(replicated.Modules.Data.Entities.Units)
-                local upgradeButtons = (require)(starter.Modules.Gameplay.Units.UnitUpgradeHandler.Managers.ButtonsManager)
-                local autoUpgrade = (require)(starter.Modules.Gameplay.UnitManager.AutoUpgrade.AutoUpgradeDataHandler)
-                local matchFlow = (require)(replicated.NetworkCode.GameMatchFlowClient)
-                local lobbyReturn = (require)(replicated.NetworkCode.GameTeleportLobbyReturnClient)
-                local clientAbilityHandler = nil
-
-                pcall(function()
-                    local mod = starter:FindFirstChild('Modules') and starter.Modules:FindFirstChild('Gameplay') and starter.Modules.Gameplay:FindFirstChild('ClientAbilityHandler')
-
-                    if mod then
-                        clientAbilityHandler = (require)(mod)
-                    end
-                end)
-
+                local units = need(starter, paths.clientUnitHandler)
+                local yen = need(starter, paths.playerYenHandler)
+                local waves = need(starter, paths.wavesHud)
+                local hudUnits = need(starter, paths.hudUnits)
+                local gameHandler = need(replicated, paths.gameHandler)
+                local wavesClient = need(replicated, paths.wavesClient)
+                local endScreenClient = need(replicated, paths.endScreenClient)
+                local endScreenCodec = need(replicated, paths.endScreenCodec)
+                local unitData = need(replicated, paths.unitsData)
+                local upgradeButtons = need(starter, paths.upgradeButtons)
+                local autoUpgrade = need(starter, paths.autoUpgradeData)
+                local matchFlow = need(replicated, paths.matchFlowClient)
+                local lobbyReturn = need(replicated, paths.lobbyReturnClient)
+                local clientAbilityHandler = optional(starter, paths.clientAbilityHandler)
                 local self = {}
                 local abilityVersion = 0
                 local abilityEvents = {}
@@ -5868,7 +5926,9 @@ do
                 local abilityConnection = nil
 
                 if clientAbilityHandler and clientAbilityHandler.AbilityCooldownAdded and type(clientAbilityHandler.AbilityCooldownAdded.Connect) == 'function' then
-                    abilityConnection = clientAbilityHandler.AbilityCooldownAdded:Connect(function(
+                    local abilitySignal = clientAbilityHandler.AbilityCooldownAdded
+
+                    abilityConnection = abilitySignal:Connect(function(
                         unitGuid,
                         abilityName
                     )
@@ -5942,7 +6002,7 @@ do
                 end
                 function self.getGameSetting(name)
                     local ok, value = pcall(function()
-                        local stateMod = starter:FindFirstChild('Modules') and starter.Modules:FindFirstChild('Gameplay') and starter.Modules.Gameplay:FindFirstChild('SettingsHandler') and starter.Modules.Gameplay.SettingsHandler:FindFirstChild('SettingsState')
+                        local stateMod = find(starter, paths.settingsState)
 
                         if stateMod then
                             local settingsState = (require)(stateMod)
@@ -6279,7 +6339,8 @@ do
                         end)
                     elseif kind == 'ability' then
                         if clientAbilityHandler and clientAbilityHandler.AbilityCooldownAdded and type(clientAbilityHandler.AbilityCooldownAdded.Connect) == 'function' then
-                            local conn = clientAbilityHandler.AbilityCooldownAdded:Connect(function(
+                            local abilitySignal = clientAbilityHandler.AbilityCooldownAdded
+                            local conn = abilitySignal:Connect(function(
                                 guid,
                                 abilityName
                             )
@@ -9732,7 +9793,7 @@ do
                 local starter = gameObject and gameObject:GetService('StarterPlayer')
                 local players = gameObject and gameObject:GetService('Players')
                 local localPlayer = players and players.LocalPlayer
-                local executorName = if type(env.identifyexecutor) == 'function'then tostring((env.identifyexecutor)())else(if type(env.getexecutorname) == 'function'then tostring((env.getexecutorname)())else'Potassium')
+                local executorName = if type(env.identifyexecutor) == 'function'then tostring((env.identifyexecutor)())else(if type(env.getexecutorname) == 'function'then tostring((env.getexecutorname)())else'Executor')
                 local hasLoadstring = safeCheck(function()
                     return type(env.loadstring) == 'function'
                 end)
@@ -12181,6 +12242,27 @@ do
                     return earnings, rows, gains
                 end
 
+                function self.onEndSummary(status)
+                    local result = if type(status) == 'string'then WEBHOOK.resultStatus[status]else nil
+
+                    if result then
+                        self.endStatus = {
+                            result = result,
+                            at = clock(),
+                        }
+                    end
+                end
+
+                local function summaryResult()
+                    local entry = self.endStatus
+
+                    if entry and clock() - entry.at < 60 then
+                        return entry.result
+                    end
+
+                    return nil
+                end
+
                 function self.onMatchEnded(...)
                     local d = deps()
                     local startedAt = self.matchStartedAt
@@ -12231,7 +12313,8 @@ do
                             end
                         end
 
-                        info.result = argumentResult or info.result
+                        info.result = summaryResult() or argumentResult or info.result
+                        self.endStatus = nil
 
                         if wave then
                             info.wave = wave
@@ -12290,7 +12373,7 @@ do
                                 waited += END_SCREEN_POLL_SECONDS
 
                                 screen = call('readEndScreen')
-                            until (type(screen) == 'table' and screen.result ~= nil) or waited >= END_SCREEN_DELAY_SECONDS
+                            until (type(screen) == 'table' and screen.result ~= nil) or summaryResult() ~= nil or waited >= END_SCREEN_DELAY_SECONDS
 
                             send(screen)
                         end)
@@ -12319,6 +12402,8 @@ do
                             local isLobby = gameObject.PlaceId == metadata.placeIds[1]
                             local ownedUnits = optionalModule(starter, config.instancePaths.ownedUnits)
                             local gameHandler = optionalModule(replicated, config.instancePaths.gameHandler)
+                            local endScreenClient = if isLobby then nil else optionalModule(replicated, config.instancePaths.endScreenClient)
+                            local endScreenCodec = if isLobby then nil else optionalModule(replicated, config.instancePaths.endScreenCodec)
                             local wavesHud = optionalModule(starter, config.instancePaths.wavesHud)
 
                             d = {
@@ -12423,6 +12508,26 @@ do
                                     return if ok and type(value) == 'boolean'then value else nil
                                 end,
                                 ownedUnitsModule = ownedUnits,
+                                onEndSummary = function(callback)
+                                    local event = endScreenClient and endScreenClient[config.remoteNames.showEndScreen]
+                                    local decode = endScreenCodec and endScreenCodec.DecodeMatchEndSummary
+
+                                    if type(event) ~= 'table' or type(event.On) ~= 'function' or type(decode) ~= 'function' then
+                                        return nil
+                                    end
+
+                                    local ok, disconnect = pcall(event.On, function(
+                                        payload
+                                    )
+                                        local okDecode, summary = pcall(decode, payload)
+
+                                        if okDecode and type(summary) == 'table' and summary.IsFakeEndScreen ~= true then
+                                            callback(summary.Status)
+                                        end
+                                    end)
+
+                                    return if ok then disconnect else nil
+                                end,
                                 gameHandlerModule = gameHandler,
                                 isLobby = isLobby,
                             }
@@ -12522,6 +12627,13 @@ do
 
                     self.unitReadyAt = clock() + THRESHOLDS.webhookUnitIgnoreSeconds
 
+                    local endDisconnect = call('onEndSummary', function(status)
+                        self.onEndSummary(status)
+                    end)
+
+                    if endDisconnect then
+                        table.insert(self.connections, endDisconnect)
+                    end
                     if d.gameHandlerModule and not d.isLobby then
                         for name, handler in {
                             MatchStarted = self.onMatchStarted,

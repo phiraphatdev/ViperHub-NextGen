@@ -5979,4 +5979,26 @@ test("Webhook reports busy from match end until the result is delivered", functi
     rt.onMatchEnded(true)
     assert(not rt.isBusy(), "not busy when notifications are off")
 end)
+test("Webhook prefers the game's end summary status over the end screen title", function()
+    local h = newWebhook({
+        readEndScreen = function()
+            return { result = "Victory" }
+        end,
+    })
+    local rt = h.runtime
+    rt.setUrl(HOOK_URL)
+    rt.setEnabled(true)
+    rt.onEndSummary("Failed")
+    rt.onMatchEnded()
+    assert(string.find(h.sent[1].embeds[1].title, "DEFEAT") ~= nil)
+    rt.onEndSummary("Finished")
+    rt.onMatchEnded()
+    assert(string.find(h.sent[2].embeds[1].title, "VICTORY") ~= nil)
+    rt.onEndSummary("Unknown")
+    rt.onMatchEnded()
+    assert(
+        string.find(h.sent[3].embeds[1].title, "VICTORY") ~= nil,
+        "unknown status falls back to the screen"
+    )
+end)
 print(string.format("PASS: %d unit scenarios", passed))

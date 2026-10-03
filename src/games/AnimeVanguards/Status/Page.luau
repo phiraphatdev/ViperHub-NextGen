@@ -32,7 +32,7 @@ local function evaluateSystems(): { [string]: { StatusItem } }
         then tostring((env.identifyexecutor :: any)())
         else (if type(env.getexecutorname) == "function"
             then tostring((env.getexecutorname :: any)())
-            else "Potassium")
+            else "Executor")
 
     -- 1. Platform & Environment
     local hasLoadstring = safeCheck(function()
