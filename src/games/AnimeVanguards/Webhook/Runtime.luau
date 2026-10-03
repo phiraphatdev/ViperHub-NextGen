@@ -166,6 +166,7 @@ function Runtime.new(injected: any?): any
         storage = nil,
         cooldowns = {} :: { [string]: number },
         lastNotice = {} :: { [string]: string },
+        lastLine = {} :: { [string]: string },
         seenUnits = {} :: { [string]: boolean },
         seenCount = 0,
         unitReadyAt = math.huge,
@@ -587,9 +588,11 @@ function Runtime.new(injected: any?): any
 
     -- Status lines arrive from the Joiner and Auto Play runtimes as they change; repeats are rate limited per key.
     local function watchStatus(source: string, text: any)
-        if type(text) ~= "string" or text == "" then
+        if type(text) ~= "string" or text == "" or self.lastLine[source] == text then
             return
         end
+        -- Runtimes re-set the same status every step; only a change can carry new information.
+        self.lastLine[source] = text
         local kind, key, data = classify(source, text)
         local subject = string.match(text, "^([^:]+):") or source
         -- Problems and "none left" are states that repeat every joiner step: report each one once until that

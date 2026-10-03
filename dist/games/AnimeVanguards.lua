@@ -11621,6 +11621,7 @@ do
                     storage = nil,
                     cooldowns = {},
                     lastNotice = {},
+                    lastLine = {},
                     seenUnits = {},
                     seenCount = 0,
                     unitReadyAt = math.huge,
@@ -12067,9 +12068,11 @@ do
                     return nil, nil, nil
                 end
                 local function watchStatus(source, text)
-                    if type(text) ~= 'string' or text == '' then
+                    if type(text) ~= 'string' or text == '' or self.lastLine[source] == text then
                         return
                     end
+
+                    self.lastLine[source] = text
 
                     local kind, key, data = classify(source, text)
                     local subject = string.match(text, '^([^:]+):') or source

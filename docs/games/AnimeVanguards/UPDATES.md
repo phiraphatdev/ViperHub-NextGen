@@ -1,5 +1,11 @@
 # Updates
 
+## Local Code Audit Fixes — not published
+
+Full read of `src` with fixes: Worldline end no longer switches Auto Next/Replay off before deciding to stay; repeating joiner/auto play states reach Discord once per change; an unreadable Joiner settings file is no longer overwritten with defaults (which also re-enabled "Disable Auto Joiners"); Auto Back to Lobby shows its saved value; a failing page no longer aborts startup; the match place caches the activity record (10 s); the joiner trace keeps history across loads; Status re-probe updates check marks; Worldline Traits/NoTraits is kept and selectable; macro and joiner game paths live in `Config.instancePaths`.
+
+Webhook match result now comes from the game's end summary (`GameEndScreenClient.ShowEndScreen` decoded with `EndScreenNetworkCodec.DecodeMatchEndSummary`, `Status` Finished/Failed), falling back to MatchEnded arguments and the end screen title. Live (Regular Challenge, 2026-10-04): summary `Finished` → embed VICTORY, delivered (sent=1) before Auto Back to Lobby teleported. Joiner and Auto Back to Lobby hold the lobby return while the webhook is sending (max 8 s).
+
 ## Local Discord Webhook — not published
 
 New Webhook tab sends Discord embeds. Setup: paste a Discord webhook URL (hosts `discord.com`, `discordapp.com`, `ptb.` and `canary.`, shape `/api/webhooks/<id>/<token>`), turn on "Send notifications" and press "Send test message". The URL is a secret: it is kept only in `ViperHubNextGen/AnimeVanguardsWebhook.json` on the device, the box is cleared after entry and every status text shows only a masked form. Events (each switchable, all default on): match result (Victory/Defeat with stage, time, waves, damage, takedowns, money, rewards), new unit (rarity emoji and color, level, trait; Secret, Exclusive and Vanguard can ping), joiner entered a stage, joiner problems, Boss Bounty progress, Rift opened, Team and Macro Equipper notices, Auto Play notices, warnings and session start. Appearance: bot name, avatar URL, optional Roblox name and headshot, optional Discord user ID to ping (only for rare drops, problems and warnings). Mentions are always disabled except that one user. Emoji are Unicode because the game's own custom emoji cannot be used in Discord.
