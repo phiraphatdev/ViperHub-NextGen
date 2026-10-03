@@ -267,6 +267,27 @@ do
                 attributes = table.freeze({
                     riftOpen = 'IsRiftOpen',
                 }),
+                misc = table.freeze({
+                    reconnectErrors = table.freeze({
+                        'DisconnectErrors',
+                        'DisconnectReceivePacketError',
+                        'DisconnectReceivePacketStreamError',
+                        'DisconnectSendPacketError',
+                        'DisconnectTimeout',
+                        'DisconnectPlayerless',
+                        'DisconnectConnectionLost',
+                        'DisconnectIdle',
+                        'DisconnectRaknetErrors',
+                        'DisconnectClientFailure',
+                        'DisconnectRejoin',
+                        'ServerShutdown',
+                        'ReplicatorTimeout',
+                    }),
+                    reconnectDelaySeconds = 5,
+                    reconnectRetrySeconds = 20,
+                    reconnectAttempts = 5,
+                    defaultLoaderUrl = 'http://127.0.0.1:8766/runtime-smoke.lua',
+                }),
                 thresholds = table.freeze({
                     activitySnapshotSeconds = 7200,
                     riftSnapshotSeconds = 600,
@@ -12786,6 +12807,441 @@ do
             return v.c
         end
     end
+    do
+        local function __modImpl()
+            local Style = __DARKLUA_BUNDLE_MODULES.d()
+            local Page = {}
+
+            function Page.mount(tab, runtime)
+                local status = tab:Paragraph({
+                    Title = 'Session',
+                    Desc = if runtime then runtime.status else'Unavailable',
+                })
+
+                if not runtime then
+                    return
+                end
+
+                runtime.onStatus = function(value)
+                    pcall(status.SetDesc, status, value)
+                end
+
+                local settings = runtime.getSettings()
+                local session = Style.section(tab, 'Session Keeper', 'shield', true)
+
+                session:Toggle({
+                    Title = 'Anti-AFK',
+                    Desc =
+[[Simulates input when Roblox reports you idle, so the 20-minute idle kick does not happen.]],
+                    Value = settings.antiAfk,
+                    Callback = function(value)
+                        runtime.setAntiAfk(value)
+                    end,
+                })
+                session:Toggle({
+                    Title = 'Auto Reconnect',
+                    Desc =
+[[After a real disconnect (lost connection, timeout, server shutdown, Error 256/277) teleports back to the lobby, up to 5 tries. Never after a kick, ban, login elsewhere or maintenance.]],
+                    Value = settings.autoReconnect,
+                    Callback = function(value)
+                        runtime.setAutoReconnect(value)
+                    end,
+                })
+
+                local rerun = Style.section(tab, 'Re-run After Teleport', 'refresh-cw', true)
+
+                rerun:Toggle({
+                    Title = 'Re-run ViperHub after teleport',
+                    Desc = if runtime.canRerun()then
+[[Queues your loadstring line for the next place, so the hub (joiner, macro, webhook) loads again after every teleport or reconnect.]]else
+[[This executor has no queue_on_teleport; load the hub manually after a teleport.]],
+                    Value = settings.rerunOnTeleport,
+                    Locked = not runtime.canRerun(),
+                    Callback = function(value)
+                        runtime.setRerun(value)
+                    end,
+                })
+                rerun:Input({
+                    Title = 'Loader URL',
+                    Desc =
+[[The URL inside your loadstring(game:HttpGet("..."))() line (must end in .lua).]],
+                    Value = settings.loaderUrl,
+                    Placeholder = 'http://127.0.0.1:8766/runtime-smoke.lua',
+                    Callback = function(text)
+                        if type(text) == 'string' and text ~= '' and not runtime.setLoaderUrl(text) then
+                            pcall(status.SetDesc, status, 'Loader URL must be an http(s) URL ending in .lua')
+                        end
+                    end,
+                })
+            end
+
+            return Page
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.I()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.I
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.I = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.k()
+            local config = __DARKLUA_BUNDLE_MODULES.c()
+            local metadata = __DARKLUA_BUNDLE_MODULES.b()
+            local Runtime = {}
+            local STORAGE_KEY = 'AnimeVanguardsMisc'
+            local SCHEMA_VERSION = 1
+            local MISC = (config).misc
+
+            function Runtime.validLoaderUrl(url)
+                return type(url) == 'string' and #url <= 300 and string.match(url, '^https?://[%w%.%-]+[:%d]*/[%w%./%-_]*%.lua$') ~= nil
+            end
+            function Runtime.loaderLine(url)
+                return string.format('loadstring(game:HttpGet("%s"))()', url)
+            end
+
+            local function liveDependencies()
+                local env = getfenv()
+                local gameObject = env.game
+
+                if not gameObject then
+                    return nil
+                end
+
+                local players = gameObject:GetService('Players')
+                local virtualUser = gameObject:GetService('VirtualUser')
+                local guiService = gameObject:GetService('GuiService')
+                local teleportService = gameObject:GetService('TeleportService')
+                local http = gameObject:GetService('HttpService')
+                local queue = env.queue_on_teleport or env.queueonteleport
+                local vector2 = env.Vector2
+
+                return {
+                    task = env.task,
+                    clock = os.clock,
+                    encode = function(value)
+                        return http:JSONEncode(value)
+                    end,
+                    decode = function(text)
+                        return http:JSONDecode(text)
+                    end,
+                    storage = FileStorage.new(env, STORAGE_KEY),
+                    idled = players.LocalPlayer.Idled,
+                    nudge = function()
+                        virtualUser:CaptureController()
+                        virtualUser:ClickButton2(vector2.new())
+                    end,
+                    errorChanged = guiService.ErrorMessageChanged,
+                    errorCode = function()
+                        local ok, code = pcall(guiService.GetErrorCode, guiService)
+
+                        return if ok and code then code.Name else nil
+                    end,
+                    teleport = function(placeId)
+                        return (pcall(teleportService.Teleport, teleportService, placeId, players.LocalPlayer))
+                    end,
+                    queue = if type(queue) == 'function'then queue else nil,
+                }
+            end
+
+            function Runtime.new(injected)
+                local self = {
+                    deps = injected,
+                    settings = {
+                        antiAfk = true,
+                        autoReconnect = false,
+                        rerunOnTeleport = false,
+                        loaderUrl = MISC.defaultLoaderUrl,
+                    },
+                    status = 'Idle',
+                    onStatus = nil,
+                    context = nil,
+                    connections = {},
+                    afkCount = 0,
+                    reconnecting = false,
+                    queued = false,
+                    storage = nil,
+                }
+
+                local function setStatus(value)
+                    self.status = value
+
+                    if self.onStatus then
+                        pcall(self.onStatus, value)
+                    end
+                end
+                local function save()
+                    local d = self.deps
+
+                    if not self.storage or not d or not d.encode then
+                        return
+                    end
+
+                    local ok, body = pcall(d.encode, {
+                        schemaVersion = SCHEMA_VERSION,
+                        antiAfk = self.settings.antiAfk,
+                        autoReconnect = self.settings.autoReconnect,
+                        rerunOnTeleport = self.settings.rerunOnTeleport,
+                        loaderUrl = self.settings.loaderUrl,
+                    })
+
+                    if ok and type(body) == 'string' then
+                        pcall(self.storage.write, body)
+                    end
+                end
+                local function queueRerun()
+                    local d = self.deps
+
+                    if not self.settings.rerunOnTeleport or self.queued or not d or type(d.queue) ~= 'function' then
+                        return
+                    end
+                    if not Runtime.validLoaderUrl(self.settings.loaderUrl) then
+                        setStatus('Re-run after teleport: loader URL is not valid')
+
+                        return
+                    end
+
+                    local queueFn = d.queue
+
+                    if pcall(queueFn, Runtime.loaderLine(self.settings.loaderUrl)) then
+                        self.queued = true
+                    end
+                end
+
+                function self.getSettings()
+                    return table.clone(self.settings)
+                end
+                function self.canRerun()
+                    return self.deps ~= nil and type(self.deps.queue) == 'function'
+                end
+                function self.setAntiAfk(value)
+                    if type(value) ~= 'boolean' then
+                        return false
+                    end
+
+                    self.settings.antiAfk = value
+
+                    save()
+
+                    return true
+                end
+                function self.setAutoReconnect(value)
+                    if type(value) ~= 'boolean' then
+                        return false
+                    end
+
+                    self.settings.autoReconnect = value
+
+                    save()
+
+                    return true
+                end
+                function self.setRerun(value)
+                    if type(value) ~= 'boolean' then
+                        return false
+                    end
+
+                    self.settings.rerunOnTeleport = value
+
+                    save()
+
+                    if value then
+                        queueRerun()
+                    end
+
+                    return true
+                end
+                function self.setLoaderUrl(value)
+                    local trimmed = if type(value) == 'string'then string.match(value, '^%s*(.-)%s*$')else nil
+
+                    if not Runtime.validLoaderUrl(trimmed) then
+                        return false
+                    end
+
+                    self.settings.loaderUrl = trimmed
+
+                    save()
+
+                    return true
+                end
+                function self.onIdle()
+                    local d = self.deps
+
+                    if not self.settings.antiAfk or not d or type(d.nudge) ~= 'function' then
+                        return
+                    end
+                    if pcall(d.nudge) then
+                        self.afkCount += 1
+
+                        setStatus(string.format('Anti-AFK: kept the session active (%d)', self.afkCount))
+                    end
+                end
+                function self.onDisconnect()
+                    local d = self.deps
+
+                    if not self.settings.autoReconnect or self.reconnecting or not d then
+                        return
+                    end
+
+                    local errorCodeFn = d.errorCode
+                    local code = if type(errorCodeFn) == 'function'then(errorCodeFn)()else nil
+
+                    if type(code) ~= 'string' or table.find(MISC.reconnectErrors, code) == nil then
+                        return
+                    end
+
+                    self.reconnecting = true
+
+                    local ctx = self.context
+                    local taskApi = d.task
+
+                    local function run()
+                        local waitTask = if taskApi then taskApi.wait else nil
+
+                        if type(waitTask) == 'function' then
+                            (waitTask)(MISC.reconnectDelaySeconds)
+                        end
+
+                        queueRerun()
+
+                        for attempt = 1, MISC.reconnectAttempts do
+                            if ctx ~= self.context then
+                                return
+                            end
+
+                            setStatus(string.format('Reconnecting after %s (%d/%d)', code, attempt, MISC.reconnectAttempts))
+
+                            local teleportFn = d.teleport
+
+                            pcall(teleportFn, metadata.placeIds[1])
+
+                            if type(waitTask) == 'function' then
+                                (waitTask)(MISC.reconnectRetrySeconds)
+                            end
+                        end
+
+                        setStatus('Auto Reconnect gave up; reconnect manually')
+                    end
+
+                    local spawnTask = if taskApi then taskApi.spawn else nil
+
+                    if type(spawnTask) == 'function' then
+                        (spawnTask)(run)
+                    else
+                        run()
+                    end
+                end
+                function self.start(ctx)
+                    self.context = ctx
+
+                    if not self.deps then
+                        local ok, live = pcall(liveDependencies)
+
+                        self.deps = if ok then live else nil
+                    end
+
+                    local d = self.deps
+
+                    if not d then
+                        setStatus('Unavailable in this environment')
+
+                        return
+                    end
+
+                    self.storage = d.storage
+
+                    if self.storage and d.decode then
+                        local body = self.storage.read()
+
+                        if body then
+                            local ok, data = pcall(d.decode, body)
+
+                            if ok and type(data) == 'table' and data.schemaVersion == SCHEMA_VERSION then
+                                for _, key in {
+                                    'antiAfk',
+                                    'autoReconnect',
+                                    'rerunOnTeleport',
+                                }do
+                                    if type(data[key]) == 'boolean' then
+                                        self.settings[key] = data[key]
+                                    end
+                                end
+
+                                if Runtime.validLoaderUrl(data.loaderUrl) then
+                                    self.settings.loaderUrl = data.loaderUrl
+                                end
+                            end
+                        end
+                    end
+
+                    for _, pair in {
+                        {
+                            signal = d.idled,
+                            handler = self.onIdle,
+                        },
+                        {
+                            signal = d.errorChanged,
+                            handler = self.onDisconnect,
+                        },
+                    }do
+                        local signal = pair.signal
+                        local handler = pair.handler
+
+                        if signal and type(signal.Connect) == 'function' then
+                            local ok, connection = pcall(signal.Connect, signal, function(
+                            )
+                                handler()
+                            end)
+
+                            if ok and connection then
+                                table.insert(self.connections, connection)
+                            end
+                        end
+                    end
+
+                    queueRerun()
+                    setStatus(string.format('Anti-AFK %s \u{2022} Auto Reconnect %s \u{2022} Re-run %s', if self.settings.antiAfk then'on'else'off', if self.settings.autoReconnect then'on'else'off', if self.settings.rerunOnTeleport then(if self.queued then'queued'else'on')else'off'))
+                end
+                function self.stop()
+                    for _, connection in self.connections do
+                        pcall(function()
+                            connection:Disconnect()
+                        end)
+                    end
+
+                    table.clear(self.connections)
+
+                    self.context = nil
+                    self.reconnecting = false
+                end
+
+                return self
+            end
+
+            return Runtime
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.J()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.J
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.J = v
+            end
+
+            return v.c
+        end
+    end
 end
 
 local Types = __DARKLUA_BUNDLE_MODULES.a()
@@ -12802,12 +13258,15 @@ local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.A()
 local StatusPage = __DARKLUA_BUNDLE_MODULES.B()
 local WebhookPage = __DARKLUA_BUNDLE_MODULES.E()
 local WebhookRuntime = __DARKLUA_BUNDLE_MODULES.H()
+local MiscPage = __DARKLUA_BUNDLE_MODULES.I()
+local MiscRuntime = __DARKLUA_BUNDLE_MODULES.J()
 local active = false
 local joiner = JoinerRuntime.new()
 local macro = MacroRuntime.new()
 local gameSettings = GameAdapter.new()
 local autoPlay = AutoPlayRuntime.new()
 local webhook = WebhookRuntime.new()
+local misc = MiscRuntime.new()
 local pages = {
     {
         title = 'Status',
@@ -12867,7 +13326,11 @@ local pages = {
     {
         title = 'Misc',
         icon = 'ellipsis',
-        description = 'Navigation only; no miscellaneous actions yet.',
+        description =
+[[Anti-AFK, Auto Reconnect and re-running the hub after a teleport.]],
+        render = function(tab)
+            MiscPage.mount(tab, misc)
+        end,
     },
 }
 local GameModule = {
@@ -12938,6 +13401,7 @@ function GameModule.start(context)
             autoPlay = autoPlay,
             macro = macro,
         })
+        misc.start(context)
         context.log('GAME_STARTED')
     end
 
@@ -12953,6 +13417,7 @@ function GameModule.stop()
     gameSettings.stop()
     autoPlay.stop()
     webhook.stop()
+    misc.stop()
 
     active = false
 end

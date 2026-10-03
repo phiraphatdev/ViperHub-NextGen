@@ -164,6 +164,29 @@ return table.freeze({
         resultStatus = table.freeze({ Finished = "Victory", Failed = "Defeat" }),
     }),
     attributes = table.freeze({ riftOpen = "IsRiftOpen" }),
+    -- Misc tab: Anti-AFK, Auto Reconnect and re-run after teleport.
+    misc = table.freeze({
+        -- Enum.ConnectionError names that mean a lost session (never kicks, bans, duplicate logins or maintenance).
+        reconnectErrors = table.freeze({
+            "DisconnectErrors",
+            "DisconnectReceivePacketError",
+            "DisconnectReceivePacketStreamError",
+            "DisconnectSendPacketError",
+            "DisconnectTimeout",
+            "DisconnectPlayerless",
+            "DisconnectConnectionLost",
+            "DisconnectIdle",
+            "DisconnectRaknetErrors",
+            "DisconnectClientFailure",
+            "DisconnectRejoin",
+            "ServerShutdown",
+            "ReplicatorTimeout",
+        }),
+        reconnectDelaySeconds = 5,
+        reconnectRetrySeconds = 20,
+        reconnectAttempts = 5,
+        defaultLoaderUrl = "http://127.0.0.1:8766/runtime-smoke.lua",
+    }),
     thresholds = table.freeze({
         activitySnapshotSeconds = 7200,
         riftSnapshotSeconds = 600,

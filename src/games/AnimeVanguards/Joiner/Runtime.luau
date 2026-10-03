@@ -211,6 +211,7 @@ function Runtime.new(dependencies: any?): any
                             table.insert(previous, line)
                         end
                         for index = math.max(1, #previous - TRACE_LINES + 2), #previous do
+                            -- Older lines go before the line just added for this session.
                             table.insert(traceLines, #traceLines, previous[index])
                         end
                     end

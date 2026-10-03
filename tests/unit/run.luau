@@ -43,6 +43,7 @@ local WebhookSession = require("../../src/games/AnimeVanguards/Webhook/Session")
 local WebhookEvents = require("../../src/games/AnimeVanguards/Webhook/Events")
 local WebhookRuntime = require("../../src/games/AnimeVanguards/Webhook/Runtime")
 local WebhookPage = require("../../src/games/AnimeVanguards/Webhook/Page")
+local MiscRuntime = require("../../src/games/AnimeVanguards/Misc/Runtime")
 local ExpeditionsEntry = require("../../src/games/AnimeExpeditions/Entry")
 local passed = 0
 local function test(name: string, callback: () -> ())
@@ -6098,5 +6099,124 @@ test("Change Stage in Match yields to a higher-priority playable challenge or Ri
     end
     JoinerSettings.setJoinerRun(nil)
     JoinerSettings.setPaused(true)
+end)
+local function miscFixture(code: string): any
+    local fx: any = { nudges = 0, teleports = {}, queued = {}, code = code, stored = nil, handlers = {} }
+    local function signal(name: string): any
+        return {
+            Connect = function(_self: any, handler: any)
+                fx.handlers[name] = handler
+                return { Disconnect = function() end }
+            end,
+        }
+    end
+    local values: { [string]: any } = {}
+    local count = 0
+    fx.deps = {
+        task = {
+            spawn = function(callback: any)
+                callback()
+            end,
+            wait = function() end,
+        },
+        clock = function()
+            return 0
+        end,
+        encode = function(value: any): string
+            count += 1
+            values["K" .. count] = value
+            return "K" .. count
+        end,
+        decode = function(text: string): any
+            return values[text]
+        end,
+        storage = {
+            read = function()
+                return fx.stored, nil
+            end,
+            write = function(body: string)
+                fx.stored = body
+                return true
+            end,
+        },
+        idled = signal("idle"),
+        errorChanged = signal("error"),
+        errorCode = function()
+            return fx.code
+        end,
+        nudge = function()
+            fx.nudges += 1
+        end,
+        teleport = function(placeId: number)
+            table.insert(fx.teleports, placeId)
+            return true
+        end,
+        queue = function(source: string)
+            table.insert(fx.queued, source)
+        end,
+    }
+    return fx
+end
+test("Misc Anti-AFK nudges on idle only while enabled", function()
+    local fx = miscFixture("OK")
+    local rt = MiscRuntime.new(fx.deps)
+    rt.start({ alive = true })
+    fx.handlers.idle()
+    assert(fx.nudges == 1, "Anti-AFK is on by default")
+    rt.setAntiAfk(false)
+    fx.handlers.idle()
+    assert(fx.nudges == 1)
+    rt.stop()
+end)
+test("Misc Auto Reconnect teleports to the lobby only after real disconnects", function()
+    local kicked = miscFixture("DisconnectLuaKick")
+    local rt = MiscRuntime.new(kicked.deps)
+    rt.start({ alive = true })
+    rt.setAutoReconnect(true)
+    kicked.handlers.error()
+    assert(#kicked.teleports == 0, "a kick never reconnects")
+    rt.stop()
+
+    local ownTeleport = miscFixture("DisconnectClientRequest")
+    local rt2 = MiscRuntime.new(ownTeleport.deps)
+    rt2.start({ alive = true })
+    rt2.setAutoReconnect(true)
+    ownTeleport.handlers.error()
+    assert(#ownTeleport.teleports == 0, "a normal teleport is not a disconnect")
+    rt2.stop()
+
+    local lost = miscFixture("DisconnectErrors")
+    local rt3 = MiscRuntime.new(lost.deps)
+    rt3.start({ alive = true })
+    lost.handlers.error()
+    assert(#lost.teleports == 0, "Auto Reconnect is off by default")
+    rt3.setAutoReconnect(true)
+    lost.handlers.error()
+    assert(#lost.teleports == 5 and lost.teleports[1] == 16146832113, "bounded retries to the lobby place")
+    assert(string.find(rt3.status, "gave up", 1, true) ~= nil)
+    rt3.stop()
+end)
+test("Misc re-run queues the loader line and validates the URL", function()
+    local fx = miscFixture("OK")
+    local rt = MiscRuntime.new(fx.deps)
+    rt.start({ alive = true })
+    assert(#fx.queued == 0, "re-run is off by default")
+    assert(not rt.setLoaderUrl('http://x/a.lua"))() evil()--'), "quotes are refused")
+    assert(not rt.setLoaderUrl("ftp://host/a.lua") and not rt.setLoaderUrl("http://host/a.txt"))
+    assert(rt.setLoaderUrl("  https://example.trycloudflare.com/runtime-smoke.lua  "))
+    rt.setRerun(true)
+    assert(
+        fx.queued[1] == 'loadstring(game:HttpGet("https://example.trycloudflare.com/runtime-smoke.lua"))()'
+    )
+    rt.setRerun(true)
+    assert(#fx.queued == 1, "queued once per session")
+    rt.stop()
+    local again = MiscRuntime.new(miscFixture("OK").deps)
+    again.deps.storage = fx.deps.storage
+    again.deps.encode, again.deps.decode = fx.deps.encode, fx.deps.decode
+    again.start({ alive = true })
+    local saved = again.getSettings()
+    assert(saved.rerunOnTeleport and saved.loaderUrl == "https://example.trycloudflare.com/runtime-smoke.lua")
+    again.stop()
 end)
 print(string.format("PASS: %d unit scenarios", passed))

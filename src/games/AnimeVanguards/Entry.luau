@@ -20,12 +20,15 @@ local AutoPlayRuntime = require("./AutoPlay/Runtime")
 local StatusPage = require("./Status/Page")
 local WebhookPage = require("./Webhook/Page")
 local WebhookRuntime = require("./Webhook/Runtime")
+local MiscPage = require("./Misc/Page")
+local MiscRuntime = require("./Misc/Runtime")
 local active = false
 local joiner = JoinerRuntime.new()
 local macro = MacroRuntime.new()
 local gameSettings = GameAdapter.new()
 local autoPlay = AutoPlayRuntime.new()
 local webhook = WebhookRuntime.new()
+local misc = MiscRuntime.new()
 local pages: { Types.PageDefinition } = {
     {
         title = "Status",
@@ -76,7 +79,14 @@ local pages: { Types.PageDefinition } = {
             WebhookPage.mount(tab, webhook)
         end,
     },
-    { title = "Misc", icon = "ellipsis", description = "Navigation only; no miscellaneous actions yet." },
+    {
+        title = "Misc",
+        icon = "ellipsis",
+        description = "Anti-AFK, Auto Reconnect and re-running the hub after a teleport.",
+        render = function(tab: any)
+            MiscPage.mount(tab, misc)
+        end,
+    },
 }
 local GameModule = { metadata = metadata, config = config, pages = pages, windowTags = config.windowTags }
 --- Starts the Joiner runtime with context; returns nothing until a joiner is enabled.
@@ -138,6 +148,7 @@ function GameModule.start(context: Types.Context)
         gameSettings.start(context)
         autoPlay.start(context)
         webhook.start(context, { joiner = joiner, autoPlay = autoPlay, macro = macro })
+        misc.start(context)
         context.log("GAME_STARTED")
     end
 
@@ -154,6 +165,7 @@ function GameModule.stop()
     gameSettings.stop()
     autoPlay.stop()
     webhook.stop()
+    misc.stop()
     active = false
 end
 return GameModule
