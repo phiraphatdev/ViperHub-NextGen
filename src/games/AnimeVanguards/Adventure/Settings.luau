@@ -9,6 +9,7 @@ Dependencies: Config; FileStorage
 local FileStorage = require("../../../platform/FileStorage")
 local config = require("../Config")
 local Settings = {}
+local REFRESH_SECONDS = 3
 
 local ADVENTURE: any = (config :: any).adventure
 local SCHEMA_VERSION = 1
@@ -227,6 +228,28 @@ function Settings.new(catalog: any, injected: any?): any
     end
 
     local self: any = {}
+    local lastRefresh = os.clock()
+
+    -- Another hub instance (a reload, a second window) may have saved since this one loaded: take the file's
+    -- current values first so one change never writes back a stale copy of every other setting.
+    local function refresh()
+        if not storage or not deps then
+            return
+        end
+        local okRead, body, readError = pcall(storage.read)
+        if not okRead or readError or type(body) ~= "string" then
+            return
+        end
+        local ok, data = pcall(deps.decode, body)
+        if ok and type(data) == "table" and data.schemaVersion == SCHEMA_VERSION then
+            for key, spec in FIELDS do
+                local value = validate(spec, catalog, data[key])
+                if value ~= nil then
+                    values[key] = value
+                end
+            end
+        end
+    end
 
     local function save()
         if not storage or not deps or type(deps.encode) ~= "function" then
@@ -249,6 +272,12 @@ function Settings.new(catalog: any, injected: any?): any
 
     --- Returns one value (tables are copies).
     function self.get(key: string): any
+        -- Pick up changes saved by another instance, at most every few seconds.
+        local now = os.clock()
+        if now - lastRefresh >= REFRESH_SECONDS then
+            lastRefresh = now
+            refresh()
+        end
         local value = values[key]
         return if type(value) == "table" then table.clone(value) else value
     end
@@ -263,6 +292,7 @@ function Settings.new(catalog: any, injected: any?): any
         if valid == nil then
             return false
         end
+        refresh()
         values[key] = valid
         save()
         return true
@@ -275,6 +305,7 @@ function Settings.new(catalog: any, injected: any?): any
         if not spec or spec.kind ~= "ranks" or type(first) ~= "string" or type(second) ~= "string" then
             return false
         end
+        refresh()
         local order = rankedOrder(spec, catalog[spec.list], values[key])
         local a, b = table.find(order, first), table.find(order, second)
         if not a or not b or a == b then
@@ -303,6 +334,7 @@ function Settings.new(catalog: any, injected: any?): any
     function self.resetOrder(key: string): { string }
         local spec = FIELDS[key]
         if spec and spec.kind == "ranks" then
+            refresh()
             values[key] = defaultRanks(spec, catalog[spec.list])
             save()
         end

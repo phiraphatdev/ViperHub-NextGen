@@ -7184,6 +7184,7 @@ do
             local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Settings = {}
+            local REFRESH_SECONDS = 3
             local ADVENTURE = (config).adventure
             local SCHEMA_VERSION = 1
             local NONE = 'None'
@@ -7510,7 +7511,31 @@ do
                 end
 
                 local self = {}
+                local lastRefresh = os.clock()
 
+                local function refresh()
+                    if not storage or not deps then
+                        return
+                    end
+
+                    local okRead, body, readError = pcall(storage.read)
+
+                    if not okRead or readError or type(body) ~= 'string' then
+                        return
+                    end
+
+                    local ok, data = pcall(deps.decode, body)
+
+                    if ok and type(data) == 'table' and data.schemaVersion == SCHEMA_VERSION then
+                        for key, spec in FIELDS do
+                            local value = validate(spec, catalog, data[key])
+
+                            if value ~= nil then
+                                values[key] = value
+                            end
+                        end
+                    end
+                end
                 local function save()
                     if not storage or not deps or type(deps.encode) ~= 'function' then
                         return
@@ -7533,6 +7558,14 @@ do
                     return storage ~= nil
                 end
                 function self.get(key)
+                    local now = os.clock()
+
+                    if now - lastRefresh >= REFRESH_SECONDS then
+                        lastRefresh = now
+
+                        refresh()
+                    end
+
                     local value = values[key]
 
                     return if type(value) == 'table'then table.clone(value)else value
@@ -7550,6 +7583,8 @@ do
                         return false
                     end
 
+                    refresh()
+
                     values[key] = valid
 
                     save()
@@ -7562,6 +7597,8 @@ do
                     if not spec or spec.kind ~= 'ranks' or type(first) ~= 'string' or type(second) ~= 'string' then
                         return false
                     end
+
+                    refresh()
 
                     local order = rankedOrder(spec, catalog[spec.list], values[key])
                     local a, b = table.find(order, first), table.find(order, second)
@@ -7597,6 +7634,8 @@ do
                     local spec = FIELDS[key]
 
                     if spec and spec.kind == 'ranks' then
+                        refresh()
+
                         values[key] = defaultRanks(spec, catalog[spec.list])
 
                         save()
