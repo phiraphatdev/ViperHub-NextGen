@@ -1686,9 +1686,112 @@ do
     end
     do
         local function __modImpl()
+            local ENV = getfenv()
+            local TILE = 128
+            local MAX_ALPHA = 7
+            local CORNER_RADIUS = 14
+            local LAYER_NAME = 'ViperDither'
+            local SEED = 20261004
+            local Dither = {}
+
+            local function buildTile()
+                local service = (ENV.game):GetService('AssetService')
+                local image = service:CreateEditableImage({
+                    Size = ENV.Vector2.new(TILE, TILE),
+                })
+                local bytes = ENV.buffer.create(TILE * TILE * 4)
+                local random = ENV.Random.new(SEED)
+
+                for pixel = 0, TILE * TILE - 1 do
+                    local value = if random:NextInteger(0, 1) == 1 then 255 else 0
+                    local offset = pixel * 4
+
+                    ENV.buffer.writeu8(bytes, offset, value)
+                    ENV.buffer.writeu8(bytes, offset + 1, value)
+                    ENV.buffer.writeu8(bytes, offset + 2, value)
+                    ENV.buffer.writeu8(bytes, offset + 3, random:NextInteger(0, MAX_ALPHA))
+                end
+
+                image:WritePixelsBuffer(ENV.Vector2.zero, ENV.Vector2.new(TILE, TILE), bytes)
+
+                return image
+            end
+
+            function Dither.attach(gui, cleanup)
+                if gui == nil or ENV.Instance == nil or ENV.buffer == nil or ENV.Random == nil or ENV.Content == nil then
+                    return
+                end
+
+                local function place()
+                    local fill = nil
+
+                    for _, object in gui:GetDescendants()do
+                        if object.Name == 'Background' and object:IsA('ImageLabel') then
+                            fill = object
+
+                            break
+                        end
+                    end
+
+                    if not fill or fill:FindFirstChild(LAYER_NAME) then
+                        return false
+                    end
+
+                    local image = buildTile()
+                    local layer = ENV.Instance.new('ImageLabel')
+
+                    layer.Name = LAYER_NAME
+                    layer.BackgroundTransparency = 1
+                    layer.Size = ENV.UDim2.fromScale(1, 1)
+                    layer.ImageContent = ENV.Content.fromObject(image)
+                    layer.ScaleType = (ENV.Enum).ScaleType.Tile
+                    layer.TileSize = ENV.UDim2.fromOffset(TILE, TILE)
+                    layer.ZIndex = 1
+                    layer.Active = false
+
+                    local corner = ENV.Instance.new('UICorner')
+
+                    corner.CornerRadius = ENV.UDim.new(0, CORNER_RADIUS)
+                    corner.Parent = layer
+                    layer.Parent = fill
+
+                    cleanup.add(function()
+                        pcall(function()
+                            layer:Destroy()
+                        end)
+                        pcall(function()
+                            image:Destroy()
+                        end)
+                    end)
+
+                    return true
+                end
+
+                pcall(place)
+            end
+
+            return Dither
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.x()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.x
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.x = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
             local Types = __DARKLUA_BUNDLE_MODULES.i()
             local Theme = __DARKLUA_BUNDLE_MODULES.v()
             local HoverGlow = __DARKLUA_BUNDLE_MODULES.w()
+            local Dither = __DARKLUA_BUNDLE_MODULES.x()
             local ENV = getfenv()
             local WINDOW_WIDTH = 680
             local WINDOW_HEIGHT = 460
@@ -1805,6 +1908,7 @@ do
 
                 if library.ScreenGui then
                     pcall(HoverGlow.attach, library.ScreenGui, context.cleanup)
+                    pcall(Dither.attach, library.ScreenGui, context.cleanup)
                 end
                 if library.ScreenGui then
                     pcall(function()
@@ -1845,14 +1949,14 @@ do
             return WindUIAdapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.x()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.x
+        function __DARKLUA_BUNDLE_MODULES.y()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.y
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.x = v
+                __DARKLUA_BUNDLE_MODULES.cache.y = v
             end
 
             return v.c
@@ -1886,14 +1990,14 @@ do
             return Overview
         end
 
-        function __DARKLUA_BUNDLE_MODULES.y()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.y
+        function __DARKLUA_BUNDLE_MODULES.z()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.z
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.y = v
+                __DARKLUA_BUNDLE_MODULES.cache.z = v
             end
 
             return v.c
@@ -2042,14 +2146,14 @@ do
             return Settings
         end
 
-        function __DARKLUA_BUNDLE_MODULES.z()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.z
+        function __DARKLUA_BUNDLE_MODULES.A()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.A
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.z = v
+                __DARKLUA_BUNDLE_MODULES.cache.A = v
             end
 
             return v.c
@@ -2085,14 +2189,14 @@ do
             return Diagnostics
         end
 
-        function __DARKLUA_BUNDLE_MODULES.A()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.A
+        function __DARKLUA_BUNDLE_MODULES.B()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.B
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.A = v
+                __DARKLUA_BUNDLE_MODULES.cache.B = v
             end
 
             return v.c
@@ -2100,11 +2204,11 @@ do
     end
     do
         local function __modImpl()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.x()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.y()
             local Theme = __DARKLUA_BUNDLE_MODULES.v()
-            local Overview = __DARKLUA_BUNDLE_MODULES.y()
-            local Settings = __DARKLUA_BUNDLE_MODULES.z()
-            local Diagnostics = __DARKLUA_BUNDLE_MODULES.A()
+            local Overview = __DARKLUA_BUNDLE_MODULES.z()
+            local Settings = __DARKLUA_BUNDLE_MODULES.A()
+            local Diagnostics = __DARKLUA_BUNDLE_MODULES.B()
             local App = {}
             local HOME_GROUP = 'Home'
             local SYSTEM_GROUP = 'System'
@@ -2217,14 +2321,14 @@ do
             return App
         end
 
-        function __DARKLUA_BUNDLE_MODULES.B()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.B
+        function __DARKLUA_BUNDLE_MODULES.C()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.C
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.B = v
+                __DARKLUA_BUNDLE_MODULES.cache.C = v
             end
 
             return v.c
@@ -2243,8 +2347,8 @@ local ManifestClient = __DARKLUA_BUNDLE_MODULES.t()
 local ModuleLoader = __DARKLUA_BUNDLE_MODULES.u()
 local Version = __DARKLUA_BUNDLE_MODULES.r()
 local Validation = __DARKLUA_BUNDLE_MODULES.e()
-local App = __DARKLUA_BUNDLE_MODULES.B()
-local UIAdapter = __DARKLUA_BUNDLE_MODULES.x()
+local App = __DARKLUA_BUNDLE_MODULES.C()
+local UIAdapter = __DARKLUA_BUNDLE_MODULES.y()
 local LOADER_VERSION = '0.3.0'
 local TIMEOUT_SECONDS = 15
 local NOTIFY_RETRY_SECONDS = 0.2
