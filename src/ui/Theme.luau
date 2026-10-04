@@ -10,7 +10,7 @@ local Theme = {}
 
 Theme.DEFAULT = "Viper"
 
-local BACKDROP_TINT = 0.3 -- share of the button color mixed into the far corner of the window fill
+local BACKDROP_TINT = 0.12 -- share of the button color mixed into the far corner of the window fill
 local BACKDROP_ROTATION = 125
 local BACKDROP_STOPS = 10 -- keypoints across the window fill (ColorSequence allows 20)
 

@@ -1782,7 +1782,7 @@ do
 
             Theme.DEFAULT = 'Viper'
 
-            local BACKDROP_TINT = 0.3
+            local BACKDROP_TINT = 0.12
             local BACKDROP_ROTATION = 125
             local BACKDROP_STOPS = 10
 
