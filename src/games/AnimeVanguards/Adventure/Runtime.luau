@@ -609,7 +609,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             return
         end
         local now = deps.clock()
-        local key = "room:" .. #options .. ":" .. index
+        local key = "room:" .. tostring(floor) .. ":" .. #options .. ":" .. index
         if retry ~= true and key == lastRoomKey and now - lastRoomAt < REPEAT_SECONDS then
             return
         end

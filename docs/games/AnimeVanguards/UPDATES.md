@@ -1,5 +1,12 @@
 # Updates
 
+## Local: root causes of the Adventure stalls (live session 2026-10-05)
+
+- Settings reverted: the Adventure settings object saved its whole in-memory copy on any change, so an instance loaded earlier wrote old values back (Auto Basic Card and Leave Shop were found off again); the card offer then went unanswered (the game re-sent it every 60 s) and no room vote came. Saves now merge onto the current file and reads refresh every 3 s.
+- Vote after a Shop dropped: a Shop floor ends seconds after its vote, and the next offer with the same lane number fell inside the 4 s duplicate guard (the key had no floor). The key now includes the floor (before: a 20 s wait for the game's re-sent offer).
+- Route Atlas window: the old close code forced the window visible before pressing Close; it now acts only on an open window.
+- Live (autoexec-loaded hub, nothing clicked): Floors 1-8 of a run: basic cards, route votes, a Shop left without buying, a non-full Auto Character Card pick after an Elite; a failed run's end screen sent the client to the lobby (Auto Start New Run) and Auto Join started the next run. Runs fail at Elites because only the character is placed (Units Placed: 1); that is Auto Play, not the Adventure runtime.
+
 ## Local: Auto Route Atlas waits for each floor's own steps; boss reward; unit skip; one-by-one chests
 
 - Requested by the user: the next room is voted only after the floor's steps are done: Basic floor (the card chosen, also while the game's card window is still open), Elite (unit reward answered, character card answered), Shop (left), Boss (reward claimed or skipped), Treasure (the chests opened). Each step is a named task with a 90 s limit so a lost event cannot stall the run.
