@@ -169,6 +169,11 @@ function Runtime.new(dependencies: any?): any
 
     -- Remembers the latest decision per mode for the Joiner Report ("Mode: text" status lines and silent skips).
     local function note(name: string, text: string)
+        -- Silent decisions are written to the trace too (once per change) so skipped modes can be explained later.
+        local previous = reportEntries[name]
+        if (previous == nil or previous.text ~= text) and type(self.traceFn) == "function" then
+            pcall(self.traceFn, name .. ": " .. text)
+        end
         local clockFn: any = if self.dependencies then self.dependencies.clock else nil
         reportEntries[name] =
             { text = text, at = if type(clockFn) == "function" then (clockFn :: any)() else os.time() }
@@ -231,6 +236,7 @@ function Runtime.new(dependencies: any?): any
         end
     end
 
+    self.traceFn = trace
     local function setStatus(value: string)
         trace(value)
         local prefix = string.match(value, "^([%w ]+): ")
@@ -1188,6 +1194,17 @@ function Runtime.new(dependencies: any?): any
                                 return
                             end
                         else
+                            -- Right after loading the game reports Ready=false for a while; skipping at once sent the
+                            -- joiner to a lower priority while the Rift was open. Hold briefly, then skip.
+                            local since: number? = self.riftUnreadySince
+                            if since == nil or math.floor(since / 3600) ~= currentHour then
+                                since = now
+                                self.riftUnreadySince = now
+                            end
+                            if now - (since :: number) < config.thresholds.riftAttemptWaitSeconds then
+                                setStatus("Rift: waiting for attempt data from the game")
+                                return
+                            end
                             note(name, "attempt data not ready from the game; skipped for now")
                         end
                     end

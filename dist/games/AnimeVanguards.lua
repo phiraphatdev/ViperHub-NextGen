@@ -310,6 +310,7 @@ do
                     presetSwitchTimeoutSeconds = 8,
                     presetRequestSeconds = 8,
                     startDelaySeconds = 6,
+                    riftAttemptWaitSeconds = 45,
                     returnGateMaxSeconds = 8,
                 }),
                 remoteNames = table.freeze({
@@ -3818,6 +3819,12 @@ do
                 local reportEntries = {}
 
                 local function note(name, text)
+                    local previous = reportEntries[name]
+
+                    if (previous == nil or previous.text ~= text) and type(self.traceFn) == 'function' then
+                        pcall(self.traceFn, name .. ': ' .. text)
+                    end
+
                     local clockFn = if self.dependencies then self.dependencies.clock else nil
 
                     reportEntries[name] = {
@@ -3888,6 +3895,9 @@ do
                         end)
                     end
                 end
+
+                self.traceFn = trace
+
                 local function setStatus(value)
                     trace(value)
 
@@ -4843,6 +4853,18 @@ do
                                             return
                                         end
                                     else
+                                        local since = self.riftUnreadySince
+
+                                        if since == nil or math.floor(since / 3600) ~= currentHour then
+                                            since = now
+                                            self.riftUnreadySince = now
+                                        end
+                                        if now - (since) < config.thresholds.riftAttemptWaitSeconds then
+                                            setStatus('Rift: waiting for attempt data from the game')
+
+                                            return
+                                        end
+
                                         note(name, 'attempt data not ready from the game; skipped for now')
                                     end
                                 end
