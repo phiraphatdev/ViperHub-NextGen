@@ -466,8 +466,11 @@ test("Adventure runtime chooses the next room only in Adventure matches with Aut
             return 50
         end,
         task = {
-            delay = function(_seconds: number, callback: any)
-                table.insert(pending, callback)
+            delay = function(seconds: number, callback: any)
+                -- The vote retry timer is covered by its own scenario.
+                if seconds < 20 then
+                    table.insert(pending, callback)
+                end
             end,
         },
         isAdventure = function()
@@ -503,11 +506,12 @@ test("Adventure runtime chooses the next room only in Adventure matches with Aut
         },
     })
     local function flush()
-        for _, callback in pending do
+        local batch = pending
+        pending = {}
+        for _, callback in batch do
             local run: any = callback
             run()
         end
-        pending = {}
     end
     local function offerRooms()
         local callback: any = box.room
@@ -710,5 +714,110 @@ test("Adventure opens the allowed treasure chests one by one", function()
     assert(#opened == 0, "switch off: the player opens them")
     runtime.stop()
 end)
+
+test(
+    "Adventure never stalls: falls back to a reachable room, votes again, keeps Auto Skip Start on",
+    function()
+        local settings = AdventureSettings.new(AdventureCatalog.fromModules(nil), {})
+        settings.set("autoRoute", true)
+        local box: any = {}
+        local votes: { any } = {}
+        local pending: { any } = {}
+        local gameSettings: { [string]: boolean } = { AutoSkipStart = false }
+        local runtime = AdventureRuntime.new(function()
+            return settings
+        end, {
+            clock = function()
+                return 1000 + #votes * 10
+            end,
+            task = {
+                delay = function(_seconds: number, callback: any)
+                    table.insert(pending, callback)
+                end,
+            },
+            isAdventure = function()
+                return true
+            end,
+            mapRelay = {
+                OnSnapshot = function(callback: any)
+                    box.snapshot = callback
+                    return function() end
+                end,
+            },
+            events = {
+                CardPickBasicOffer = { On = function() end },
+                SelectRoomSelectionStarted = {
+                    On = function(callback: any)
+                        box.room = callback
+                        return function() end
+                    end,
+                },
+                VoteEnded = {
+                    On = function(callback: any)
+                        box.ended = callback
+                        return function() end
+                    end,
+                },
+                VoteCast = {
+                    Fire = function(payload: any)
+                        table.insert(votes, payload.OptionIndex)
+                    end,
+                },
+            },
+        })
+        runtime.setGameSettings({
+            get = function(name: string)
+                return gameSettings[name]
+            end,
+            set = function(name: string, value: boolean)
+                gameSettings[name] = value
+                return true
+            end,
+        })
+        local function flush()
+            local guard = 0
+            while #pending > 0 and guard < 50 do
+                guard += 1
+                local batch = pending
+                pending = {}
+                for _, callback in batch do
+                    local run: any = callback
+                    run()
+                end
+            end
+        end
+        assert(runtime.start())
+        flush()
+        assert(gameSettings.AutoSkipStart == true, "Auto Skip Start is switched on for the run")
+        local snap: any = box.snapshot
+        snap({
+            CurrentFloor = 11,
+            CurrentLane = 1,
+            Connections = { { From = "F11_L1", To = "F12_L2" } },
+            Nodes = {},
+        })
+        local room: any = box.room
+        -- Only an unranked kind is reachable: the first reachable room is still voted.
+        room({
+            Options = {
+                { Index = 1, AdventureRoomKind = "Treasure", AdventureFloor = 12 },
+                { Index = 2, AdventureRoomKind = "Challenge", AdventureFloor = 12 },
+            },
+        })
+        flush()
+        assert(votes[1] == 2, "the reachable room is voted even when its kind is not ranked")
+        -- The vote stays open: it is cast again, at most VOTE_ATTEMPTS more times.
+        assert(#votes >= 2 and #votes <= 4, "re-votes while the vote stays open, bounded")
+        local count = #votes
+        local ended: any = box.ended
+        ended({ Winner = 2 })
+        flush()
+        assert(#votes == count, "no vote after the vote ended")
+        room({ Options = { { Index = 2, AdventureRoomKind = "Battle", AdventureFloor = 12 } } })
+        ended({ Winner = 2 })
+        flush()
+        runtime.stop()
+    end
+)
 
 print(string.format("PASS: %d unit scenarios (part 4)", passed))

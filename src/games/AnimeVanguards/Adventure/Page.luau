@@ -27,6 +27,7 @@ local UNLOCKED: { [string]: boolean } = {
     leaveShop = true,
     openTreasure = true,
     closeMap = true,
+    autoStartFloors = true,
     secondPriorityFloor = true,
     floorPriority = true,
     secondFloorPriority = true,
@@ -233,6 +234,13 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?, joi
         "Second Floor Prioritize",
         "Used instead after the floor above. Drag a row onto another to swap them.",
         ADVENTURE.roomTags
+    )
+    toggle(
+        misc,
+        settings,
+        "autoStartFloors",
+        "Auto Start Floors",
+        "Keep the game's Auto Skip Start on during an Adventure run so each floor starts by itself (it is a game setting and stays on)."
     )
     toggle(
         misc,

@@ -498,6 +498,8 @@ do
                     adventurePickDelaySeconds = 0.8,
                     adventureRepeatSeconds = 4,
                     adventureChestGapSeconds = 1,
+                    adventureVoteRetrySeconds = 20,
+                    adventureVoteAttempts = 3,
                 }),
                 remoteNames = table.freeze({
                     worldlineProgress = 'GetWorldlineProgress',
@@ -7081,6 +7083,10 @@ do
                     kind = 'bool',
                     default = true,
                 },
+                autoStartFloors = {
+                    kind = 'bool',
+                    default = true,
+                },
                 secondPriorityFloor = {
                     kind = 'number',
                     range = ADVENTURE.secondPriorityFloor,
@@ -7497,6 +7503,7 @@ do
                 leaveShop = true,
                 openTreasure = true,
                 closeMap = true,
+                autoStartFloors = true,
                 secondPriorityFloor = true,
                 floorPriority = true,
                 secondFloorPriority = true,
@@ -7668,6 +7675,8 @@ do
 [[Next room to pick on the Route Atlas; the highest number is preferred. Drag a row onto another to swap them.]], ADVENTURE.roomTags)
                 priorityEditor(route, settings, 'secondFloorPriority', 'Second Floor Prioritize',
 [[Used instead after the floor above. Drag a row onto another to swap them.]], ADVENTURE.roomTags)
+                toggle(misc, settings, 'autoStartFloors', 'Auto Start Floors',
+[[Keep the game's Auto Skip Start on during an Adventure run so each floor starts by itself (it is a game setting and stays on).]])
                 toggle(misc, settings, 'openTreasure', 'Open Treasure Chests',
 [[On a Treasure floor, open the allowed chests so the floor ends (it ends only after the picks are used).]])
                 toggle(misc, settings, 'autoUnitReward', 'Auto Choose Unit Reward',
@@ -8210,6 +8219,8 @@ do
             local PICK_DELAY_SECONDS = (config).thresholds.adventurePickDelaySeconds
             local REPEAT_SECONDS = (config).thresholds.adventureRepeatSeconds
             local CHEST_GAP_SECONDS = (config).thresholds.adventureChestGapSeconds
+            local VOTE_RETRY_SECONDS = (config).thresholds.adventureVoteRetrySeconds
+            local VOTE_ATTEMPTS = (config).thresholds.adventureVoteAttempts
 
             local function resolve(root, path)
                 local value = root
@@ -8293,8 +8304,6 @@ do
                 local pendingRooms = nil
                 local onRoomOffer
                 local closeMapLater
-                local lastRoomKey = ''
-                local lastRoomAt = -math.huge
 
                 local function setStatus(text)
                     self.status = text
@@ -8303,6 +8312,32 @@ do
                         pcall(self.onStatus, text)
                     end
                 end
+
+                local voteOpen = false
+                local voteAttempts = 0
+                local lastOffer = nil
+                local gameSettings = nil
+                local guardedRetry
+
+                local function ensureStart()
+                    if not self.active or getSettings().get('autoStartFloors') ~= true then
+                        return
+                    end
+
+                    local gs = gameSettings
+
+                    if type(gs) == 'table' and type(gs.get) == 'function' and type(gs.set) == 'function' then
+                        local ok, current = pcall(gs.get, 'AutoSkipStart')
+
+                        if ok and current == false and pcall(gs.set, 'AutoSkipStart', true) then
+                            setStatus("Turned on the game's Auto Skip Start")
+                        end
+                    end
+                end
+
+                local lastRoomKey = ''
+                local lastRoomAt = -math.huge
+
                 local function sendPick(index)
                     local entry = if deps.events then deps.events.CardPickPick else nil
 
@@ -8374,8 +8409,17 @@ do
                         closeMapNow()
                     end
                 end
-                onRoomOffer = function(offer)
+                onRoomOffer = function(offer, retry)
                     local saved = getSettings()
+
+                    ensureStart()
+
+                    if retry ~= true then
+                        voteAttempts = 0
+                    end
+
+                    lastOffer = offer
+                    voteOpen = true
 
                     if self.active and saved.get('autoRoute') == true then
                         setStatus('Auto Route Atlas: room offer received')
@@ -8438,8 +8482,17 @@ do
 
                     local index = Choice.pickRoom(options, saved.get('floorPriority'), saved.get('secondFloorPriority'), saved.get('secondPriorityFloor'), reachable)
 
+                    if not index and type(options) == 'table' then
+                        for _, option in options do
+                            if type(option) == 'table' and type(option.Index) == 'number' and reachable[option.Index] then
+                                if index == nil or option.Index < index then
+                                    index = option.Index
+                                end
+                            end
+                        end
+                    end
                     if not index then
-                        setStatus('Auto Route Atlas: no valid room offered')
+                        setStatus('Auto Route Atlas: no reachable room offered')
 
                         return
                     end
@@ -8447,7 +8500,7 @@ do
                     local now = deps.clock()
                     local key = 'room:' .. #options .. ':' .. index
 
-                    if key == lastRoomKey and now - lastRoomAt < REPEAT_SECONDS then
+                    if retry ~= true and key == lastRoomKey and now - lastRoomAt < REPEAT_SECONDS then
                         return
                     end
 
@@ -8464,6 +8517,18 @@ do
 
                         if pcall(fireFn, {OptionIndex = index}) then
                             closeMapLater()
+
+                            local taskApi2 = deps.task
+
+                            if type(taskApi2) == 'table' and type(taskApi2.delay) == 'function' then
+                                (taskApi2.delay)(VOTE_RETRY_SECONDS, function()
+                                    if self.active and voteOpen and voteAttempts < VOTE_ATTEMPTS and lastOffer ~= nil then
+                                        voteAttempts += 1
+
+                                        guardedRetry(lastOffer)
+                                    end
+                                end)
+                            end
 
                             self.routed += 1
 
@@ -8666,7 +8731,11 @@ do
                         ShopOpened = onShopOpened,
                         TreasureBegin = onTreasureBegin,
                         VoteEnded = function()
+                            voteOpen = false
+                            voteAttempts = 0
+
                             closeMapLater()
+                            ensureStart()
                         end,
                     }
 
@@ -8714,11 +8783,27 @@ do
                         end
                     end
 
+                    guardedRetry = function(offer)
+                        guarded('room offer', function(payload)
+                            onRoomOffer(payload, true)
+                        end)(offer)
+                    end
                     self.active = true
 
                     setStatus('Listening for card and room offers')
 
+                    local startTask = deps.task
+
+                    if type(startTask) == 'table' and type(startTask.delay) == 'function' then
+                        (startTask.delay)(10, ensureStart)
+                    else
+                        ensureStart()
+                    end
+
                     return true
+                end
+                function self.setGameSettings(settings)
+                    gameSettings = settings
                 end
                 function self.stop()
                     self.active = false
@@ -17111,6 +17196,7 @@ function GameModule.start(context)
     joiner.setAdventure(adventure)
     joiner.setReturnGate(webhook.isBusy)
     gameSettings.setReturnGate(webhook.isBusy)
+    adventureRun.setGameSettings(gameSettings)
     joiner.setGameSettings(gameSettings)
     autoPlay.setMacro(macro)
     macro.setAutoPlay(autoPlay)

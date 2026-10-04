@@ -15,6 +15,8 @@ local Runtime = {}
 local PICK_DELAY_SECONDS: number = (config :: any).thresholds.adventurePickDelaySeconds
 local REPEAT_SECONDS: number = (config :: any).thresholds.adventureRepeatSeconds
 local CHEST_GAP_SECONDS: number = (config :: any).thresholds.adventureChestGapSeconds
+local VOTE_RETRY_SECONDS: number = (config :: any).thresholds.adventureVoteRetrySeconds
+local VOTE_ATTEMPTS: number = (config :: any).thresholds.adventureVoteAttempts
 
 local function resolve(root: any, path: string): any
     local value = root
@@ -83,17 +85,37 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
     local lastAt = -math.huge
     local snapshot: any = nil
     local pendingRooms: any = nil
-    local onRoomOffer: (any) -> ()
+    local onRoomOffer: (any, boolean?) -> ()
     local closeMapLater: () -> ()
-    local lastRoomKey = ""
-    local lastRoomAt = -math.huge
-
     local function setStatus(text: string)
         self.status = text
         if self.onStatus then
             pcall(self.onStatus, text)
         end
     end
+
+    local voteOpen = false
+    local voteAttempts = 0
+    local lastOffer: any = nil
+    local gameSettings: any = nil
+    local guardedRetry: (any) -> ()
+
+    -- The game's own Auto Skip Start starts every floor without a click; an Adventure run stalls on a floor start
+    -- vote while it is off, so it is switched on when this feature is on (a game setting, left on afterwards).
+    local function ensureStart()
+        if not self.active or getSettings().get("autoStartFloors") ~= true then
+            return
+        end
+        local gs: any = gameSettings
+        if type(gs) == "table" and type(gs.get) == "function" and type(gs.set) == "function" then
+            local ok, current = pcall(gs.get, "AutoSkipStart")
+            if ok and current == false and pcall(gs.set, "AutoSkipStart", true) then
+                setStatus("Turned on the game's Auto Skip Start")
+            end
+        end
+    end
+    local lastRoomKey = ""
+    local lastRoomAt = -math.huge
 
     local function sendPick(index: number): boolean
         local entry = if deps.events then deps.events.CardPickPick else nil
@@ -159,8 +181,14 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
     end
 
     -- A room selection: pick the next room by the floor priorities (the second list from the chosen floor on).
-    onRoomOffer = function(offer: any)
+    onRoomOffer = function(offer: any, retry: boolean?)
         local saved = getSettings()
+        ensureStart()
+        if retry ~= true then
+            voteAttempts = 0
+        end
+        lastOffer = offer
+        voteOpen = true
         if self.active and saved.get("autoRoute") == true then
             setStatus("Auto Route Atlas: room offer received")
         end
@@ -237,13 +265,23 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             saved.get("secondPriorityFloor"),
             reachable
         )
+        if not index and type(options) == "table" then
+            -- No room matched the priorities: still move on, to the first reachable room, so the run never stalls.
+            for _, option in options do
+                if type(option) == "table" and type(option.Index) == "number" and reachable[option.Index] then
+                    if index == nil or option.Index < index then
+                        index = option.Index
+                    end
+                end
+            end
+        end
         if not index then
-            setStatus("Auto Route Atlas: no valid room offered")
+            setStatus("Auto Route Atlas: no reachable room offered")
             return
         end
         local now = deps.clock()
         local key = "room:" .. #options .. ":" .. index
-        if key == lastRoomKey and now - lastRoomAt < REPEAT_SECONDS then
+        if retry ~= true and key == lastRoomKey and now - lastRoomAt < REPEAT_SECONDS then
             return
         end
         lastRoomKey, lastRoomAt = key, now
@@ -263,6 +301,16 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             local fireFn: any = entry.Fire
             if pcall(fireFn, { OptionIndex = index }) then
                 closeMapLater()
+                -- A vote that is not accepted would stall the run: vote again if it is still open after a while.
+                local taskApi2: any = deps.task
+                if type(taskApi2) == "table" and type(taskApi2.delay) == "function" then
+                    (taskApi2.delay :: any)(VOTE_RETRY_SECONDS, function()
+                        if self.active and voteOpen and voteAttempts < VOTE_ATTEMPTS and lastOffer ~= nil then
+                            voteAttempts += 1
+                            guardedRetry(lastOffer)
+                        end
+                    end)
+                end
                 self.routed += 1
                 local kind = "?"
                 for _, option in options do
@@ -441,7 +489,10 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             ShopOpened = onShopOpened,
             TreasureBegin = onTreasureBegin,
             VoteEnded = function()
+                voteOpen = false
+                voteAttempts = 0
                 closeMapLater()
+                ensureStart()
             end,
         }
         for eventName, handler in extras do
@@ -475,9 +526,25 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                 table.insert(disconnects, undoRoom)
             end
         end
+        guardedRetry = function(offer: any)
+            guarded("room offer", function(payload: any)
+                onRoomOffer(payload, true)
+            end)(offer)
+        end
         self.active = true
         setStatus("Listening for card and room offers")
+        local startTask: any = deps.task
+        if type(startTask) == "table" and type(startTask.delay) == "function" then
+            (startTask.delay :: any)(10, ensureStart)
+        else
+            ensureStart()
+        end
         return true
+    end
+
+    --- Gives the runtime the game-settings adapter (get/set by game setting name) used to keep Auto Skip Start on.
+    function self.setGameSettings(settings: any)
+        gameSettings = settings
     end
 
     --- Stops listening; safe to repeat.
