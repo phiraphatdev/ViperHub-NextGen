@@ -338,34 +338,44 @@ local function liveDependencies(): any
             end
             return nil
         end,
-        dismissCardUI = function(index: number)
+        -- Picks a card the way the player does when the game's card window is open: activates the card whose title is
+        -- the wanted name, so the game's own OnPick runs (it sends CardPickPick and clears its offer; firing the
+        -- remote alone left the window open). Returns true when a matching card was activated.
+        clickCard = function(name: string): boolean
             local players: any = env.game and env.game:GetService("Players")
             local lp: any = players and players.LocalPlayer
             local pgui: any = lp and lp:FindFirstChild("PlayerGui")
             local ah: any = pgui and pgui:FindFirstChild("AdventureHUD")
             local cc: any = ah and ah:FindFirstChild("ChooseCard", true)
-            if cc and cc.Visible then
-                local frame: any = cc:FindFirstChild("ScrollIndicatorFrame", true)
-                local buttons: { any } = {}
-                if frame then
-                    for _, ch in ipairs(frame:GetChildren()) do
-                        local btn: any = ch
-                        if btn:IsA("ImageButton") then
-                            table.insert(buttons, btn)
-                        end
-                    end
-                end
-                local targetBtn: any = buttons[index]
-                if targetBtn then
-                    local firesignal: any = (getfenv() :: any).firesignal
-                    if firesignal and targetBtn.Activated then
-                        pcall(firesignal, targetBtn.Activated)
-                    end
-                end
-                pcall(function()
-                    cc.Visible = false
-                end)
+            if not cc or not cc.Visible then
+                return false
             end
+            local firesignal: any = (getfenv() :: any).firesignal
+            for _, descendant in cc:GetDescendants() do
+                local btn: any = descendant
+                if btn:IsA("GuiButton") then
+                    local title: any = btn:FindFirstChild("Title", true)
+                    if title and title:IsA("TextLabel") and title.Text == name then
+                        local clicked = false
+                        if firesignal then
+                            clicked = pcall(firesignal, btn.Activated)
+                            pcall(firesignal, btn.MouseButton1Click)
+                        end
+                        return clicked
+                    end
+                end
+            end
+            return false
+        end,
+        -- A short on-screen note (Roblox notification) so the player sees what the hub chose.
+        notify = function(title: string, text: string)
+            pcall(function()
+                env.game:GetService("StarterGui"):SetCore("SendNotification", {
+                    Title = title,
+                    Text = text,
+                    Duration = 4,
+                })
+            end)
         end,
         isAdventure = function(): boolean
             return handler ~= nil and Detect.isAdventureMatch(handler.GameData)
@@ -447,19 +457,27 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
     local lastRoomKey = ""
     local lastRoomAt = -math.huge
 
-    local function sendPick(index: number): boolean
+    -- Picks option index (named name): through the game's card window when it is open, else the remote directly.
+    local function sendPick(index: number, name: string?): boolean
+        local clickFn: any = deps.clickCard
+        if name and type(clickFn) == "function" then
+            local okClick, clicked = pcall(clickFn, name)
+            if okClick and clicked == true then
+                return true
+            end
+        end
         local entry = if deps.events then deps.events.CardPickPick else nil
-        local ok = false
         if type(entry) == "table" and type(entry.Fire) == "function" then
             local fireFn: any = entry.Fire
-            ok = (pcall(fireFn, { Choice = index }))
+            return (pcall(fireFn, { Choice = index }))
         end
-        local dismissFn: any = deps.dismissCardUI
-        if type(dismissFn) == "function" then
-            pcall(dismissFn, index)
-            ok = true
+        return false
+    end
+    local function notify(title: string, text: string)
+        local notifyFn: any = deps.notify
+        if type(notifyFn) == "function" then
+            pcall(notifyFn, title, text)
         end
-        return ok
     end
 
     -- A basic card offer: pick by priority after a short delay, once per offer (repeats only after REPEAT_SECONDS).
@@ -486,7 +504,8 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                 return
             end
             endTask("card")
-            if sendPick(index) then
+            if sendPick(index, name) then
+                notify("Auto Basic Card", "Picked " .. tostring(name))
                 self.picked += 1
                 setStatus(
                     string.format("Auto Basic Card: picked %s (#%s)", tostring(name), tostring(self.picked))
@@ -715,10 +734,6 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                         then "Auto Character Card: picked option " .. tostring(index)
                         else "Auto Character Card: skipped (hand full)"
                 )
-            end
-            local dismissFn: any = deps.dismissCardUI
-            if type(dismissFn) == "function" and index then
-                pcall(dismissFn, index)
             end
         end
         local taskApi: any = deps.task

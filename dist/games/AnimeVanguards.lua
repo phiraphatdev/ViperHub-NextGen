@@ -9090,41 +9090,49 @@ do
 
                         return nil
                     end,
-                    dismissCardUI = function(index)
+                    clickCard = function(name)
                         local players = env.game and env.game:GetService('Players')
                         local lp = players and players.LocalPlayer
                         local pgui = lp and lp:FindFirstChild('PlayerGui')
                         local ah = pgui and pgui:FindFirstChild('AdventureHUD')
                         local cc = ah and ah:FindFirstChild('ChooseCard', true)
 
-                        if cc and cc.Visible then
-                            local frame = cc:FindFirstChild('ScrollIndicatorFrame', true)
-                            local buttons = {}
-
-                            if frame then
-                                for _, ch in ipairs(frame:GetChildren())do
-                                    local btn = ch
-
-                                    if btn:IsA('ImageButton') then
-                                        table.insert(buttons, btn)
-                                    end
-                                end
-                            end
-
-                            local targetBtn = buttons[index]
-
-                            if targetBtn then
-                                local firesignal = ((getfenv())).firesignal
-
-                                if firesignal and targetBtn.Activated then
-                                    pcall(firesignal, targetBtn.Activated)
-                                end
-                            end
-
-                            pcall(function()
-                                cc.Visible = false
-                            end)
+                        if not cc or not cc.Visible then
+                            return false
                         end
+
+                        local firesignal = ((getfenv())).firesignal
+
+                        for _, descendant in cc:GetDescendants()do
+                            local btn = descendant
+
+                            if btn:IsA('GuiButton') then
+                                local title = btn:FindFirstChild('Title', true)
+
+                                if title and title:IsA('TextLabel') and title.Text == name then
+                                    local clicked = false
+
+                                    if firesignal then
+                                        clicked = pcall(firesignal, btn.Activated)
+
+                                        pcall(firesignal, btn.MouseButton1Click)
+                                    end
+
+                                    return clicked
+                                end
+                            end
+                        end
+
+                        return false
+                    end,
+                    notify = function(title, text)
+                        pcall(function()
+                            env.game:GetService('StarterGui'):SetCore('SendNotification', {
+                                Title = title,
+                                Text = text,
+                                Duration = 4,
+                            })
+                        end)
                     end,
                     isAdventure = function()
                         return handler ~= nil and Detect.isAdventureMatch(handler.GameData)
@@ -9212,25 +9220,33 @@ do
                 local lastRoomKey = ''
                 local lastRoomAt = -math.huge
 
-                local function sendPick(index)
+                local function sendPick(index, name)
+                    local clickFn = deps.clickCard
+
+                    if name and type(clickFn) == 'function' then
+                        local okClick, clicked = pcall(clickFn, name)
+
+                        if okClick and clicked == true then
+                            return true
+                        end
+                    end
+
                     local entry = if deps.events then deps.events.CardPickPick else nil
-                    local ok = false
 
                     if type(entry) == 'table' and type(entry.Fire) == 'function' then
                         local fireFn = entry.Fire
 
-                        ok = (pcall(fireFn, {Choice = index}))
+                        return (pcall(fireFn, {Choice = index}))
                     end
 
-                    local dismissFn = deps.dismissCardUI
+                    return false
+                end
+                local function notify(title, text)
+                    local notifyFn = deps.notify
 
-                    if type(dismissFn) == 'function' then
-                        pcall(dismissFn, index)
-
-                        ok = true
+                    if type(notifyFn) == 'function' then
+                        pcall(notifyFn, title, text)
                     end
-
-                    return ok
                 end
                 local function onBasicOffer(offer)
                     if not self.active or getSettings().get('autoBasicCard') ~= true or not deps.isAdventure() then
@@ -9265,7 +9281,9 @@ do
 
                         endTask('card')
 
-                        if sendPick(index) then
+                        if sendPick(index, name) then
+                            notify('Auto Basic Card', 'Picked ' .. tostring(name))
+
                             self.picked += 1
 
                             setStatus(string.format('Auto Basic Card: picked %s (#%s)', tostring(name), tostring(self.picked)))
@@ -9492,12 +9510,6 @@ do
                             self.cards += 1
 
                             setStatus(if index then'Auto Character Card: picked option ' .. tostring(index)else'Auto Character Card: skipped (hand full)')
-                        end
-
-                        local dismissFn = deps.dismissCardUI
-
-                        if type(dismissFn) == 'function' and index then
-                            pcall(dismissFn, index)
                         end
                     end
 
