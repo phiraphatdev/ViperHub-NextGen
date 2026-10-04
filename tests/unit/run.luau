@@ -409,8 +409,9 @@ test("game-owned pages are optional and validated", function()
     assert(ModuleLoader.isGame(ExpeditionsEntry, "AnimeExpeditions", "0.3.0"))
     assert(ModuleLoader.isGame(VanguardsEntry, "AnimeVanguards", "0.3.0"))
     assert(
-        #VanguardsEntry.pages == 8
+        #VanguardsEntry.pages == 9
             and VanguardsEntry.pages[1].title == "Dashboard"
+            and VanguardsEntry.pages[3].title == "Odyssey Adventure"
             and VanguardsEntry.pages[1].home == true
     )
     local invalid: any = {

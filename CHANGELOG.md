@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Anime Vanguards: Odyssey Adventure tab (settings only; automation pending). Option lists read from the game's Adventure data with a config fallback.
+
 ## v0.3.0 — Anime Vanguards features and the shared ViperHub UI
 
 - UI base for every game: 14 ViperHub themes (Viper default) plus WindUI's own, live theme switching, grouped sidebar (Home / game groups / System), title-bar tags, player card, page headers, shared `ui/Style`, animated dropdown menus and collapsible sections; most sections start collapsed.

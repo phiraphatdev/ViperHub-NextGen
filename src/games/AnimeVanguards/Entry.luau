@@ -3,7 +3,7 @@
 Purpose: Expose game-owned navigation and lifecycle for verified stage joining
 Input: Game context
 Output: GameModule contract
-Dependencies: Metadata; Config; types/GameModule; Webhook
+Dependencies: Metadata; Config; types/GameModule; Webhook; Adventure/Page
 ]]
 
 local Types = require("../../types/GameModule")
@@ -11,6 +11,7 @@ local metadata = require("./Metadata")
 local config = require("./Config")
 local JoinerPage = require("./Joiner/Page")
 local JoinerRuntime = require("./Joiner/Runtime")
+local AdventurePage = require("./Adventure/Page")
 local MacroPage = require("./Macro/Page")
 local MacroRuntime = require("./Macro/Runtime")
 local GamePage = require("./Game/Page")
@@ -53,6 +54,16 @@ local pages: { Types.PageDefinition } = {
         iconColor = "primary",
         render = function(tab: any)
             JoinerPage.mount(tab, nil, joiner)
+        end,
+    },
+    {
+        title = "Odyssey Adventure",
+        icon = "compass",
+        description = "Odyssey: Adventure runs: character, Route Atlas, cards, Stitches Shop and cash out (settings only).",
+        group = "Farming",
+        iconColor = "violet",
+        render = function(tab: any)
+            AdventurePage.mount(tab)
         end,
     },
     {

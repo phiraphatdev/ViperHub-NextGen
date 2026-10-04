@@ -1,5 +1,12 @@
 # Updates
 
+## Local Odyssey Adventure tab (settings only) — not published
+
+- New Farming tab **Odyssey Adventure** with the requested layout: Auto Join; Character (Select Character, Slot 1, Slot 2); Miscellaneous with Auto Route Atlas (Use Second Prioritize after Floor 1–200, Floor Prioritize, Second Floor Prioritize), Auto Choose Unit Reward, Auto Buy Itches; Auto Character Card; Auto Basic Card with Card Priority; Auto Stitches Shop (Buy Basic Card, Buy Starter Card, Buy Unit Trait, Buy Unit Memoria); Run Completion (Auto Cash Out, Cash out at floor 1–100, Auto Start New Run, Auto Ascension); Memorized Modifier (Auto Select Memorized Memoria, Memoria, Refresh Inventory); Stage Failsafe (Teleport Lobby if Stage not Finished, Failsafe Time 1–30 minutes).
+- Settings only: choices are validated and saved to `AnimeVanguardsAdventure.json`; no automation reads them yet and Refresh Inventory reports runtime pending.
+- Option lists come from the game's data (observed 2026-10-04): `Modules.Data.Odyssey.Adventure.CharactersData` (14 characters, default Iscanur (Pride)), `PowersData.POWERS` (14 run-start powers, used for Slot 1/2 and starter cards), `BasicCardPool.CardsByRarity` (33 basic cards) and `Modules.Data.OdysseyTraitPool` (tiered traits as I/II/III); room kinds Battle, Elite, Shop, Treasure, Boss (the game's Route Atlas labels); memoria rarities Rare to Vanguard (wiki shop list). Config holds the same lists as a fallback.
+- Live: tab rendered in a match; trait list order proved it was read from the game data; Auto Join toggle saved true then false to the file.
+
 ## Local UI Base, Misc and Unit Contribution — not published
 
 - UI base for all games: Viper theme (14 ViperHub themes plus the library's, live switch in Settings; an old stored "Dark" default migrates to Viper), sidebar sections, title-bar tags, player card, page headers, shared `ui/Style`. Anime Vanguards adds a live Dashboard home page and drops the empty Lobby tab. Live: Viper, Sakura and Ocean themes and the Dashboard checked in the client.

@@ -104,6 +104,10 @@ do
                     bountyState = 'Modules.Gameplay.Bounty.PlayerBountyDataHandler',
                     bountyStateMatch = 'Modules.Gameplay.Bounties.PlayerBountyDataHandler',
                     autoPlayModeBlocklist = 'Modules.Shared.AutoPlayModeBlocklist',
+                    adventureCharacters = 'Modules.Data.Odyssey.Adventure.CharactersData',
+                    adventurePowers = 'Modules.Data.Odyssey.Adventure.PowersData',
+                    adventureBasicCards = 'Modules.Data.Odyssey.Adventure.BasicCardPool',
+                    odysseyTraitPool = 'Modules.Data.OdysseyTraitPool',
                 }),
                 modeLabels = table.freeze({
                     Story = 'Story',
@@ -287,6 +291,153 @@ do
                     reconnectRetrySeconds = 20,
                     reconnectAttempts = 5,
                     defaultLoaderUrl = 'http://127.0.0.1:8766/runtime-smoke.lua',
+                }),
+                adventure = table.freeze({
+                    storageKey = 'AnimeVanguardsAdventure',
+                    defaultCharacter = 'Iscanur (Pride)',
+                    characters = table.freeze({
+                        'Alocard (Vampire King)',
+                        'Demon Leader (Control)',
+                        'Divalo (Requiem)',
+                        'Elastic Captain (Cog 5th)',
+                        'Hellkiller (Slayer)',
+                        'Iscanur (Pride)',
+                        'Luce (Hacker)',
+                        'Manipulator (Spider)',
+                        'Regnaw (Rage)',
+                        'Rogita (Super 4)',
+                        'Shinobi God (Infinite Dreams)',
+                        'Song Jinwu and Igros',
+                        'Tuji (Sorcerer Killer)',
+                        'Yomomata (Captain)',
+                    }),
+                    powers = table.freeze({
+                        'Full Deck',
+                        'Chosen One',
+                        'Handpicked',
+                        'Abundance',
+                        'Hoarder',
+                        'Treasure Hunter',
+                        'Gold Thread',
+                        'Flight',
+                        'High Value',
+                        'Jack Pot',
+                        "I'm Familiar",
+                        'Memorized',
+                        'Not Basic',
+                        'Power Trip',
+                    }),
+                    basicCardRarities = table.freeze({
+                        'Mythic',
+                        'Legendary',
+                        'Epic',
+                        'Rare',
+                    }),
+                    basicCards = table.freeze({
+                        Mythic = table.freeze({
+                            'Limit Break',
+                            'Golden Age',
+                            'Crippling Field',
+                            'Luckcatcher',
+                            'Unstoppable Force',
+                            'Spoils of War',
+                            'True Strike',
+                            'Shop Cleaner',
+                            'Cleansing Pool',
+                        }),
+                        Legendary = table.freeze({
+                            'The Best Defense\u{2026}',
+                            'Affinity',
+                            'Resource Overflow',
+                            'Delicate Flower',
+                            'Double Tap',
+                            'Essence Collector',
+                        }),
+                        Epic = table.freeze({
+                            'Infection',
+                            'Base Shield',
+                            'Battle Frenzy',
+                            'Extended Duration',
+                            'Treasure Map Fragment',
+                            'Quick Charge',
+                            'Potent Toxins',
+                            'Volatile Demise',
+                            'Painful Gains',
+                            'Numbing Agent',
+                        }),
+                        Rare = table.freeze({
+                            'Adrenaline Shot',
+                            'Serrated Tips',
+                            'Precision Optics',
+                            'Boxing Gloves',
+                            'Ambush',
+                            'Concussive Blast',
+                            'Slayer Rounds',
+                            'Military Training',
+                        }),
+                    }),
+                    roomKinds = table.freeze({
+                        'Battle',
+                        'Elite',
+                        'Shop',
+                        'Treasure',
+                        'Boss',
+                    }),
+                    floorPriority = table.freeze({
+                        'Treasure',
+                        'Elite',
+                        'Shop',
+                        'Battle',
+                        'Boss',
+                    }),
+                    secondFloorPriority = table.freeze({
+                        'Treasure',
+                        'Battle',
+                        'Shop',
+                        'Elite',
+                        'Boss',
+                    }),
+                    traits = table.freeze({
+                        'Vigor I',
+                        'Vigor II',
+                        'Vigor III',
+                        'Swift I',
+                        'Swift II',
+                        'Swift III',
+                        'Range I',
+                        'Range II',
+                        'Range III',
+                        'Fortune',
+                        'Marksman',
+                        'Blitz',
+                        'Deadeye',
+                        'Ethereal',
+                        'Solar',
+                        'Prodigy',
+                    }),
+                    memoriaRarities = table.freeze({
+                        'Rare',
+                        'Epic',
+                        'Legendary',
+                        'Mythic',
+                        'Secret',
+                        'Vanguard',
+                    }),
+                    secondPriorityFloor = table.freeze({
+                        min = 1,
+                        max = 200,
+                        default = 30,
+                    }),
+                    cashOutFloor = table.freeze({
+                        min = 1,
+                        max = 100,
+                        default = 30,
+                    }),
+                    failsafeMinutes = table.freeze({
+                        min = 1,
+                        max = 30,
+                        default = 10,
+                    }),
                 }),
                 thresholds = table.freeze({
                     activitySnapshotSeconds = 7200,
@@ -5465,6 +5616,834 @@ do
     end
     do
         local function __modImpl()
+            local config = __DARKLUA_BUNDLE_MODULES.c()
+            local Catalog = {}
+            local ADVENTURE = (config).adventure
+            local ROMAN = {
+                'I',
+                'II',
+                'III',
+                'IV',
+                'V',
+            }
+            local MAX_NAME = 64
+
+            local function validName(value)
+                return type(value) == 'string' and #value > 0 and #value <= MAX_NAME
+            end
+            local function copy(list)
+                local result = {}
+
+                for _, name in list do
+                    table.insert(result, name)
+                end
+
+                return result
+            end
+            local function readCharacters(module)
+                local result = {}
+
+                if type(module) == 'table' and type(module.GetAllCharacters) == 'function' then
+                    local ok, all = pcall(module.GetAllCharacters)
+
+                    if ok and type(all) == 'table' then
+                        for key, entry in all do
+                            local item = entry
+                            local name = if type(item) == 'table'then item.Name else nil
+
+                            name = if validName(name)then name else key
+
+                            if validName(name) and not table.find(result, name) then
+                                table.insert(result, name)
+                            end
+                        end
+                    end
+                end
+
+                table.sort(result)
+
+                return result
+            end
+            local function readPowers(module)
+                local result = {}
+
+                if type(module) == 'table' and type(module.POWERS) == 'table' then
+                    for _, power in ipairs(module.POWERS)do
+                        local item = power
+
+                        if type(item) == 'table' and validName(item.Name) and not table.find(result, item.Name) then
+                            table.insert(result, item.Name)
+                        end
+                    end
+                end
+
+                return result
+            end
+            local function readBasicCards(module)
+                local result = {}
+                local byRarity = if type(module) == 'table'then module.CardsByRarity else nil
+
+                if type(byRarity) ~= 'table' then
+                    return result
+                end
+
+                for _, rarity in ADVENTURE.basicCardRarities do
+                    local list = byRarity[rarity]
+
+                    if type(list) == 'table' then
+                        for _, card in ipairs(list)do
+                            local item = card
+                            local name = if type(item) == 'table'then item.Name else item
+
+                            if validName(name) and not table.find(result, name) then
+                                table.insert(result, name)
+                            end
+                        end
+                    end
+                end
+
+                return result
+            end
+            local function readTraits(module)
+                local rows = {}
+
+                if type(module) ~= 'table' then
+                    return {}
+                end
+
+                for name, entry in module do
+                    if validName(name) and type(entry) == 'table' then
+                        local chance = if type(entry.Chance) == 'number'then entry.Chance else 0
+
+                        table.insert(rows, {
+                            name = name,
+                            chance = chance,
+                            tiers = entry.Tiers,
+                        })
+                    end
+                end
+
+                table.sort(rows, function(a, b)
+                    if a.chance ~= b.chance then
+                        return a.chance > b.chance
+                    end
+
+                    return a.name < b.name
+                end)
+
+                local result = {}
+
+                for _, row in rows do
+                    if type(row.tiers) == 'table' and #row.tiers > 0 then
+                        for index = 1, math.min(#row.tiers, #ROMAN)do
+                            table.insert(result, row.name .. ' ' .. ROMAN[index])
+                        end
+                    else
+                        table.insert(result, row.name)
+                    end
+                end
+
+                return result
+            end
+            local function pick(live, fallback)
+                return if#live > 0 then live else copy(fallback)
+            end
+            local function fallbackBasicCards()
+                local result = {}
+
+                for _, rarity in ADVENTURE.basicCardRarities do
+                    for _, name in ADVENTURE.basicCards[rarity]do
+                        table.insert(result, name)
+                    end
+                end
+
+                return result
+            end
+
+            function Catalog.fromModules(modules)
+                local m = if type(modules) == 'table'then modules else{}
+                local characters = pick(readCharacters(m.characters), ADVENTURE.characters)
+                local defaultCharacter = ADVENTURE.defaultCharacter
+
+                if type(m.characters) == 'table' and type(m.characters.GetDefaultCharacterName) == 'function' then
+                    local ok, name = pcall(m.characters.GetDefaultCharacterName)
+
+                    if ok and validName(name) and table.find(characters, name) then
+                        defaultCharacter = name
+                    end
+                end
+                if not table.find(characters, defaultCharacter) then
+                    defaultCharacter = characters[1]
+                end
+
+                local basicCards = readBasicCards(m.basicCards)
+                local data = {
+                    characters = characters,
+                    defaultCharacter = defaultCharacter,
+                    powers = pick(readPowers(m.powers), ADVENTURE.powers),
+                    basicCards = if#basicCards > 0 then basicCards else fallbackBasicCards(),
+                    roomKinds = copy(ADVENTURE.roomKinds),
+                    traits = pick(readTraits(m.traits), ADVENTURE.traits),
+                    memoriaRarities = copy(ADVENTURE.memoriaRarities),
+                }
+
+                return data
+            end
+
+            local function resolve(root, path)
+                local value = root
+
+                for part in string.gmatch(path, '[^%.]+')do
+                    if not value then
+                        return nil
+                    end
+
+                    local current = value
+                    local ok, child = pcall(function()
+                        return current:FindFirstChild(part)
+                    end)
+
+                    value = if ok then child else nil
+                end
+
+                return value
+            end
+
+            function Catalog.read()
+                local env = getfenv()
+                local modules = {}
+
+                pcall(function()
+                    local rep = env.game:GetService('ReplicatedStorage')
+                    local paths = config.instancePaths
+                    local wanted = {
+                        characters = paths.adventureCharacters,
+                        powers = paths.adventurePowers,
+                        basicCards = paths.adventureBasicCards,
+                        traits = paths.odysseyTraitPool,
+                    }
+
+                    for key, path in wanted do
+                        local object = resolve(rep, path)
+
+                        if object then
+                            local ok, result = pcall(require, object)
+
+                            if ok then
+                                modules[key] = result
+                            end
+                        end
+                    end
+                end)
+
+                return Catalog.fromModules(modules)
+            end
+
+            return Catalog
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.t()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.t
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.t = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
+            local config = __DARKLUA_BUNDLE_MODULES.c()
+            local Settings = {}
+            local ADVENTURE = (config).adventure
+            local SCHEMA_VERSION = 1
+            local NONE = 'None'
+            local MAX_TEXT = 64
+
+            Settings.NONE = NONE
+
+            local FIELDS = {
+                autoJoin = {
+                    kind = 'bool',
+                    default = false,
+                },
+                character = {
+                    kind = 'choice',
+                    list = 'characters',
+                },
+                slot1 = {
+                    kind = 'choice',
+                    list = 'powers',
+                    none = true,
+                },
+                slot2 = {
+                    kind = 'choice',
+                    list = 'powers',
+                    none = true,
+                },
+                secondPriorityFloor = {
+                    kind = 'number',
+                    range = ADVENTURE.secondPriorityFloor,
+                },
+                floorPriority = {
+                    kind = 'order',
+                    list = 'roomKinds',
+                    default = ADVENTURE.floorPriority,
+                },
+                secondFloorPriority = {
+                    kind = 'order',
+                    list = 'roomKinds',
+                    default = ADVENTURE.secondFloorPriority,
+                },
+                autoUnitReward = {
+                    kind = 'bool',
+                    default = false,
+                },
+                autoBuyItches = {
+                    kind = 'bool',
+                    default = false,
+                },
+                autoCharacterCard = {
+                    kind = 'bool',
+                    default = false,
+                },
+                autoBasicCard = {
+                    kind = 'bool',
+                    default = false,
+                },
+                cardPriority = {
+                    kind = 'order',
+                    list = 'basicCards',
+                },
+                autoStitchesShop = {
+                    kind = 'bool',
+                    default = false,
+                },
+                buyBasicCards = {
+                    kind = 'set',
+                    list = 'basicCards',
+                },
+                buyStarterCards = {
+                    kind = 'set',
+                    list = 'powers',
+                },
+                buyTraits = {
+                    kind = 'set',
+                    list = 'traits',
+                },
+                buyMemoria = {
+                    kind = 'set',
+                    list = 'memoriaRarities',
+                },
+                autoCashOut = {
+                    kind = 'bool',
+                    default = false,
+                },
+                cashOutFloor = {
+                    kind = 'number',
+                    range = ADVENTURE.cashOutFloor,
+                },
+                autoStartNewRun = {
+                    kind = 'bool',
+                    default = false,
+                },
+                autoAscension = {
+                    kind = 'bool',
+                    default = false,
+                },
+                autoMemorized = {
+                    kind = 'bool',
+                    default = false,
+                },
+                memoria = {
+                    kind = 'text',
+                    default = NONE,
+                },
+                failsafe = {
+                    kind = 'bool',
+                    default = false,
+                },
+                failsafeMinutes = {
+                    kind = 'number',
+                    range = ADVENTURE.failsafeMinutes,
+                },
+            }
+
+            Settings.FIELDS = FIELDS
+
+            local function finite(value)
+                return type(value) == 'number' and value == value and value ~= math.huge and value ~=
+-math.huge
+            end
+            local function defaultOrder(spec, list)
+                local result = {}
+
+                if spec.default then
+                    for _, name in spec.default do
+                        if table.find(list, name) then
+                            table.insert(result, name)
+                        end
+                    end
+                end
+
+                for _, name in list do
+                    if not table.find(result, name) then
+                        table.insert(result, name)
+                    end
+                end
+
+                return result
+            end
+            local function defaultValue(spec, catalog)
+                if spec.kind == 'choice' then
+                    return if spec.none then NONE else catalog.defaultCharacter
+                elseif spec.kind == 'number' then
+                    return spec.range.default
+                elseif spec.kind == 'set' then
+                    return {}
+                elseif spec.kind == 'order' then
+                    return defaultOrder(spec, catalog[spec.list])
+                end
+
+                return spec.default
+            end
+            local function validate(spec, catalog, value)
+                if spec.kind == 'bool' then
+                    return if type(value) == 'boolean'then value else nil
+                elseif spec.kind == 'choice' then
+                    if type(value) ~= 'string' then
+                        return nil
+                    end
+                    if spec.none and value == NONE then
+                        return value
+                    end
+
+                    return if table.find(catalog[spec.list], value)then value else nil
+                elseif spec.kind == 'number' then
+                    if not finite(value) then
+                        return nil
+                    end
+
+                    return math.clamp(math.floor(value), spec.range.min, spec.range.max)
+                elseif spec.kind == 'text' then
+                    return if type(value) == 'string' and #value > 0 and #value <= MAX_TEXT then value else nil
+                elseif type(value) ~= 'table' then
+                    return nil
+                end
+
+                local list = catalog[spec.list]
+                local result = {}
+
+                for _, name in value do
+                    if type(name) == 'string' and table.find(list, name) and not table.find(result, name) then
+                        table.insert(result, name)
+                    end
+                end
+
+                if spec.kind == 'order' then
+                    for _, name in defaultOrder(spec, list)do
+                        if not table.find(result, name) then
+                            table.insert(result, name)
+                        end
+                    end
+                end
+
+                return result
+            end
+            local function liveDependencies()
+                local env = getfenv()
+
+                if not env.game then
+                    return nil
+                end
+
+                local http = env.game:GetService('HttpService')
+
+                return {
+                    storage = FileStorage.new(env, ADVENTURE.storageKey),
+                    encode = function(value)
+                        return http:JSONEncode(value)
+                    end,
+                    decode = function(text)
+                        return http:JSONDecode(text)
+                    end,
+                }
+            end
+
+            function Settings.new(catalog, injected)
+                local deps = injected or liveDependencies()
+                local values = {}
+
+                for key, spec in FIELDS do
+                    values[key] = defaultValue(spec, catalog)
+                end
+
+                local storage = if deps then deps.storage else nil
+
+                if storage then
+                    local body, readError = storage.read()
+
+                    if readError then
+                        storage = nil
+                    elseif body then
+                        local ok, data = pcall(deps.decode, body)
+
+                        if not ok or type(data) ~= 'table' or data.schemaVersion ~= SCHEMA_VERSION then
+                            storage = nil
+                        else
+                            for key, spec in FIELDS do
+                                local value = validate(spec, catalog, data[key])
+
+                                if value ~= nil then
+                                    values[key] = value
+                                end
+                            end
+                        end
+                    end
+                end
+
+                local self = {}
+
+                local function save()
+                    if not storage or not deps or type(deps.encode) ~= 'function' then
+                        return
+                    end
+
+                    local document = {schemaVersion = SCHEMA_VERSION}
+
+                    for key, value in values do
+                        document[key] = value
+                    end
+
+                    local ok, body = pcall(deps.encode, document)
+
+                    if ok and type(body) == 'string' then
+                        pcall(storage.write, body)
+                    end
+                end
+
+                function self.persistent()
+                    return storage ~= nil
+                end
+                function self.get(key)
+                    local value = values[key]
+
+                    return if type(value) == 'table'then table.clone(value)else value
+                end
+                function self.set(key, value)
+                    local spec = FIELDS[key]
+
+                    if not spec then
+                        return false
+                    end
+
+                    local valid = validate(spec, catalog, value)
+
+                    if valid == nil then
+                        return false
+                    end
+
+                    values[key] = valid
+
+                    save()
+
+                    return true
+                end
+                function self.moveUp(key, name)
+                    local spec = FIELDS[key]
+                    local order = values[key]
+
+                    if not spec or spec.kind ~= 'order' or type(name) ~= 'string' then
+                        return false
+                    end
+
+                    local index = table.find(order, name)
+
+                    if not index or index == 1 then
+                        return false
+                    end
+
+                    order[index], order[index - 1] = order[index - 1], order[index]
+
+                    save()
+
+                    return true
+                end
+                function self.resetOrder(key)
+                    local spec = FIELDS[key]
+
+                    if spec and spec.kind == 'order' then
+                        values[key] = defaultOrder(spec, catalog[spec.list])
+
+                        save()
+                    end
+
+                    return self.get(key)
+                end
+
+                return self
+            end
+
+            return Settings
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.u()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.u
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.u = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
+            local Style = __DARKLUA_BUNDLE_MODULES.e()
+            local Catalog = __DARKLUA_BUNDLE_MODULES.t()
+            local Settings = __DARKLUA_BUNDLE_MODULES.u()
+            local Page = {}
+            local PENDING =
+[[Settings only for now: the Adventure automation is not built yet, so these choices are saved but nothing runs.]]
+
+            local function orderText(order)
+                local parts = {}
+
+                for index, name in order do
+                    table.insert(parts, index .. '. ' .. name)
+                end
+
+                return table.concat(parts, ' > ')
+            end
+            local function setDesc(control, text)
+                if type(control) == 'table' and type(control.SetDesc) == 'function' then
+                    pcall(control.SetDesc, control, text)
+                end
+            end
+            local function priorityEditor(host, settings, key, title, desc)
+                local order = settings.get(key)
+                local selected = order[1]
+                local dropdown
+
+                local function refresh()
+                    setDesc(dropdown, desc .. '\n' .. orderText(settings.get(key)))
+                end
+
+                dropdown = host:Dropdown({
+                    Title = title,
+                    Desc = desc .. '\n' .. orderText(order),
+                    Values = order,
+                    Value = selected,
+                    Callback = function(value)
+                        if type(value) == 'string' then
+                            selected = value
+                        end
+                    end,
+                })
+
+                host:Button({
+                    Title = title .. ': move selected up',
+                    Callback = function()
+                        if settings.moveUp(key, selected) then
+                            refresh()
+                        end
+                    end,
+                })
+                host:Button({
+                    Title = title .. ': reset order',
+                    Callback = function()
+                        settings.resetOrder(key)
+                        refresh()
+                    end,
+                })
+            end
+            local function toggle(host, settings, key, title, desc)
+                host:Toggle({
+                    Title = title,
+                    Desc = desc,
+                    Value = settings.get(key),
+                    Callback = function(value)
+                        settings.set(key, value)
+                    end,
+                })
+            end
+            local function slider(host, settings, key, title, desc)
+                local range = Settings.FIELDS[key].range
+
+                host:Slider({
+                    Title = title,
+                    Desc = desc,
+                    Step = 1,
+                    Value = {
+                        Min = range.min,
+                        Max = range.max,
+                        Default = settings.get(key),
+                    },
+                    Callback = function(value)
+                        settings.set(key, tonumber(value))
+                    end,
+                })
+            end
+            local function choice(host, settings, key, title, desc, values)
+                host:Dropdown({
+                    Title = title,
+                    Desc = desc,
+                    Values = values,
+                    Value = settings.get(key),
+                    Callback = function(value)
+                        settings.set(key, value)
+                    end,
+                })
+            end
+            local function multi(host, settings, key, title, desc, values)
+                host:Dropdown({
+                    Title = title,
+                    Desc = desc,
+                    Values = values,
+                    Value = settings.get(key),
+                    Multi = true,
+                    AllowNone = true,
+                    Callback = function(value)
+                        settings.set(key, value)
+                    end,
+                })
+            end
+
+            function Page.mount(tab, catalogOverride, settingsOverride)
+                local catalog = catalogOverride or Catalog.read()
+                local settings = settingsOverride or Settings.new(catalog)
+                local withNone = function(list)
+                    local result = {
+                        Settings.NONE,
+                    }
+
+                    for _, name in list do
+                        table.insert(result, name)
+                    end
+
+                    return result
+                end
+                local status = tab:Paragraph({
+                    Title = 'Status',
+                    Desc = PENDING .. '\n' .. (if settings.persistent()then'Autosaved to file'else'Session only: file APIs unavailable'),
+                })
+
+                toggle(tab, settings, 'autoJoin', 'Auto Join Odyssey Adventure',
+[[From the lobby, start an Odyssey: Adventure run with the character and powers below.]])
+
+                local character = Style.section(tab, 'Character', 'user-round', false)
+
+                choice(character, settings, 'character', 'Select Character',
+[[The run's character (takes your first unit slot, free to place).]], catalog.characters)
+                choice(character, settings, 'slot1', 'Slot 1', 'Run-start power card. None leaves the slot empty.', withNone(catalog.powers))
+                choice(character, settings, 'slot2', 'Slot 2',
+[[Second power card; needs Loadout Slot 2 (bought in the Stitches Shop).]], withNone(catalog.powers))
+
+                local misc = Style.section(tab, 'Miscellaneous', 'wrench', false)
+                local route = Style.sub(misc, 'Auto Route Atlas', 'route')
+
+                slider(route, settings, 'secondPriorityFloor', 'Use Second Prioritize after Floor',
+[[From this floor on, the Second Floor Prioritize order is used.]])
+                priorityEditor(route, settings, 'floorPriority', 'Floor Prioritize', 'Next room to pick on the Route Atlas, first is preferred.')
+                priorityEditor(route, settings, 'secondFloorPriority', 'Second Floor Prioritize', 'Used instead after the floor above.')
+                toggle(misc, settings, 'autoUnitReward', 'Auto Choose Unit Reward',
+[[After an Elite floor, take the highest-rarity unit offered; skipped when off.]])
+                toggle(misc, settings, 'autoBuyItches', 'Auto Buy Itches',
+[[Buy from the Stitches NPC when it appears on the map and you have enough Yen.]])
+
+                local characterCard = Style.section(tab, 'Auto Character Card', 'id-card', false)
+
+                toggle(characterCard, settings, 'autoCharacterCard', 'Auto Character Card',
+[[After an Elite floor, pick the character (unit) card; skipped when off.]])
+
+                local basicCard = Style.section(tab, 'Auto Basic Card', 'layers', false)
+
+                toggle(basicCard, settings, 'autoBasicCard', 'Auto Basic Card',
+[[After each floor, pick a basic card by the priority below; skipped when off.]])
+                priorityEditor(basicCard, settings, 'cardPriority', 'Card Priority', 'Basic card (Odyssey modifier) priority, first is preferred.')
+
+                local shop = Style.section(tab, 'Auto Stitches Shop', 'store', false)
+
+                toggle(shop, settings, 'autoStitchesShop', 'Auto Stitches Shop',
+[[On a Shop floor, buy the items selected below with Odyssey Coins; skipped when off.]])
+                multi(shop, settings, 'buyBasicCards', 'Buy Basic Card', 'Basic cards to buy.', catalog.basicCards)
+                multi(shop, settings, 'buyStarterCards', 'Buy Starter Card', 'Power cards to unlock.', catalog.powers)
+                multi(shop, settings, 'buyTraits', 'Buy Unit Trait', 'Traits to buy for a unit without one.', catalog.traits)
+                multi(shop, settings, 'buyMemoria', 'Buy Unit Memoria', 'Memoria rarities to buy for your first-slot unit.', catalog.memoriaRarities)
+
+                local completion = Style.section(tab, 'Run Completion', 'flag', false)
+
+                toggle(completion, settings, 'autoCashOut', 'Auto Cash Out', 'Cash out between floors once the floor below is cleared.')
+                slider(completion, settings, 'cashOutFloor', 'Cash out at floor', 'Cleared floors before cashing out.')
+                toggle(completion, settings, 'autoStartNewRun', 'Auto Start New Run', 'Start another Adventure run after cashing out.')
+                toggle(completion, settings, 'autoAscension', 'Auto Ascension',
+[[Ascend in the lobby once Level Tree level 100 is reached and the game allows it.]])
+
+                local memorized = Style.section(tab, 'Memorized Modifier', 'brain', false)
+
+                toggle(memorized, settings, 'autoMemorized', 'Auto Select Memorized Memoria',
+[[When the Memorized power offers a pick at run start, choose the memoria below.]])
+
+                local saved = settings.get('memoria')
+
+                memorized:Dropdown({
+                    Title = 'Memoria',
+                    Desc = 'Owned memoria to equip on your character for the run.',
+                    Values = if saved == Settings.NONE then{
+                        Settings.NONE,
+                    }else{
+                        Settings.NONE,
+                        saved,
+                    },
+                    Value = saved,
+                    Callback = function(value)
+                        settings.set('memoria', value)
+                    end,
+                })
+                memorized:Button({
+                    Title = 'Refresh Inventory',
+                    Desc = 'Reload your owned memoria into the list.',
+                    Callback = function()
+                        setDesc(status,
+[[Refresh Inventory: reading your memoria is not built yet (runtime pending).]])
+                    end,
+                })
+
+                local failsafe = Style.section(tab, 'Stage Failsafe', 'timer', false)
+
+                toggle(failsafe, settings, 'failsafe', 'Teleport Lobby if Stage not Finished',
+[[Go back to the lobby when a floor runs longer than the time below (stuck or bugged floors).]])
+                slider(failsafe, settings, 'failsafeMinutes', 'Failsafe Time (minute)', 'Minutes before the failsafe acts.')
+
+                return settings
+            end
+
+            return Page
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.v()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.v
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.v = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
             local Style = __DARKLUA_BUNDLE_MODULES.e()
             local Storage = __DARKLUA_BUNDLE_MODULES.q()
             local Document = __DARKLUA_BUNDLE_MODULES.p()
@@ -5898,14 +6877,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.t()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.t
+        function __DARKLUA_BUNDLE_MODULES.w()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.w
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.t = v
+                __DARKLUA_BUNDLE_MODULES.cache.w = v
             end
 
             return v.c
@@ -6756,14 +7735,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.u()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.u
+        function __DARKLUA_BUNDLE_MODULES.x()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.x
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.u = v
+                __DARKLUA_BUNDLE_MODULES.cache.x = v
             end
 
             return v.c
@@ -6772,7 +7751,7 @@ do
     do
         local function __modImpl()
             local Document = __DARKLUA_BUNDLE_MODULES.p()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.u()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.x()
             local Runtime = {}
             local POLL_SECONDS = 0.2
             local ACTION_TIMEOUT = 12
@@ -7831,14 +8810,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.v()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.v
+        function __DARKLUA_BUNDLE_MODULES.y()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.y
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.v = v
+                __DARKLUA_BUNDLE_MODULES.cache.y = v
             end
 
             return v.c
@@ -7978,14 +8957,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.w()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.w
+        function __DARKLUA_BUNDLE_MODULES.z()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.z
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.w = v
+                __DARKLUA_BUNDLE_MODULES.cache.z = v
             end
 
             return v.c
@@ -8434,14 +9413,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.x()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.x
+        function __DARKLUA_BUNDLE_MODULES.A()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.A
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.x = v
+                __DARKLUA_BUNDLE_MODULES.cache.A = v
             end
 
             return v.c
@@ -8708,14 +9687,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.y()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.y
+        function __DARKLUA_BUNDLE_MODULES.B()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.B
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.y = v
+                __DARKLUA_BUNDLE_MODULES.cache.B = v
             end
 
             return v.c
@@ -8867,14 +9846,14 @@ do
             return Rules
         end
 
-        function __DARKLUA_BUNDLE_MODULES.z()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.z
+        function __DARKLUA_BUNDLE_MODULES.C()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.C
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.z = v
+                __DARKLUA_BUNDLE_MODULES.cache.C = v
             end
 
             return v.c
@@ -8883,7 +9862,7 @@ do
     do
         local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Rules = __DARKLUA_BUNDLE_MODULES.z()
+            local Rules = __DARKLUA_BUNDLE_MODULES.C()
             local Adapter = {}
 
             local function resolve(root, path)
@@ -9308,14 +10287,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.A()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.A
+        function __DARKLUA_BUNDLE_MODULES.D()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.D
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.A = v
+                __DARKLUA_BUNDLE_MODULES.cache.D = v
             end
 
             return v.c
@@ -9325,8 +10304,8 @@ do
         local function __modImpl()
             local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.A()
-            local Rules = __DARKLUA_BUNDLE_MODULES.z()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.D()
+            local Rules = __DARKLUA_BUNDLE_MODULES.C()
             local Runtime = {}
             local STORAGE_KEY = 'AnimeVanguardsAutoPlay'
             local SCHEMA_VERSION = 3
@@ -9913,14 +10892,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.B()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.B
+        function __DARKLUA_BUNDLE_MODULES.E()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.E
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.B = v
+                __DARKLUA_BUNDLE_MODULES.cache.E = v
             end
 
             return v.c
@@ -10378,14 +11357,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.C()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.C
+        function __DARKLUA_BUNDLE_MODULES.F()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.F
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.C = v
+                __DARKLUA_BUNDLE_MODULES.cache.F = v
             end
 
             return v.c
@@ -10555,14 +11534,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.D()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.D
+        function __DARKLUA_BUNDLE_MODULES.G()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.G
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.D = v
+                __DARKLUA_BUNDLE_MODULES.cache.G = v
             end
 
             return v.c
@@ -10855,14 +11834,14 @@ do
             return Embed
         end
 
-        function __DARKLUA_BUNDLE_MODULES.E()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.E
+        function __DARKLUA_BUNDLE_MODULES.H()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.H
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.E = v
+                __DARKLUA_BUNDLE_MODULES.cache.H = v
             end
 
             return v.c
@@ -10870,7 +11849,7 @@ do
     end
     do
         local function __modImpl()
-            local Embed = __DARKLUA_BUNDLE_MODULES.E()
+            local Embed = __DARKLUA_BUNDLE_MODULES.H()
             local Events = {}
             local UNIT_ROWS = 6
             local SHARE_BAR = 10
@@ -11319,14 +12298,14 @@ do
             return Events
         end
 
-        function __DARKLUA_BUNDLE_MODULES.F()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.F
+        function __DARKLUA_BUNDLE_MODULES.I()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.I
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.F = v
+                __DARKLUA_BUNDLE_MODULES.cache.I = v
             end
 
             return v.c
@@ -11335,7 +12314,7 @@ do
     do
         local function __modImpl()
             local Style = __DARKLUA_BUNDLE_MODULES.e()
-            local Events = __DARKLUA_BUNDLE_MODULES.F()
+            local Events = __DARKLUA_BUNDLE_MODULES.I()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Page = {}
             local WEBHOOK = (config).webhook
@@ -11503,14 +12482,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.G()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.G
+        function __DARKLUA_BUNDLE_MODULES.J()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.J
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.G = v
+                __DARKLUA_BUNDLE_MODULES.cache.J = v
             end
 
             return v.c
@@ -11726,14 +12705,14 @@ do
             return Sender
         end
 
-        function __DARKLUA_BUNDLE_MODULES.H()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.H
+        function __DARKLUA_BUNDLE_MODULES.K()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.K
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.H = v
+                __DARKLUA_BUNDLE_MODULES.cache.K = v
             end
 
             return v.c
@@ -11837,14 +12816,14 @@ do
             return Session
         end
 
-        function __DARKLUA_BUNDLE_MODULES.I()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.I
+        function __DARKLUA_BUNDLE_MODULES.L()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.L
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.I = v
+                __DARKLUA_BUNDLE_MODULES.cache.L = v
             end
 
             return v.c
@@ -11855,10 +12834,10 @@ do
             local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local metadata = __DARKLUA_BUNDLE_MODULES.b()
-            local Embed = __DARKLUA_BUNDLE_MODULES.E()
-            local Events = __DARKLUA_BUNDLE_MODULES.F()
-            local Sender = __DARKLUA_BUNDLE_MODULES.H()
-            local Session = __DARKLUA_BUNDLE_MODULES.I()
+            local Embed = __DARKLUA_BUNDLE_MODULES.H()
+            local Events = __DARKLUA_BUNDLE_MODULES.I()
+            local Sender = __DARKLUA_BUNDLE_MODULES.K()
+            local Session = __DARKLUA_BUNDLE_MODULES.L()
             local Runtime = {}
             local STORAGE_KEY = 'AnimeVanguardsWebhook'
             local SCHEMA_VERSION = 1
@@ -13222,14 +14201,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.J()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.J
+        function __DARKLUA_BUNDLE_MODULES.M()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.M
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.J = v
+                __DARKLUA_BUNDLE_MODULES.cache.M = v
             end
 
             return v.c
@@ -13306,14 +14285,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.K()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.K
+        function __DARKLUA_BUNDLE_MODULES.N()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.N
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.K = v
+                __DARKLUA_BUNDLE_MODULES.cache.N = v
             end
 
             return v.c
@@ -13657,14 +14636,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.L()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.L
+        function __DARKLUA_BUNDLE_MODULES.O()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.O
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.L = v
+                __DARKLUA_BUNDLE_MODULES.cache.O = v
             end
 
             return v.c
@@ -13677,18 +14656,19 @@ local metadata = __DARKLUA_BUNDLE_MODULES.b()
 local config = __DARKLUA_BUNDLE_MODULES.c()
 local JoinerPage = __DARKLUA_BUNDLE_MODULES.n()
 local JoinerRuntime = __DARKLUA_BUNDLE_MODULES.s()
-local MacroPage = __DARKLUA_BUNDLE_MODULES.t()
-local MacroRuntime = __DARKLUA_BUNDLE_MODULES.v()
-local GamePage = __DARKLUA_BUNDLE_MODULES.w()
-local GameAdapter = __DARKLUA_BUNDLE_MODULES.x()
-local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.y()
-local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.B()
-local StatusPage = __DARKLUA_BUNDLE_MODULES.C()
-local DashboardPage = __DARKLUA_BUNDLE_MODULES.D()
-local WebhookPage = __DARKLUA_BUNDLE_MODULES.G()
-local WebhookRuntime = __DARKLUA_BUNDLE_MODULES.J()
-local MiscPage = __DARKLUA_BUNDLE_MODULES.K()
-local MiscRuntime = __DARKLUA_BUNDLE_MODULES.L()
+local AdventurePage = __DARKLUA_BUNDLE_MODULES.v()
+local MacroPage = __DARKLUA_BUNDLE_MODULES.w()
+local MacroRuntime = __DARKLUA_BUNDLE_MODULES.y()
+local GamePage = __DARKLUA_BUNDLE_MODULES.z()
+local GameAdapter = __DARKLUA_BUNDLE_MODULES.A()
+local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.B()
+local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.E()
+local StatusPage = __DARKLUA_BUNDLE_MODULES.F()
+local DashboardPage = __DARKLUA_BUNDLE_MODULES.G()
+local WebhookPage = __DARKLUA_BUNDLE_MODULES.J()
+local WebhookRuntime = __DARKLUA_BUNDLE_MODULES.M()
+local MiscPage = __DARKLUA_BUNDLE_MODULES.N()
+local MiscRuntime = __DARKLUA_BUNDLE_MODULES.O()
 local active = false
 local joiner = JoinerRuntime.new()
 local macro = MacroRuntime.new()
@@ -13724,6 +14704,17 @@ local pages = {
         iconColor = 'primary',
         render = function(tab)
             JoinerPage.mount(tab, nil, joiner)
+        end,
+    },
+    {
+        title = 'Odyssey Adventure',
+        icon = 'compass',
+        description =
+[[Odyssey: Adventure runs: character, Route Atlas, cards, Stitches Shop and cash out (settings only).]],
+        group = 'Farming',
+        iconColor = 'violet',
+        render = function(tab)
+            AdventurePage.mount(tab)
         end,
     },
     {

@@ -130,6 +130,7 @@ function check(){
     }
     console.log(run(tool('luau'),['tests/unit/run.luau']));
     console.log(run(tool('luau'),['tests/unit/run2.luau']));
+    console.log(run(tool('luau'),['tests/unit/run3.luau']));
     const integration='local run=require("../tests/integration/Bootstrap")\nrun('+long(read('dist/loader.lua'))+')\n';
     write('work/integration.luau',integration);
     console.log(run(tool('luau'),['work/integration.luau']));
