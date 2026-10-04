@@ -29,6 +29,9 @@ local UNLOCKED: { [string]: boolean } = {
     autoStitchesShop = true,
     autoUnitReward = true,
     autoBossReward = true,
+    autoStartNewRun = true,
+    failsafe = true,
+    failsafeMinutes = true,
     buyBasicCards = true,
     buyStarterCards = true,
     buyTraits = true,
@@ -336,7 +339,7 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?, joi
         settings,
         "autoStartNewRun",
         "Auto Start New Run",
-        "Start another Adventure run after cashing out."
+        "When a run ends (the end screen shows), go back to the lobby so Auto Join starts the next run."
     )
     toggle(
         completion,

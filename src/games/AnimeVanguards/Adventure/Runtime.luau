@@ -22,6 +22,8 @@ local SHOP_WATCH_SECONDS: number = (config :: any).thresholds.adventureShopWatch
 local SHOP_ASK_SECONDS: number = (config :: any).thresholds.adventureShopAskSeconds
 local SHOP_UI_GRACE_SECONDS: number = (config :: any).thresholds.adventureShopUiGraceSeconds
 local HISTORY_LIMIT = 40
+local END_SCREEN_SECONDS = 6
+local LOBBY_RETRY_SECONDS = 20
 local TASK_WAIT_SECONDS: number = (config :: any).thresholds.adventureTaskWaitSeconds
 local TASK_WAIT_RETRY_SECONDS: number = (config :: any).thresholds.adventureTaskWaitRetrySeconds
 local VOTE_RETRY_SECONDS: number = (config :: any).thresholds.adventureVoteRetrySeconds
@@ -161,6 +163,26 @@ local function liveDependencies(): any
                 return false
             end
         end)(),
+        -- True while the match end screen is shown (observed: PlayerGui.EndScreen.Holder; a failed run shows it).
+        endScreenShown = function(): boolean
+            local players: any = env.game:GetService("Players")
+            local gui: any = players.LocalPlayer and players.LocalPlayer:FindFirstChild("PlayerGui")
+            local screen: any = gui and gui:FindFirstChild("EndScreen")
+            local holder: any = screen and screen:FindFirstChild("Holder")
+            return screen ~= nil
+                and screen.Enabled == true
+                and holder ~= nil
+                and holder.Visible == true
+                and holder.AbsoluteSize.X > 0
+        end,
+        returnToLobby = function(): boolean
+            local lobby: any = optionalModule(replicated, paths.lobbyReturnClient)
+            local request = if type(lobby) == "table" then lobby.RequestTeleportToLobby else nil
+            if type(request) == "table" and type(request.Fire) == "function" then
+                return (pcall(request.Fire))
+            end
+            return false
+        end,
         roomKind = function(): string?
             local data = if handler then handler.GameData else nil
             return if type(data) == "table" and type(data.AdventureRoomKind) == "string"
@@ -1038,6 +1060,10 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
     local lastFloorSeen: number? = nil
     local lastShopAsk = -math.huge
     local lastSeed: string? = nil
+    local failsafeFloor: any = nil
+    local failsafeSince = 0
+    local endSince: number? = nil
+    local lastLobbyAt = -math.huge
     local function watchShop()
         local taskApi: any = deps.task
         if not self.active or type(taskApi) ~= "table" or type(taskApi.delay) ~= "function" then
@@ -1056,6 +1082,42 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         end
         if seed ~= nil then
             lastSeed = seed
+        end
+        -- The run is over (end screen) or a floor runs too long: go back to the lobby; Auto Join starts the next run.
+        local now0 = deps.clock()
+        local floorDep: any = deps.floor
+        local floorNow: any = if type(floorDep) == "function" then (floorDep :: any)() else nil
+        if floorNow ~= failsafeFloor then
+            failsafeFloor = floorNow
+            failsafeSince = now0
+        end
+        local endShown: any = deps.endScreenShown
+        local isEnd = type(endShown) == "function" and (endShown :: any)() == true
+        if isEnd then
+            endSince = if endSince then endSince else now0
+        else
+            endSince = nil
+        end
+        local saved0 = getSettings()
+        local reason: string? = nil
+        if
+            isEnd
+            and saved0.get("autoStartNewRun") == true
+            and now0 - (endSince :: number) >= END_SCREEN_SECONDS
+        then
+            reason = "the run ended"
+        elseif
+            saved0.get("failsafe") == true
+            and now0 - failsafeSince >= (tonumber(saved0.get("failsafeMinutes")) or 30) * 60
+        then
+            reason = "floor " .. tostring(floorNow) .. " ran too long"
+        end
+        if reason and now0 - lastLobbyAt >= LOBBY_RETRY_SECONDS then
+            local backFn: any = deps.returnToLobby
+            if type(backFn) == "function" and (backFn :: any)() then
+                lastLobbyAt = now0
+                setStatus("Returning to the lobby: " .. reason)
+            end
         end
         local ok = pcall(function()
             local floorOf: any = deps.floor

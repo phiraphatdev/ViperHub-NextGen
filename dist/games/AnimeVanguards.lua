@@ -7685,6 +7685,9 @@ do
                 autoStitchesShop = true,
                 autoUnitReward = true,
                 autoBossReward = true,
+                autoStartNewRun = true,
+                failsafe = true,
+                failsafeMinutes = true,
                 buyBasicCards = true,
                 buyStarterCards = true,
                 buyTraits = true,
@@ -7895,7 +7898,8 @@ do
 
                 toggle(completion, settings, 'autoCashOut', 'Auto Cash Out', 'Cash out between floors once the floor below is cleared.')
                 slider(completion, settings, 'cashOutFloor', 'Cash out at floor', 'Cleared floors before cashing out.')
-                toggle(completion, settings, 'autoStartNewRun', 'Auto Start New Run', 'Start another Adventure run after cashing out.')
+                toggle(completion, settings, 'autoStartNewRun', 'Auto Start New Run',
+[[When a run ends (the end screen shows), go back to the lobby so Auto Join starts the next run.]])
                 toggle(completion, settings, 'autoAscension', 'Auto Ascension',
 [[Ascend in the lobby once Level Tree level 100 is reached and the game allows it.]])
 
@@ -8597,6 +8601,8 @@ do
             local SHOP_ASK_SECONDS = (config).thresholds.adventureShopAskSeconds
             local SHOP_UI_GRACE_SECONDS = (config).thresholds.adventureShopUiGraceSeconds
             local HISTORY_LIMIT = 40
+            local END_SCREEN_SECONDS = 6
+            local LOBBY_RETRY_SECONDS = 20
             local TASK_WAIT_SECONDS = (config).thresholds.adventureTaskWaitSeconds
             local TASK_WAIT_RETRY_SECONDS = (config).thresholds.adventureTaskWaitRetrySeconds
             local VOTE_RETRY_SECONDS = (config).thresholds.adventureVoteRetrySeconds
@@ -8754,6 +8760,24 @@ do
                             return false
                         end
                     end)(),
+                    endScreenShown = function()
+                        local players = env.game:GetService('Players')
+                        local gui = players.LocalPlayer and players.LocalPlayer:FindFirstChild('PlayerGui')
+                        local screen = gui and gui:FindFirstChild('EndScreen')
+                        local holder = screen and screen:FindFirstChild('Holder')
+
+                        return screen ~= nil and screen.Enabled == true and holder ~= nil and holder.Visible == true and holder.AbsoluteSize.X > 0
+                    end,
+                    returnToLobby = function()
+                        local lobby = optionalModule(replicated, paths.lobbyReturnClient)
+                        local request = if type(lobby) == 'table'then lobby.RequestTeleportToLobby else nil
+
+                        if type(request) == 'table' and type(request.Fire) == 'function' then
+                            return (pcall(request.Fire))
+                        end
+
+                        return false
+                    end,
                     roomKind = function()
                         local data = if handler then handler.GameData else nil
 
@@ -9704,6 +9728,10 @@ do
                 local lastFloorSeen = nil
                 local lastShopAsk = -math.huge
                 local lastSeed = nil
+                local failsafeFloor = nil
+                local failsafeSince = 0
+                local endSince = nil
+                local lastLobbyAt = -math.huge
 
                 local function watchShop()
                     local taskApi = deps.task
@@ -9728,6 +9756,42 @@ do
                     end
                     if seed ~= nil then
                         lastSeed = seed
+                    end
+
+                    local now0 = deps.clock()
+                    local floorDep = deps.floor
+                    local floorNow = if type(floorDep) == 'function'then(floorDep)()else nil
+
+                    if floorNow ~= failsafeFloor then
+                        failsafeFloor = floorNow
+                        failsafeSince = now0
+                    end
+
+                    local endShown = deps.endScreenShown
+                    local isEnd = type(endShown) == 'function' and (endShown)() == true
+
+                    if isEnd then
+                        endSince = if endSince then endSince else now0
+                    else
+                        endSince = nil
+                    end
+
+                    local saved0 = getSettings()
+                    local reason = nil
+
+                    if isEnd and saved0.get('autoStartNewRun') == true and now0 - (endSince) >= END_SCREEN_SECONDS then
+                        reason = 'the run ended'
+                    elseif saved0.get('failsafe') == true and now0 - failsafeSince >= (tonumber(saved0.get('failsafeMinutes')) or 30) * 60 then
+                        reason = 'floor ' .. tostring(floorNow) .. ' ran too long'
+                    end
+                    if reason and now0 - lastLobbyAt >= LOBBY_RETRY_SECONDS then
+                        local backFn = deps.returnToLobby
+
+                        if type(backFn) == 'function' and (backFn)() then
+                            lastLobbyAt = now0
+
+                            setStatus('Returning to the lobby: ' .. reason)
+                        end
                     end
 
                     local ok = pcall(function()
