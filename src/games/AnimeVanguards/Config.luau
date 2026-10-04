@@ -23,6 +23,7 @@ return table.freeze({
         gameHandler = "Modules.Gameplay.GameHandler",
         autoPlayHandler = "Modules.Gameplay.AutoPlay.AutoPlayHandler",
         gameOdysseyClient = "NetworkCode.GameOdysseyClient",
+        stageMechanicsClient = "NetworkCode.GameStageMechanicsClient",
         adventureMapRelay = "Modules.Gameplay.Odyssey.Adventure.MapSnapshotRelay", -- StarterPlayer
         autoPlayClient = "NetworkCode.GameAutoPlayClient",
         wavesClient = "NetworkCode.GameWavesClient",
@@ -411,8 +412,9 @@ return table.freeze({
         -- In-match Adventure picks: wait before answering an offer, and ignore an identical offer for this long.
         adventurePickDelaySeconds = 0.8,
         adventureRepeatSeconds = 4,
-        -- Between two treasure chest openings.
-        adventureChestGapSeconds = 1,
+        -- Slowly teleport to chest, settle position, and wait between openings to avoid desync/bugs.
+        adventureChestTeleportDelaySeconds = 1.0,
+        adventureChestGapSeconds = 1.8,
         -- Between two Stitches Shop purchases.
         adventureShopGapSeconds = 1.2,
         -- The shop watcher checks the room this often and asks for the shop state at most this often.

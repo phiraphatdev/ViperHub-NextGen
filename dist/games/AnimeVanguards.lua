@@ -71,6 +71,7 @@ do
                     gameHandler = 'Modules.Gameplay.GameHandler',
                     autoPlayHandler = 'Modules.Gameplay.AutoPlay.AutoPlayHandler',
                     gameOdysseyClient = 'NetworkCode.GameOdysseyClient',
+                    stageMechanicsClient = 'NetworkCode.GameStageMechanicsClient',
                     adventureMapRelay = 'Modules.Gameplay.Odyssey.Adventure.MapSnapshotRelay',
                     autoPlayClient = 'NetworkCode.GameAutoPlayClient',
                     wavesClient = 'NetworkCode.GameWavesClient',
@@ -552,7 +553,8 @@ do
                     adventureStateMaxAgeSeconds = 600,
                     adventurePickDelaySeconds = 0.8,
                     adventureRepeatSeconds = 4,
-                    adventureChestGapSeconds = 1,
+                    adventureChestTeleportDelaySeconds = 1,
+                    adventureChestGapSeconds = 1.8,
                     adventureShopGapSeconds = 1.2,
                     adventureShopWatchSeconds = 2,
                     adventureShopAskSeconds = 6,
@@ -8530,7 +8532,8 @@ do
             local Runtime = {}
             local PICK_DELAY_SECONDS = (config).thresholds.adventurePickDelaySeconds
             local REPEAT_SECONDS = (config).thresholds.adventureRepeatSeconds
-            local CHEST_GAP_SECONDS = (config).thresholds.adventureChestGapSeconds
+            local CHEST_TELEPORT_DELAY_SECONDS = (config).thresholds.adventureChestTeleportDelaySeconds or 0.3
+            local CHEST_GAP_SECONDS = (config).thresholds.adventureChestGapSeconds or 0.8
             local SHOP_GAP_SECONDS = (config).thresholds.adventureShopGapSeconds
             local SHOP_WATCH_SECONDS = (config).thresholds.adventureShopWatchSeconds
             local SHOP_ASK_SECONDS = (config).thresholds.adventureShopAskSeconds
@@ -8590,8 +8593,57 @@ do
                         local hud = gui and gui:FindFirstChild('AdventureHUD')
                         local root = hud and hud:FindFirstChild('AdventureMapRoot')
 
-                        if root and root.Visible then
-                            root.Visible = false
+                        if root then
+                            root.Visible = true
+
+                            local closeBtn = root:FindFirstChild('Close', true)
+                            local firesignal = ((getfenv())).firesignal
+
+                            if closeBtn and firesignal and closeBtn.Activated then
+                                pcall(firesignal, closeBtn.Activated)
+
+                                return
+                            end
+
+                            local ac = hud:FindFirstChild('AdventureControls', true)
+
+                            if ac and firesignal and root:FindFirstChildWhichIsA('Frame') ~= nil then
+                                for _, ch in ipairs(ac:GetChildren())do
+                                    local child = ch
+
+                                    if child.Name == 'Button' then
+                                        local lbl = child:FindFirstChild('Label', true)
+
+                                        if lbl and lbl.Text == 'Map' then
+                                            local btn = child:FindFirstChildWhichIsA('GuiButton', true)
+
+                                            if btn and btn.Activated then
+                                                pcall(firesignal, btn.Activated)
+
+                                                return
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+
+                            local vim = env.game:GetService('VirtualInputManager')
+
+                            if closeBtn and vim and closeBtn.AbsoluteSize.X > 0 then
+                                local pos = closeBtn.AbsolutePosition + closeBtn.AbsoluteSize / 2
+
+                                pcall(function()
+                                    vim:SendMouseButtonEvent(pos.X, pos.Y, 0, true, env.game, 1)
+
+                                    local tApi = env.task
+
+                                    if tApi and type(tApi.wait) == 'function' then
+                                        (tApi.wait)(0.05)
+                                    end
+
+                                    vim:SendMouseButtonEvent(pos.X, pos.Y, 0, false, env.game, 1)
+                                end)
+                            end
                         end
                     end,
                     roomKind = function()
@@ -8630,6 +8682,156 @@ do
                     end,
                     mapRelay = optionalModule(env.game:GetService('StarterPlayer'), paths.adventureMapRelay),
                     events = optionalModule(replicated, paths.gameOdysseyClient),
+                    teleportTo = function(chestCFrame)
+                        local players = env.game and env.game:GetService('Players')
+                        local lp = players and players.LocalPlayer
+                        local char = lp and lp.Character
+                        local hrp = char and char:FindFirstChild('HumanoidRootPart')
+
+                        if hrp and chestCFrame ~= nil then
+                            local ok = pcall(function()
+                                local cfGlobal = ((getfenv())).CFrame
+                                local offset = if cfGlobal then cfGlobal.new(0, 3, 0)else nil
+
+                                hrp.CFrame = if offset then chestCFrame * offset else chestCFrame
+
+                                local v3Global = ((getfenv())).Vector3
+
+                                if v3Global and type(v3Global.new) == 'function' then
+                                    local zero = (v3Global.new)(0, 0, 0)
+
+                                    hrp.AssemblyLinearVelocity = zero
+                                    hrp.AssemblyAngularVelocity = zero
+                                end
+                            end)
+
+                            return ok
+                        end
+
+                        return false
+                    end,
+                    getUnopenedChests = function()
+                        local workspaceService = env.game:GetService('Workspace')
+                        local ignore = workspaceService and workspaceService:FindFirstChild('Ignore')
+                        local list = {}
+
+                        if ignore then
+                            for _, child in ipairs(ignore:GetChildren())do
+                                local ch = child
+
+                                if ch:IsA('Model') and string.sub(ch.Name, 1, 13) == 'OdysseyChest_' then
+                                    local id = ch:GetAttribute('Id')
+                                    local hl = ch:FindFirstChild('OdysseyChestHighlight')
+
+                                    if hl and type(id) == 'string' then
+                                        local part = ch:FindFirstChild('Cylinder.001') or ch.PrimaryPart or ch:FindFirstChildWhichIsA('BasePart')
+                                        local cf = if part then part.CFrame else nil
+
+                                        table.insert(list, {
+                                            id = id,
+                                            cframe = cf,
+                                        })
+                                    end
+                                end
+                            end
+                        end
+
+                        return list
+                    end,
+                    openChestRequest = function(chestId)
+                        local stageMechanics = optionalModule(replicated, paths.stageMechanicsClient)
+                        local req = if stageMechanics then stageMechanics.OdysseyChestOpenRequest else nil
+
+                        if type(req) == 'table' and type(req.Fire) == 'function' then
+                            local ok = pcall(req.Fire, chestId)
+                            local pickReq = stageMechanics.OdysseyChestPickUpItemRequest
+
+                            if type(pickReq) == 'table' and type(pickReq.Fire) == 'function' then
+                                pcall(pickReq.Fire, chestId)
+                            end
+
+                            return ok
+                        end
+
+                        return false
+                    end,
+                    readActiveCardOffer = function()
+                        local players = env.game and env.game:GetService('Players')
+                        local lp = players and players.LocalPlayer
+                        local pgui = lp and lp:FindFirstChild('PlayerGui')
+                        local ah = pgui and pgui:FindFirstChild('AdventureHUD')
+                        local cc = ah and ah:FindFirstChild('ChooseCard', true)
+
+                        if not cc or not cc.Visible then
+                            return nil
+                        end
+
+                        local frame = cc:FindFirstChild('ScrollIndicatorFrame', true)
+
+                        if not frame then
+                            return nil
+                        end
+
+                        local options = {}
+
+                        for _, ch in ipairs(frame:GetChildren())do
+                            local btn = ch
+
+                            if btn:IsA('ImageButton') then
+                                local title = btn:FindFirstChild('Title', true)
+                                local rarity = btn:FindFirstChild('Rarity', true)
+
+                                if title and title:IsA('TextLabel') and title.Text ~= '' then
+                                    table.insert(options, {
+                                        CardName = title.Text,
+                                        Rarity = if rarity and rarity:IsA('TextLabel')then rarity.Text else'Rare',
+                                    })
+                                end
+                            end
+                        end
+
+                        if #options > 0 then
+                            return {Options = options}
+                        end
+
+                        return nil
+                    end,
+                    dismissCardUI = function(index)
+                        local players = env.game and env.game:GetService('Players')
+                        local lp = players and players.LocalPlayer
+                        local pgui = lp and lp:FindFirstChild('PlayerGui')
+                        local ah = pgui and pgui:FindFirstChild('AdventureHUD')
+                        local cc = ah and ah:FindFirstChild('ChooseCard', true)
+
+                        if cc and cc.Visible then
+                            local frame = cc:FindFirstChild('ScrollIndicatorFrame', true)
+                            local buttons = {}
+
+                            if frame then
+                                for _, ch in ipairs(frame:GetChildren())do
+                                    local btn = ch
+
+                                    if btn:IsA('ImageButton') then
+                                        table.insert(buttons, btn)
+                                    end
+                                end
+                            end
+
+                            local targetBtn = buttons[index]
+
+                            if targetBtn then
+                                local firesignal = ((getfenv())).firesignal
+
+                                if firesignal and targetBtn.Activated then
+                                    pcall(firesignal, targetBtn.Activated)
+                                end
+                            end
+
+                            pcall(function()
+                                cc.Visible = false
+                            end)
+                        end
+                    end,
                     isAdventure = function()
                         return handler ~= nil and Detect.isAdventureMatch(handler.GameData)
                     end,
@@ -8694,14 +8896,23 @@ do
 
                 local function sendPick(index)
                     local entry = if deps.events then deps.events.CardPickPick else nil
+                    local ok = false
 
-                    if type(entry) ~= 'table' or type(entry.Fire) ~= 'function' then
-                        return false
+                    if type(entry) == 'table' and type(entry.Fire) == 'function' then
+                        local fireFn = entry.Fire
+
+                        ok = (pcall(fireFn, {Choice = index}))
                     end
 
-                    local fireFn = entry.Fire
+                    local dismissFn = deps.dismissCardUI
 
-                    return (pcall(fireFn, {Choice = index}))
+                    if type(dismissFn) == 'function' then
+                        pcall(dismissFn, index)
+
+                        ok = true
+                    end
+
+                    return ok
                 end
                 local function onBasicOffer(offer)
                     if not self.active or getSettings().get('autoBasicCard') ~= true or not deps.isAdventure() then
@@ -8939,6 +9150,12 @@ do
 
                             setStatus(if index then'Auto Character Card: picked option ' .. tostring(index)else'Auto Character Card: skipped (hand full)')
                         end
+
+                        local dismissFn = deps.dismissCardUI
+
+                        if type(dismissFn) == 'function' and index then
+                            pcall(dismissFn, index)
+                        end
                     end
 
                     local taskApi = deps.task
@@ -9063,28 +9280,98 @@ do
 
                     later(PICK_DELAY_SECONDS + SHOP_GAP_SECONDS * #plan, leave)
                 end
-                local function onTreasureBegin(info)
-                    if not self.active or type(info) ~= 'table' then
-                        return
-                    end
-                    if getSettings().get('openTreasure') ~= true then
-                        setStatus('Treasure floor: Open Treasure Chests is off')
 
-                        return
-                    end
-                    if not deps.isAdventure() then
-                        setStatus('Treasure floor: not recognized as an Adventure match')
+                local treasureHandling = false
+                local lastTreasureFloor = nil
 
+                local function runOpenChests(info)
+                    if treasureHandling or not self.active or getSettings().get('openTreasure') ~= true or not deps.isAdventure() then
                         return
                     end
+
+                    treasureHandling = true
 
                     setStatus('Treasure floor: opening chests')
 
-                    local total = if type(info.TotalChests) == 'number'then info.TotalChests else 6
-                    local picks = if type(info.PicksRemaining) == 'number'then info.PicksRemaining else 3
+                    local taskApi = deps.task
+
+                    local function later(seconds, action)
+                        if type(taskApi) == 'table' and type(taskApi.delay) == 'function' then
+                            (taskApi.delay)(seconds, action)
+                        else
+                            action()
+                        end
+                    end
+
+                    local getChestsFn = deps.getUnopenedChests
+                    local physicalChests = if type(getChestsFn) == 'function'then(getChestsFn)()else nil
+
+                    if type(physicalChests) == 'table' and #physicalChests > 0 then
+                        local picks = if type(info) == 'table' and type(info.PicksRemaining) == 'number'then info.PicksRemaining else 3
+                        local toOpen = {}
+
+                        for i = 1, math.min(#physicalChests, picks)do
+                            table.insert(toOpen, physicalChests[i])
+                        end
+
+                        for index, chest in toOpen do
+                            local delayTime = (index - 1) * (CHEST_TELEPORT_DELAY_SECONDS + CHEST_GAP_SECONDS)
+
+                            later(delayTime, function()
+                                if not self.active or getSettings().get('openTreasure') ~= true then
+                                    return
+                                end
+
+                                setStatus(string.format('Treasure floor: moving to chest %s/%s', tostring(index), tostring(#toOpen)))
+
+                                local tpFn = deps.teleportTo
+
+                                if type(tpFn) == 'function' and chest.cframe then
+                                    (tpFn)(chest.cframe)
+                                end
+                            end)
+                            later(delayTime + CHEST_TELEPORT_DELAY_SECONDS, function(
+                            )
+                                if not self.active or getSettings().get('openTreasure') ~= true then
+                                    return
+                                end
+
+                                local ok = false
+                                local openReqFn = deps.openChestRequest
+
+                                if type(openReqFn) == 'function' then
+                                    ok = (openReqFn)(chest.id)
+                                end
+
+                                local events = deps.events
+                                local entry = if events then events.TreasureOpenChest else nil
+
+                                if type(entry) == 'table' and type(entry.Fire) == 'function' then
+                                    pcall(entry.Fire, {ChestIndex = index})
+
+                                    ok = true
+                                end
+                                if ok then
+                                    self.chests += 1
+
+                                    setStatus('Opened treasure chest ' .. tostring(index) .. '/' .. tostring(#toOpen))
+                                end
+                                if index == #toOpen then
+                                    later(CHEST_GAP_SECONDS, function()
+                                        treasureHandling = false
+                                    end)
+                                end
+                            end)
+                        end
+
+                        return
+                    end
+
+                    local total = if type(info) == 'table' and type(info.TotalChests) == 'number'then info.TotalChests else 6
+                    local picks = if type(info) == 'table' and type(info.PicksRemaining) == 'number'then info.PicksRemaining else 3
                     local opened = {}
 
-                    if type(info.OpenedChests) == 'table' then
+                    if type(info) == 'table' and type(info.OpenedChests) == 'table' then
                         for key, value in info.OpenedChests do
                             if type(key) == 'number' and value then
                                 opened[key] = true
@@ -9103,32 +9390,54 @@ do
                         end
                     end
 
-                    local taskApi = deps.task
+                    if #order == 0 then
+                        treasureHandling = false
+
+                        return
+                    end
 
                     for position, chest in order do
                         local function open()
-                            local events = deps.events
-                            local entry = if events then events.TreasureOpenChest else nil
-
-                            if not self.active or type(entry) ~= 'table' or type(entry.Fire) ~= 'function' then
+                            if not self.active or getSettings().get('openTreasure') ~= true then
                                 return
                             end
 
-                            local fireFn = entry.Fire
+                            local events = deps.events
+                            local entry = if events then events.TreasureOpenChest else nil
 
-                            if pcall(fireFn, {ChestIndex = chest}) then
-                                self.chests += 1
+                            if type(entry) == 'table' and type(entry.Fire) == 'function' then
+                                local fireFn = entry.Fire
 
-                                setStatus('Opened treasure chest ' .. tostring(chest))
+                                if pcall(fireFn, {ChestIndex = chest}) then
+                                    self.chests += 1
+
+                                    setStatus('Opened treasure chest ' .. tostring(chest))
+                                end
+                            end
+                            if position == #order then
+                                treasureHandling = false
                             end
                         end
 
-                        if type(taskApi) == 'table' and type(taskApi.delay) == 'function' then
-                            (taskApi.delay)(PICK_DELAY_SECONDS * position + CHEST_GAP_SECONDS * (position - 1), open)
-                        else
-                            open()
-                        end
+                        later(PICK_DELAY_SECONDS * position + CHEST_GAP_SECONDS * (position - 1), open)
                     end
+                end
+                local function onTreasureBegin(info)
+                    if not self.active or type(info) ~= 'table' then
+                        return
+                    end
+                    if getSettings().get('openTreasure') ~= true then
+                        setStatus('Treasure floor: Open Treasure Chests is off')
+
+                        return
+                    end
+                    if not deps.isAdventure() then
+                        setStatus('Treasure floor: not recognized as an Adventure match')
+
+                        return
+                    end
+
+                    runOpenChests(info)
                 end
                 local function onUnitReward(kind, data)
                     if kind ~= 'Offer' or not self.active or getSettings().get('autoUnitReward') ~= true or not deps.isAdventure() then
@@ -9195,6 +9504,7 @@ do
                         if floor ~= lastFloorSeen then
                             lastFloorSeen = floor
                             shopHandled = false
+                            treasureHandling = false
                         end
 
                         local roomKindOf = deps.roomKind
@@ -9212,6 +9522,30 @@ do
                                 local askFire = ask.Fire
 
                                 pcall(askFire)
+                            end
+                        end
+                        if saved.get('openTreasure') == true and not treasureHandling and deps.isAdventure() then
+                            local kind = if type(roomKindOf) == 'function'then(roomKindOf)()else nil
+                            local getChestsFn = deps.getUnopenedChests
+                            local physical = if type(getChestsFn) == 'function'then(getChestsFn)()else nil
+
+                            if kind == 'Treasure' or (type(physical) == 'table' and #physical > 0) then
+                                if floor ~= lastTreasureFloor then
+                                    lastTreasureFloor = floor
+
+                                    runOpenChests()
+                                end
+                            end
+                        end
+                        if saved.get('autoBasicCard') == true and deps.isAdventure() then
+                            local readOfferFn = deps.readActiveCardOffer
+
+                            if type(readOfferFn) == 'function' then
+                                local activeOffer = (readOfferFn)()
+
+                                if type(activeOffer) == 'table' and type(activeOffer.Options) == 'table' and #activeOffer.Options > 0 then
+                                    onBasicOffer(activeOffer)
+                                end
                             end
                         end
                     end)

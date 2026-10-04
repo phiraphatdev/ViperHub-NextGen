@@ -32,14 +32,13 @@ local function fit(glow: any, card: any)
     local pad: any = card:FindFirstChildOfClass("UIPadding")
     local width = card.AbsoluteSize.X
     local height = card.AbsoluteSize.Y
-    local left, right, top, bottom = 0, 0, 0, 0
+    local left, top = 0, 0
     if pad then
         left = pad.PaddingLeft.Scale * width + pad.PaddingLeft.Offset
-        right = pad.PaddingRight.Scale * width + pad.PaddingRight.Offset
         top = pad.PaddingTop.Scale * height + pad.PaddingTop.Offset
-        bottom = pad.PaddingBottom.Scale * height + pad.PaddingBottom.Offset
     end
-    glow.Size = ENV.UDim2.new(1, left + right - GLOW_INSET * 2, 1, top + bottom - GLOW_INSET * 2)
+    -- Fixed pixel size (not scale): a scale size inside an auto-sized card feeds back and grows the card forever.
+    glow.Size = ENV.UDim2.fromOffset(width - GLOW_INSET * 2, height - GLOW_INSET * 2)
     glow.Position = ENV.UDim2.fromOffset(GLOW_INSET - left, GLOW_INSET - top)
 end
 
@@ -72,7 +71,7 @@ end
 local function themeColor(library: any): any
     local theme: any = if type(library) == "table" then library.Theme else nil
     local value: any = if type(theme) == "table" then theme.Outline else nil
-    if typeof(value) == "Color3" then
+    if type(value) == "userdata" or type(value) == "vector" then
         return value
     end
     return Theme.color("primary")
@@ -153,6 +152,13 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
         table.insert(
             connections,
             button.MouseEnter:Connect(function()
+                local owner: any = glow and glow.Parent or card()
+                if
+                    owner.AutomaticSize ~= ENV.Enum.AutomaticSize.None
+                    or button.AutomaticSize ~= ENV.Enum.AutomaticSize.None
+                then
+                    return
+                end
                 if
                     button.AbsoluteSize.X < MIN_WIDTH
                     or button.AbsoluteSize.Y < MIN_HEIGHT

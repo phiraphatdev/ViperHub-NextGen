@@ -1534,16 +1534,14 @@ do
                 local pad = card:FindFirstChildOfClass('UIPadding')
                 local width = card.AbsoluteSize.X
                 local height = card.AbsoluteSize.Y
-                local left, right, top, bottom = 0, 0, 0, 0
+                local left, top = 0, 0
 
                 if pad then
                     left = pad.PaddingLeft.Scale * width + pad.PaddingLeft.Offset
-                    right = pad.PaddingRight.Scale * width + pad.PaddingRight.Offset
                     top = pad.PaddingTop.Scale * height + pad.PaddingTop.Offset
-                    bottom = pad.PaddingBottom.Scale * height + pad.PaddingBottom.Offset
                 end
 
-                glow.Size = ENV.UDim2.new(1, left + right - GLOW_INSET * 2, 1, top + bottom - GLOW_INSET * 2)
+                glow.Size = ENV.UDim2.fromOffset(width - GLOW_INSET * 2, height - GLOW_INSET * 2)
                 glow.Position = ENV.UDim2.fromOffset(GLOW_INSET - left, GLOW_INSET - top)
             end
             local function buildGlow(card, color)
@@ -1580,7 +1578,7 @@ do
                 local theme = if type(library) == 'table'then library.Theme else nil
                 local value = if type(theme) == 'table'then theme.Outline else nil
 
-                if typeof(value) == 'Color3' then
+                if type(value) == 'userdata' or type(value) == 'vector' then
                     return value
                 end
 
@@ -1666,6 +1664,11 @@ do
 
                     table.insert(connections, (button.MouseEnter:Connect(function(
                     )
+                        local owner = glow and glow.Parent or card()
+
+                        if owner.AutomaticSize ~= ENV.Enum.AutomaticSize.None or button.AutomaticSize ~= ENV.Enum.AutomaticSize.None then
+                            return
+                        end
                         if button.AbsoluteSize.X < MIN_WIDTH or button.AbsoluteSize.Y < MIN_HEIGHT or button.AbsoluteSize.Y > MAX_HEIGHT or button:GetAttribute('NoGlow') == true then
                             return
                         end

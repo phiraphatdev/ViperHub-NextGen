@@ -715,6 +715,74 @@ test("Adventure opens the allowed treasure chests one by one", function()
     runtime.stop()
 end)
 
+test("Adventure opens treasure chests by teleporting to 3D chests", function()
+    local catalog = AdventureCatalog.fromModules(nil)
+    local settings = AdventureSettings.new(catalog, {})
+    settings.set("openTreasure", true)
+    local now = 100
+    local box: any = {}
+    local teleported: { string } = {}
+    local openedRequests: { string } = {}
+    local pending: { any } = {}
+    local runtime = AdventureRuntime.new(function()
+        return settings
+    end, {
+        clock = function()
+            now += 10
+            return now
+        end,
+        task = {
+            delay = function(_seconds: number, callback: any)
+                table.insert(pending, callback)
+            end,
+        },
+        isAdventure = function()
+            return true
+        end,
+        teleportTo = function(cf: any)
+            table.insert(teleported, tostring(cf))
+            return true
+        end,
+        getUnopenedChests = function()
+            return {
+                { id = "chest-1", cframe = "cf1" },
+                { id = "chest-2", cframe = "cf2" },
+                { id = "chest-3", cframe = "cf3" },
+                { id = "chest-4", cframe = "cf4" },
+            }
+        end,
+        openChestRequest = function(id: string)
+            table.insert(openedRequests, id)
+            return true
+        end,
+        events = {
+            CardPickBasicOffer = { On = function() end },
+            TreasureBegin = {
+                On = function(callback: any)
+                    box.begin = callback
+                    return function() end
+                end,
+            },
+        },
+    })
+    local function flush()
+        for _, callback in pending do
+            local run: any = callback
+            run()
+        end
+        pending = {}
+    end
+    assert(runtime.start())
+    local begin: any = box.begin
+    begin({ TotalChests = 6, PicksRemaining = 3, OpenedChests = {} })
+    flush()
+    assert(#teleported == 3, "teleports to 3 chests")
+    assert(table.concat(teleported, ",") == "cf1,cf2,cf3", "teleported in chest order")
+    assert(table.concat(openedRequests, ",") == "chest-1,chest-2,chest-3", "opens the 3 chests in order")
+    assert(runtime.chests == 3)
+    runtime.stop()
+end)
+
 test(
     "Adventure never stalls: falls back to a reachable room, votes again, keeps Auto Skip Start on",
     function()
