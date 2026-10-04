@@ -460,7 +460,7 @@ test("Adventure runtime chooses the next room only in Adventure matches with Aut
                     return function() end
                 end,
             },
-            SelectRoomChoose = {
+            VoteCast = {
                 Fire = function(payload: any)
                     table.insert(chosen, payload)
                 end,
@@ -492,7 +492,7 @@ test("Adventure runtime chooses the next room only in Adventure matches with Aut
     assert(#chosen == 0, "the choice waits a moment")
     flush()
     assert(
-        #chosen == 1 and chosen[1].RoomIndex == 2 and runtime.routed == 1,
+        #chosen == 1 and chosen[1].OptionIndex == 2 and runtime.routed == 1,
         "Elite outranks Battle by default"
     )
     assert(string.find(runtime.status, "chose a Elite room", 1, true) ~= nil, runtime.status)

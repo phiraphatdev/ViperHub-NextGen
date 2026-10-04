@@ -7478,10 +7478,6 @@ do
                 slot2 = true,
                 autoBasicCard = true,
                 cardPriority = true,
-                autoRoute = true,
-                secondPriorityFloor = true,
-                floorPriority = true,
-                secondFloorPriority = true,
             }
 
             local function isLocked(key)
@@ -7490,7 +7486,7 @@ do
 
             local ADVENTURE = (config).adventure
             local PENDING =
-[[Live: Auto Join with the character and slots, Auto Basic Card and Auto Route Atlas. The other controls are locked (Coming soon) until their automation is built.]]
+[[Live: Auto Join with the character and slots, and Auto Basic Card. The other controls are locked (Coming soon) until their automation is built.]]
 
             local function setDesc(control, text)
                 if type(control) == 'table' and type(control.SetDesc) == 'function' then
@@ -8305,7 +8301,7 @@ do
                     lastRoomKey, lastRoomAt = key, now
 
                     local function go()
-                        local entry = if deps.events then deps.events.SelectRoomChoose else nil
+                        local entry = if deps.events then deps.events.VoteCast else nil
 
                         if not self.active or saved.get('autoRoute') ~= true or type(entry) ~= 'table' or type(entry.Fire) ~= 'function' then
                             return
@@ -8313,7 +8309,7 @@ do
 
                         local fireFn = entry.Fire
 
-                        if pcall(fireFn, {RoomIndex = index}) then
+                        if pcall(fireFn, {OptionIndex = index}) then
                             self.routed += 1
 
                             local kind = '?'

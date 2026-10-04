@@ -1,5 +1,11 @@
 # Updates
 
+## Local Auto Route Atlas — built, NOT working yet (locked)
+
+- Live findings: `SelectRoomChoose` is ignored in Adventure; the next room is voted with `VoteCast({OptionIndex})` after `VoteStarted` (observed: `SelectRoomSelectionStarted` Options carry `Index`, `AdventureRoomKind`, `AdventureFloor`; `VoteStarted.OptionCount` = number of options). The runtime now sends `VoteCast`.
+- Not working: the option list includes rooms that are NOT reachable from the current node on the Route Atlas (4 options offered, only 2 connected), so picking the top-ranked kind (Treasure) cast an unreachable vote and the run stayed on the same floor. No tally or `VoteEnded` was seen. Need the reachable options (map snapshot / lane data) before it can choose correctly. The Adventure tab keeps Auto Route Atlas and its priorities locked.
+- Verified live this session: Auto Join through the hosted room and Start into an Adventure match; Auto Basic Card picked a card after a floor.
+
 ## Local Odyssey Adventure: Auto Basic Card — partly verified live
 
 - `Adventure/Runtime.luau` listens to the match's `CardPickBasicOffer` and, when Auto Basic Card is on and the match is an Adventure match, answers after 0.8 s with `CardPickPick({Choice = index})` using `Choice.pickBasicCard` (highest Card Priority number; identical offers within 4 s are ignored). It starts with the hub, does nothing in the lobby and stops with the shared lifecycle. Auto Basic Card and Card Priority are unlocked on the Adventure tab.

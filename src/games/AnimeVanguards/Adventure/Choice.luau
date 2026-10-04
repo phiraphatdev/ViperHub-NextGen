@@ -33,7 +33,7 @@ end
 
 --- Picks the offered room whose kind ranks highest. Options are the game's room selection entries ({Index,
 --- AdventureRoomKind, AdventureFloor, ...}, observed live). From secondPriorityFloor on, the second ranks apply.
---- Unknown kinds (e.g. Challenge) rank below every listed kind. Returns the option's Index (the RoomIndex to send).
+--- Unknown kinds (e.g. Challenge) rank below every listed kind. Returns the option's Index (sent as VoteCast OptionIndex).
 function Choice.pickRoom(
     options: any,
     first: { [string]: number },

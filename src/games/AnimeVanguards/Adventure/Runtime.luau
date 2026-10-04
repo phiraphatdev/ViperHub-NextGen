@@ -151,7 +151,10 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         end
         lastRoomKey, lastRoomAt = key, now
         local function go()
-            local entry = if deps.events then deps.events.SelectRoomChoose else nil
+            -- Observed live: in Adventure the game ignores SelectRoomChoose (its own room UI returns early for
+            -- SubMode Adventure); the next room is chosen by voting on the map's next row with VoteCast. INFERENCE:
+            -- OptionIndex is the offered option's Index.
+            local entry = if deps.events then deps.events.VoteCast else nil
             if
                 not self.active
                 or saved.get("autoRoute") ~= true
@@ -161,7 +164,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                 return
             end
             local fireFn: any = entry.Fire
-            if pcall(fireFn, { RoomIndex = index }) then
+            if pcall(fireFn, { OptionIndex = index }) then
                 self.routed += 1
                 local kind = "?"
                 for _, option in options do
