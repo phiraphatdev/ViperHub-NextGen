@@ -339,7 +339,7 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?, joi
         settings,
         "autoStartNewRun",
         "Auto Start New Run",
-        "When a run ends (the end screen shows), go back to the lobby so Auto Join starts the next run."
+        "When a run ends, press New Run on the end screen; if that does not start a run, go back to the lobby (Auto Join starts the next run)."
     )
     toggle(
         completion,

@@ -24,6 +24,7 @@ local SHOP_UI_GRACE_SECONDS: number = (config :: any).thresholds.adventureShopUi
 local HISTORY_LIMIT = 40
 local END_SCREEN_SECONDS = 6
 local LOBBY_RETRY_SECONDS = 20
+local NEW_RUN_FALLBACK_SECONDS = 40
 local TASK_WAIT_SECONDS: number = (config :: any).thresholds.adventureTaskWaitSeconds
 local TASK_WAIT_RETRY_SECONDS: number = (config :: any).thresholds.adventureTaskWaitRetrySeconds
 local VOTE_RETRY_SECONDS: number = (config :: any).thresholds.adventureVoteRetrySeconds
@@ -174,6 +175,16 @@ local function liveDependencies(): any
                 and holder ~= nil
                 and holder.Visible == true
                 and holder.AbsoluteSize.X > 0
+        end,
+        -- The end screen's "New Run" button (a solo failed Adventure run) casts the retry vote
+        -- (observed in EndScreen.VoteHandler: SendVote(GameEndScreenClient.CastRetryVote.Fire)).
+        newRun = function(): boolean
+            local endClient: any = optionalModule(replicated, paths.endScreenClient)
+            local vote = if type(endClient) == "table" then endClient.CastRetryVote else nil
+            if type(vote) == "table" and type(vote.Fire) == "function" then
+                return (pcall(vote.Fire))
+            end
+            return false
         end,
         returnToLobby = function(): boolean
             local lobby: any = optionalModule(replicated, paths.lobbyReturnClient)
@@ -1064,6 +1075,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
     local failsafeSince = 0
     local endSince: number? = nil
     local lastLobbyAt = -math.huge
+    local lastNewRunAt = -math.huge
     local function watchShop()
         local taskApi: any = deps.task
         if not self.active or type(taskApi) ~= "table" or type(taskApi.delay) ~= "function" then
@@ -1111,6 +1123,22 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             and now0 - failsafeSince >= (tonumber(saved0.get("failsafeMinutes")) or 30) * 60
         then
             reason = "floor " .. tostring(floorNow) .. " ran too long"
+        end
+        -- A finished run starts again in place with New Run; the lobby is the fallback when that does not move on.
+        if
+            isEnd
+            and saved0.get("autoStartNewRun") == true
+            and now0 - (endSince :: number) >= END_SCREEN_SECONDS
+            and now0 - (endSince :: number) < END_SCREEN_SECONDS + NEW_RUN_FALLBACK_SECONDS
+        then
+            reason = nil
+            if now0 - lastNewRunAt >= LOBBY_RETRY_SECONDS then
+                local newRunFn: any = deps.newRun
+                if type(newRunFn) == "function" and (newRunFn :: any)() then
+                    lastNewRunAt = now0
+                    setStatus("Run ended: voted New Run")
+                end
+            end
         end
         if reason and now0 - lastLobbyAt >= LOBBY_RETRY_SECONDS then
             local backFn: any = deps.returnToLobby

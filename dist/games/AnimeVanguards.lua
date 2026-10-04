@@ -7899,7 +7899,7 @@ do
                 toggle(completion, settings, 'autoCashOut', 'Auto Cash Out', 'Cash out between floors once the floor below is cleared.')
                 slider(completion, settings, 'cashOutFloor', 'Cash out at floor', 'Cleared floors before cashing out.')
                 toggle(completion, settings, 'autoStartNewRun', 'Auto Start New Run',
-[[When a run ends (the end screen shows), go back to the lobby so Auto Join starts the next run.]])
+[[When a run ends, press New Run on the end screen; if that does not start a run, go back to the lobby (Auto Join starts the next run).]])
                 toggle(completion, settings, 'autoAscension', 'Auto Ascension',
 [[Ascend in the lobby once Level Tree level 100 is reached and the game allows it.]])
 
@@ -8603,6 +8603,7 @@ do
             local HISTORY_LIMIT = 40
             local END_SCREEN_SECONDS = 6
             local LOBBY_RETRY_SECONDS = 20
+            local NEW_RUN_FALLBACK_SECONDS = 40
             local TASK_WAIT_SECONDS = (config).thresholds.adventureTaskWaitSeconds
             local TASK_WAIT_RETRY_SECONDS = (config).thresholds.adventureTaskWaitRetrySeconds
             local VOTE_RETRY_SECONDS = (config).thresholds.adventureVoteRetrySeconds
@@ -8767,6 +8768,16 @@ do
                         local holder = screen and screen:FindFirstChild('Holder')
 
                         return screen ~= nil and screen.Enabled == true and holder ~= nil and holder.Visible == true and holder.AbsoluteSize.X > 0
+                    end,
+                    newRun = function()
+                        local endClient = optionalModule(replicated, paths.endScreenClient)
+                        local vote = if type(endClient) == 'table'then endClient.CastRetryVote else nil
+
+                        if type(vote) == 'table' and type(vote.Fire) == 'function' then
+                            return (pcall(vote.Fire))
+                        end
+
+                        return false
                     end,
                     returnToLobby = function()
                         local lobby = optionalModule(replicated, paths.lobbyReturnClient)
@@ -9732,6 +9743,7 @@ do
                 local failsafeSince = 0
                 local endSince = nil
                 local lastLobbyAt = -math.huge
+                local lastNewRunAt = -math.huge
 
                 local function watchShop()
                     local taskApi = deps.task
@@ -9783,6 +9795,19 @@ do
                         reason = 'the run ended'
                     elseif saved0.get('failsafe') == true and now0 - failsafeSince >= (tonumber(saved0.get('failsafeMinutes')) or 30) * 60 then
                         reason = 'floor ' .. tostring(floorNow) .. ' ran too long'
+                    end
+                    if isEnd and saved0.get('autoStartNewRun') == true and now0 - (endSince) >= END_SCREEN_SECONDS and now0 - (endSince) < END_SCREEN_SECONDS + NEW_RUN_FALLBACK_SECONDS then
+                        reason = nil
+
+                        if now0 - lastNewRunAt >= LOBBY_RETRY_SECONDS then
+                            local newRunFn = deps.newRun
+
+                            if type(newRunFn) == 'function' and (newRunFn)() then
+                                lastNewRunAt = now0
+
+                                setStatus('Run ended: voted New Run')
+                            end
+                        end
                     end
                     if reason and now0 - lastLobbyAt >= LOBBY_RETRY_SECONDS then
                         local backFn = deps.returnToLobby
