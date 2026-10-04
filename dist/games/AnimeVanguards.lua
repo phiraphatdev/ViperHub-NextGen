@@ -7222,14 +7222,6 @@ do
                     kind = 'bool',
                     default = true,
                 },
-                closeMap = {
-                    kind = 'bool',
-                    default = true,
-                },
-                autoStartFloors = {
-                    kind = 'bool',
-                    default = true,
-                },
                 secondPriorityFloor = {
                     kind = 'number',
                     range = ADVENTURE.secondPriorityFloor,
@@ -7645,14 +7637,12 @@ do
                 autoCharacterCard = true,
                 leaveShop = true,
                 openTreasure = true,
-                closeMap = true,
                 autoStitchesShop = true,
                 autoUnitReward = true,
                 buyBasicCards = true,
                 buyStarterCards = true,
                 buyTraits = true,
                 buyMemoria = true,
-                autoStartFloors = true,
                 secondPriorityFloor = true,
                 floorPriority = true,
                 secondFloorPriority = true,
@@ -7816,16 +7806,12 @@ do
 
                 toggle(route, settings, 'autoRoute', 'Auto Route Atlas',
 [[After each floor, choose the next room by the priorities below (highest number first).]])
-                toggle(route, settings, 'closeMap', 'Close Map After Voting',
-[[Hide the Route Atlas window after the room is chosen (the game opens it for every vote and leaves it open).]])
                 slider(route, settings, 'secondPriorityFloor', 'Use Second Prioritize after Floor',
 [[From this floor on, the Second Floor Prioritize order is used.]])
                 priorityEditor(route, settings, 'floorPriority', 'Floor Prioritize',
 [[Next room to pick on the Route Atlas; the highest number is preferred. Drag a row onto another to swap them.]], ADVENTURE.roomTags)
                 priorityEditor(route, settings, 'secondFloorPriority', 'Second Floor Prioritize',
 [[Used instead after the floor above. Drag a row onto another to swap them.]], ADVENTURE.roomTags)
-                toggle(misc, settings, 'autoStartFloors', 'Auto Start Floors',
-[[Keep the game's Auto Skip Start on during an Adventure run so each floor starts by itself (it is a game setting and stays on).]])
                 toggle(misc, settings, 'openTreasure', 'Open Treasure Chests',
 [[On a Treasure floor, open the allowed chests so the floor ends (it ends only after the picks are used).]])
                 toggle(misc, settings, 'autoUnitReward', 'Auto Choose Unit Reward',
@@ -8918,25 +8904,7 @@ do
                 local voteOpen = false
                 local voteAttempts = 0
                 local lastOffer = nil
-                local gameSettings = nil
                 local guardedRetry
-
-                local function ensureStart()
-                    if not self.active or getSettings().get('autoStartFloors') ~= true then
-                        return
-                    end
-
-                    local gs = gameSettings
-
-                    if type(gs) == 'table' and type(gs.get) == 'function' and type(gs.set) == 'function' then
-                        local ok, current = pcall(gs.get, 'AutoSkipStart')
-
-                        if ok and current == false and pcall(gs.set, 'AutoSkipStart', true) then
-                            setStatus("Turned on the game's Auto Skip Start")
-                        end
-                    end
-                end
-
                 local shopHandled = false
                 local shopClosedAt = -math.huge
                 local lastShopKey = ''
@@ -9010,7 +8978,7 @@ do
                     end
                 end
                 local function closeMapNow()
-                    if self.active and getSettings().get('closeMap') == true and type(deps.closeMap) == 'function' then
+                    if self.active and type(deps.closeMap) == 'function' then
                         pcall(deps.closeMap)
                     end
                 end
@@ -9026,8 +8994,6 @@ do
                 end
                 onRoomOffer = function(offer, retry)
                     local saved = getSettings()
-
-                    ensureStart()
 
                     if retry ~= true then
                         voteAttempts = 0
@@ -9666,7 +9632,6 @@ do
                             voteAttempts = 0
 
                             closeMapLater()
-                            ensureStart()
                         end,
                     }
 
@@ -9752,18 +9717,7 @@ do
                         watchShop()
                     end
 
-                    local startTask = deps.task
-
-                    if type(startTask) == 'table' and type(startTask.delay) == 'function' then
-                        (startTask.delay)(10, ensureStart)
-                    else
-                        ensureStart()
-                    end
-
                     return true
-                end
-                function self.setGameSettings(settings)
-                    gameSettings = settings
                 end
                 function self.stop()
                     self.active = false
@@ -18156,7 +18110,6 @@ function GameModule.start(context)
     joiner.setAdventure(adventure)
     joiner.setReturnGate(webhook.isBusy)
     gameSettings.setReturnGate(webhook.isBusy)
-    adventureRun.setGameSettings(gameSettings)
     joiner.setGameSettings(gameSettings)
     autoPlay.setMacro(macro)
     macro.setAutoPlay(autoPlay)

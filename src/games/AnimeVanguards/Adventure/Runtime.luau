@@ -343,23 +343,8 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
     local voteOpen = false
     local voteAttempts = 0
     local lastOffer: any = nil
-    local gameSettings: any = nil
     local guardedRetry: (any) -> ()
 
-    -- The game's own Auto Skip Start starts every floor without a click; an Adventure run stalls on a floor start
-    -- vote while it is off, so it is switched on when this feature is on (a game setting, left on afterwards).
-    local function ensureStart()
-        if not self.active or getSettings().get("autoStartFloors") ~= true then
-            return
-        end
-        local gs: any = gameSettings
-        if type(gs) == "table" and type(gs.get) == "function" and type(gs.set) == "function" then
-            local ok, current = pcall(gs.get, "AutoSkipStart")
-            if ok and current == false and pcall(gs.set, "AutoSkipStart", true) then
-                setStatus("Turned on the game's Auto Skip Start")
-            end
-        end
-    end
     local shopHandled = false
     local shopClosedAt = -math.huge
     local lastShopKey = ""
@@ -421,9 +406,9 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         end
     end
 
-    -- Closes the Route Atlas shortly after a vote (and again when the vote ends), when the switch is on.
+    -- Closes the Route Atlas shortly after a vote (and again when the vote ends); there is no switch for it.
     local function closeMapNow()
-        if self.active and getSettings().get("closeMap") == true and type(deps.closeMap) == "function" then
+        if self.active and type(deps.closeMap) == "function" then
             pcall(deps.closeMap)
         end
     end
@@ -439,7 +424,6 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
     -- A room selection: pick the next room by the floor priorities (the second list from the chosen floor on).
     onRoomOffer = function(offer: any, retry: boolean?)
         local saved = getSettings()
-        ensureStart()
         if retry ~= true then
             voteAttempts = 0
         end
@@ -1059,7 +1043,6 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                 voteOpen = false
                 voteAttempts = 0
                 closeMapLater()
-                ensureStart()
             end,
         }
         for eventName, handler in extras do
@@ -1120,18 +1103,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         if type(roomKindDep) == "function" then
             watchShop()
         end
-        local startTask: any = deps.task
-        if type(startTask) == "table" and type(startTask.delay) == "function" then
-            (startTask.delay :: any)(10, ensureStart)
-        else
-            ensureStart()
-        end
         return true
-    end
-
-    --- Gives the runtime the game-settings adapter (get/set by game setting name) used to keep Auto Skip Start on.
-    function self.setGameSettings(settings: any)
-        gameSettings = settings
     end
 
     --- Stops listening; safe to repeat.

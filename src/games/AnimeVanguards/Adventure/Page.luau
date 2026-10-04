@@ -26,14 +26,12 @@ local UNLOCKED: { [string]: boolean } = {
     autoCharacterCard = true,
     leaveShop = true,
     openTreasure = true,
-    closeMap = true,
     autoStitchesShop = true,
     autoUnitReward = true,
     buyBasicCards = true,
     buyStarterCards = true,
     buyTraits = true,
     buyMemoria = true,
-    autoStartFloors = true,
     secondPriorityFloor = true,
     floorPriority = true,
     secondFloorPriority = true,
@@ -211,13 +209,6 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?, joi
         "Auto Route Atlas",
         "After each floor, choose the next room by the priorities below (highest number first)."
     )
-    toggle(
-        route,
-        settings,
-        "closeMap",
-        "Close Map After Voting",
-        "Hide the Route Atlas window after the room is chosen (the game opens it for every vote and leaves it open)."
-    )
     slider(
         route,
         settings,
@@ -240,13 +231,6 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?, joi
         "Second Floor Prioritize",
         "Used instead after the floor above. Drag a row onto another to swap them.",
         ADVENTURE.roomTags
-    )
-    toggle(
-        misc,
-        settings,
-        "autoStartFloors",
-        "Auto Start Floors",
-        "Keep the game's Auto Skip Start on during an Adventure run so each floor starts by itself (it is a game setting and stays on)."
     )
     toggle(
         misc,
