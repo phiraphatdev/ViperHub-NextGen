@@ -15,6 +15,8 @@ local config = require("../Config")
 local Page = {}
 
 local STARTUP_WAIT_TICKS = 60
+-- Joiners not built yet: their toggles and priority rows are locked.
+local UNAVAILABLE = { "Elemental Towers", "Portal" }
 
 local function resolve(root: any, path: string): any
     local value = root
@@ -761,11 +763,18 @@ function Page.mount(tab: any, stageDataOverride: any?, runtime: any?, challengeC
     })
     -- Join order as a drag-to-swap list (shared UI base) in its own collapsible sub-section.
     local prioritySection = Style.sub(settings, "Auto Join Priority", "list-ordered", false)
+    local priorityTags = Style.joinerTags()
+    local lockedRows: { [string]: boolean } = {}
+    for _, name in UNAVAILABLE do
+        lockedRows[name] = true
+        priorityTags[name] = { text = "Locked", color = "slate" }
+    end
     local priorityList = PriorityList.mount(prioritySection, {
         title = "Auto Join Priority",
         desc = "The joiner tries the highest number first. Drag a row onto another to swap them.",
         order = state.priority,
-        tags = Style.joinerTags(),
+        tags = priorityTags,
+        lockedRows = lockedRows,
         onSwap = function(first: string, second: string): { string }?
             return if Settings.swap(first, second) then Settings.get().priority else nil
         end,
@@ -795,12 +804,7 @@ function Page.mount(tab: any, stageDataOverride: any?, runtime: any?, challengeC
     local regTimer = addChallenge(tab, "Regular", challengeChoices, runtime)
     local dailyTimer = addChallenge(tab, "Daily", challengeChoices, runtime)
     local weeklyTimer = addChallenge(tab, "Weekly", challengeChoices, runtime)
-    for _, name in
-        {
-            "Elemental Towers",
-            "Portal",
-        }
-    do
+    for _, name in UNAVAILABLE do
         addUnavailable(tab, name, "Mode-specific choices are not verified yet.")
     end
 

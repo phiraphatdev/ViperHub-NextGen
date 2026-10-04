@@ -14,10 +14,12 @@ local PriorityList = require("../../../ui/PriorityList")
 local config = require("../Config")
 local Page = {}
 
+-- The Adventure automation is not built yet: every control is locked (values stay visible).
+local LOCKED = true
+
 local ADVENTURE: any = (config :: any).adventure
 
-local PENDING =
-    "Settings only for now: the Adventure automation is not built yet, so these choices are saved but nothing runs."
+local PENDING = "Coming soon: the Adventure automation is not built yet, so every control is locked."
 
 local function setDesc(control: any, text: string)
     if type(control) == "table" and type(control.SetDesc) == "function" then
@@ -34,12 +36,14 @@ local function priorityEditor(host: any, settings: any, key: string, title: stri
         desc = desc,
         order = settings.order(key),
         tags = tags,
+        locked = LOCKED,
         onSwap = function(first: string, second: string): { string }?
             return if settings.swap(key, first, second) then settings.order(key) else nil
         end,
     })
     section:Button({
         Title = "Reset " .. title,
+        Locked = LOCKED,
         Desc = "Restore the default order.",
         Icon = "rotate-ccw",
         Callback = function()
@@ -60,6 +64,7 @@ end
 local function toggle(host: any, settings: any, key: string, title: string, desc: string)
     host:Toggle({
         Title = title,
+        Locked = LOCKED,
         Desc = desc,
         Value = settings.get(key),
         Callback = function(value: boolean)
@@ -72,6 +77,7 @@ local function slider(host: any, settings: any, key: string, title: string, desc
     local range = Settings.FIELDS[key].range
     host:Slider({
         Title = title,
+        Locked = LOCKED,
         Desc = desc,
         Step = 1,
         Value = { Min = range.min, Max = range.max, Default = settings.get(key) },
@@ -84,6 +90,7 @@ end
 local function choice(host: any, settings: any, key: string, title: string, desc: string, values: { string })
     host:Dropdown({
         Title = title,
+        Locked = LOCKED,
         Desc = desc,
         Values = values,
         Value = settings.get(key),
@@ -96,6 +103,7 @@ end
 local function multi(host: any, settings: any, key: string, title: string, desc: string, values: { string })
     host:Dropdown({
         Title = title,
+        Locked = LOCKED,
         Desc = desc,
         Values = values,
         Value = settings.get(key),
@@ -287,6 +295,7 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?): an
     local saved = settings.get("memoria")
     memorized:Dropdown({
         Title = "Memoria",
+        Locked = LOCKED,
         Desc = "Owned memoria to equip on your character for the run.",
         Values = if saved == Settings.NONE then { Settings.NONE } else { Settings.NONE, saved },
         Value = saved,
@@ -296,6 +305,7 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?): an
     })
     memorized:Button({
         Title = "Refresh Inventory",
+        Locked = LOCKED,
         Desc = "Reload your owned memoria into the list.",
         Callback = function()
             setDesc(status, "Refresh Inventory: reading your memoria is not built yet (runtime pending).")

@@ -4,7 +4,8 @@ Purpose: Shared drag-to-swap priority list (UI base for every game): a card with
          top; hold a row and drop it on another row to swap the two (mouse or touch). Rows can carry a colored tag
          (rarity, room kind), swaps slide into place and the scroll position is kept.
 Input: A WindUI tab or section handle and options: title, desc, order, onSwap(from, to) -> newOrder?, optional tags
-       ({ [name]: { text, color } } with a Theme color name or #hex) and visibleRows
+       ({ [name]: { text, color } } with a Theme color name or #hex), visibleRows, locked (the whole list cannot be
+       reordered) and lockedRows (names that cannot be dragged or dropped on)
 Output: A handle with refresh(order) and the card; without the WindUI paragraph container (other libraries, mocks)
         the card only shows the order as text
 Dependencies: ui/Theme (Roblox GUI instances inside the WindUI paragraph container)
@@ -39,7 +40,11 @@ export type Options = {
     onSwap: (string, string) -> { string }?,
     tags: { [string]: Tag }?,
     visibleRows: number?,
+    locked: boolean?,
+    lockedRows: { [string]: boolean }?,
 }
+
+local LOCKED_ALPHA = 0.55
 export type Handle = { refresh: ({ string }) -> (), card: any }
 
 --- Row labels: the highest number first ("33. Limit Break", ..., "1. Military Training").
@@ -67,6 +72,11 @@ function PriorityList.offsets(count: number): { number }
         result[index] = (index - 1) * (ROW_HEIGHT + ROW_GAP)
     end
     return result
+end
+
+--- True when a row may be dragged or dropped on: the list and the row are not locked.
+function PriorityList.movable(options: Options, name: string): boolean
+    return options.locked ~= true and not (options.lockedRows and options.lockedRows[name])
 end
 
 --- Index of the row under a vertical position, given each row's top and the row height; nil when between rows.
@@ -179,18 +189,19 @@ function PriorityList.mount(host: any, options: Options): Handle
                 and drag.ghost ~= nil
                 and drag.target == name
                 and drag.target ~= drag.name
+            local fixed = not PriorityList.movable(options, name)
             row.BackgroundColor3 = color
             row.BackgroundTransparency = if isSource
                 then ALPHA_SOURCE
                 elseif isTarget then ALPHA_TARGET
-                elseif hovered == name and not drag then ALPHA_HOVER
+                elseif hovered == name and not drag and not fixed then ALPHA_HOVER
                 else ALPHA_REST
             row.Number.TextColor3 = color
             row.Label.TextColor3 = color
             row.Grip.TextColor3 = color
-            row.Number.TextTransparency = if isSource then 0.7 else 0
-            row.Label.TextTransparency = if isSource then 0.7 else 0
-            row.Grip.Text = if isTarget then "⇄" else "≡"
+            row.Number.TextTransparency = if isSource then 0.7 elseif fixed then LOCKED_ALPHA else 0
+            row.Label.TextTransparency = if isSource then 0.7 elseif fixed then LOCKED_ALPHA else 0
+            row.Grip.Text = if isTarget then "⇄" elseif fixed then "" else "≡"
             row.Grip.TextTransparency = if isTarget then 0 else 0.55
             row.Stroke.Color = color
             row.Stroke.Transparency = if isTarget then 0.35 else 1
@@ -256,7 +267,7 @@ function PriorityList.mount(host: any, options: Options): Handle
     end
 
     local function startDrag(name: string)
-        if drag then
+        if drag or not PriorityList.movable(options, name) then
             return
         end
         local start = pointer()
@@ -300,7 +311,8 @@ function PriorityList.mount(host: any, options: Options): Handle
             elseif position.Y > bottom - EDGE_SCROLL then
                 list.CanvasPosition = Vector2.new(0, list.CanvasPosition.Y + SCROLL_STEP)
             end
-            state.target = rowUnder(position)
+            local over = rowUnder(position)
+            state.target = if over and PriorityList.movable(options, over) then over else nil
             paint()
         end)
         local released: any = input.InputEnded:Connect(function(ended: any)

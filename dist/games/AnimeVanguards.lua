@@ -2135,6 +2135,7 @@ do
             local ALPHA_HOVER = 0.88
             local ALPHA_TARGET = 0.8
             local ALPHA_SOURCE = 0.97
+            local LOCKED_ALPHA = 0.55
 
             function PriorityList.labels(order)
                 local result = {}
@@ -2160,6 +2161,9 @@ do
                 end
 
                 return result
+            end
+            function PriorityList.movable(options, name)
+                return options.locked ~= true and not (options.lockedRows and options.lockedRows[name])
             end
             function PriorityList.rowAt(tops, height, y)
                 for index, top in tops do
@@ -2275,21 +2279,34 @@ do
                     for name, row in rows do
                         local isSource = drag ~= nil and drag.ghost ~= nil and drag.name == name
                         local isTarget = drag ~= nil and drag.ghost ~= nil and drag.target == name and drag.target ~= drag.name
+                        local fixed = not PriorityList.movable(options, name)
 
                         row.BackgroundColor3 = color
                         row.BackgroundTransparency = if isSource
                             then ALPHA_SOURCE
                             elseif isTarget
                             then ALPHA_TARGET
-                            elseif hovered == name and not drag
+                            elseif hovered == name and not drag and not fixed
                             then ALPHA_HOVER
                             else ALPHA_REST
                         row.Number.TextColor3 = color
                         row.Label.TextColor3 = color
                         row.Grip.TextColor3 = color
-                        row.Number.TextTransparency = if isSource then 0.7 else 0
-                        row.Label.TextTransparency = if isSource then 0.7 else 0
-                        row.Grip.Text = if isTarget then'\u{21c4}'else'\u{2261}'
+                        row.Number.TextTransparency = if isSource
+                            then 0.7
+                            elseif fixed
+                            then LOCKED_ALPHA
+                            else 0
+                        row.Label.TextTransparency = if isSource
+                            then 0.7
+                            elseif fixed
+                            then LOCKED_ALPHA
+                            else 0
+                        row.Grip.Text = if isTarget
+                            then'\u{21c4}'
+                            elseif fixed
+                            then''
+                            else'\u{2261}'
                         row.Grip.TextTransparency = if isTarget then 0 else 0.55
                         row.Stroke.Color = color
                         row.Stroke.Transparency = if isTarget then 0.35 else 1
@@ -2370,7 +2387,7 @@ do
                     paint()
                 end
                 local function startDrag(name)
-                    if drag then
+                    if drag or not PriorityList.movable(options, name) then
                         return
                     end
 
@@ -2432,7 +2449,9 @@ do
                             list.CanvasPosition = Vector2.new(0, list.CanvasPosition.Y + SCROLL_STEP)
                         end
 
-                        state.target = rowUnder(position)
+                        local over = rowUnder(position)
+
+                        state.target = if over and PriorityList.movable(options, over)then over else nil
 
                         paint()
                     end)
@@ -2634,6 +2653,10 @@ do
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Page = {}
             local STARTUP_WAIT_TICKS = 60
+            local UNAVAILABLE = {
+                'Elemental Towers',
+                'Portal',
+            }
 
             local function resolve(root, path)
                 local value = root
@@ -3549,12 +3572,24 @@ do
                 })
 
                 local prioritySection = Style.sub(settings, 'Auto Join Priority', 'list-ordered', false)
+                local priorityTags = Style.joinerTags()
+                local lockedRows = {}
+
+                for _, name in UNAVAILABLE do
+                    lockedRows[name] = true
+                    priorityTags[name] = {
+                        text = 'Locked',
+                        color = 'slate',
+                    }
+                end
+
                 local priorityList = PriorityList.mount(prioritySection, {
                     title = 'Auto Join Priority',
                     desc =
 [[The joiner tries the highest number first. Drag a row onto another to swap them.]],
                     order = state.priority,
-                    tags = Style.joinerTags(),
+                    tags = priorityTags,
+                    lockedRows = lockedRows,
                     onSwap = function(first, second)
                         return if Settings.swap(first, second)then Settings.get().priority else nil
                     end,
@@ -3581,10 +3616,7 @@ do
                 local dailyTimer = addChallenge(tab, 'Daily', challengeChoices, runtime)
                 local weeklyTimer = addChallenge(tab, 'Weekly', challengeChoices, runtime)
 
-                for _, name in {
-                    'Elemental Towers',
-                    'Portal',
-                }do
+                for _, name in UNAVAILABLE do
                     addUnavailable(tab, name, 'Mode-specific choices are not verified yet.')
                 end
 
@@ -7299,9 +7331,10 @@ do
             local PriorityList = __DARKLUA_BUNDLE_MODULES.o()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Page = {}
+            local LOCKED = true
             local ADVENTURE = (config).adventure
             local PENDING =
-[[Settings only for now: the Adventure automation is not built yet, so these choices are saved but nothing runs.]]
+[[Coming soon: the Adventure automation is not built yet, so every control is locked.]]
 
             local function setDesc(control, text)
                 if type(control) == 'table' and type(control.SetDesc) == 'function' then
@@ -7322,6 +7355,7 @@ do
                     desc = desc,
                     order = settings.order(key),
                     tags = tags,
+                    locked = LOCKED,
                     onSwap = function(first, second)
                         return if settings.swap(key, first, second)then settings.order(key)else nil
                     end,
@@ -7329,6 +7363,7 @@ do
 
                 section:Button({
                     Title = 'Reset ' .. title,
+                    Locked = LOCKED,
                     Desc = 'Restore the default order.',
                     Icon = 'rotate-ccw',
                     Callback = function()
@@ -7351,6 +7386,7 @@ do
             local function toggle(host, settings, key, title, desc)
                 host:Toggle({
                     Title = title,
+                    Locked = LOCKED,
                     Desc = desc,
                     Value = settings.get(key),
                     Callback = function(value)
@@ -7363,6 +7399,7 @@ do
 
                 host:Slider({
                     Title = title,
+                    Locked = LOCKED,
                     Desc = desc,
                     Step = 1,
                     Value = {
@@ -7378,6 +7415,7 @@ do
             local function choice(host, settings, key, title, desc, values)
                 host:Dropdown({
                     Title = title,
+                    Locked = LOCKED,
                     Desc = desc,
                     Values = values,
                     Value = settings.get(key),
@@ -7389,6 +7427,7 @@ do
             local function multi(host, settings, key, title, desc, values)
                 host:Dropdown({
                     Title = title,
+                    Locked = LOCKED,
                     Desc = desc,
                     Values = values,
                     Value = settings.get(key),
@@ -7482,6 +7521,7 @@ do
 
                 memorized:Dropdown({
                     Title = 'Memoria',
+                    Locked = LOCKED,
                     Desc = 'Owned memoria to equip on your character for the run.',
                     Values = if saved == Settings.NONE then{
                         Settings.NONE,
@@ -7496,6 +7536,7 @@ do
                 })
                 memorized:Button({
                     Title = 'Refresh Inventory',
+                    Locked = LOCKED,
                     Desc = 'Reload your owned memoria into the list.',
                     Callback = function()
                         setDesc(status,
