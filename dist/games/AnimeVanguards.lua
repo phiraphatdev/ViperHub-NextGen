@@ -9404,20 +9404,20 @@ do
                         return
                     end
 
-                    shopHandled = true
-
-                    beginTask('shop')
-                    setStatus('Shop: opened, planning purchases')
-
                     local stock = if type(info) == 'table'then info.Stock else nil
                     local now = deps.clock()
-                    local key = 'shop:' .. tostring(if type(info) == 'table'then info.Budget else nil) .. ':' .. tostring(type(stock) == 'table' and #stock or 0)
+                    local floorOf = deps.floor
+                    local key = 'shop:' .. tostring(if type(floorOf) == 'function'then(floorOf)()else nil) .. ':' .. tostring(if type(info) == 'table'then info.Budget else nil) .. ':' .. tostring(type(stock) == 'table' and #stock or 0)
 
                     if key == lastShopKey and now - lastShopAt < REPEAT_SECONDS then
                         return
                     end
 
                     lastShopKey, lastShopAt = key, now
+                    shopHandled = true
+
+                    beginTask('shop')
+                    setStatus('Shop: opened, planning purchases')
 
                     local plan = {}
 
@@ -9469,6 +9469,9 @@ do
                         shopClosedAt = deps.clock()
 
                         endTask('shop')
+
+                        lastShopKey = ''
+
                         setStatus(if#plan > 0 then'Shop: bought ' .. tostring(#plan) .. ' item(s), left the shop'else'Left the shop without buying' .. (if sent then''else' (button only)'))
                     end
 
@@ -9958,6 +9961,7 @@ do
 
                             endTask('shop')
 
+                            lastShopKey = ''
                             shopClosedAt = deps.clock()
                         end,
                         VoteEnded = function()

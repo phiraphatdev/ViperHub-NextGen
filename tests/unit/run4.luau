@@ -1260,7 +1260,15 @@ test("Adventure runtime buys the selected shop items, then leaves the shop", fun
     sent = {}
     opened({ Stock = liveStock(), Budget = 4979, Spent = 0 })
     flush()
-    assert(#sent == 0, "the same opening twice is handled once")
+    assert(
+        sent[#sent] == "close",
+        "a shop opening after the last one was left (shop after shop) is handled and left"
+    )
+    sent = {}
+    opened({ Stock = liveStock(), Budget = 4979, Spent = 0 })
+    opened({ Stock = liveStock(), Budget = 4979, Spent = 0 })
+    flush()
+    assert(#sent >= 1 and #sent <= 5, "the same opening announced twice at once is handled once: " .. #sent)
     -- Hub loaded while the shop was already open: the first stock update is handled like an opening, once.
     local closed: any = box.closed
     closed({})

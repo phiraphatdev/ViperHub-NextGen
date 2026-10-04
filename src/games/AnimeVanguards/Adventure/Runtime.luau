@@ -755,13 +755,14 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         if not self.active or not deps.isAdventure() or (not buying and saved.get("leaveShop") ~= true) then
             return
         end
-        shopHandled = true
-        beginTask("shop")
-        setStatus("Shop: opened, planning purchases")
-        -- The shop can announce itself more than once: act on one opening at a time.
+        -- The shop can announce itself more than once: act on one opening at a time. The floor is part of the key,
+        -- because two Shop floors in a row can open with the same budget and stock size seconds apart.
         local stock: any = if type(info) == "table" then info.Stock else nil
         local now = deps.clock()
+        local floorOf: any = deps.floor
         local key = "shop:"
+            .. tostring(if type(floorOf) == "function" then (floorOf :: any)() else nil)
+            .. ":"
             .. tostring(if type(info) == "table" then info.Budget else nil)
             .. ":"
             .. tostring(type(stock) == "table" and #stock or 0)
@@ -769,6 +770,9 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             return
         end
         lastShopKey, lastShopAt = key, now
+        shopHandled = true
+        beginTask("shop")
+        setStatus("Shop: opened, planning purchases")
         local plan: { any } = {}
         if buying and type(info) == "table" then
             plan = Choice.shopPurchases(
@@ -822,6 +826,8 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             end
             shopClosedAt = deps.clock()
             endTask("shop")
+            -- The next Shop floor may open with the same budget at once: it must not look like a repeat.
+            lastShopKey = ""
             setStatus(
                 if #plan > 0
                     then "Shop: bought " .. tostring(#plan) .. " item(s), left the shop"
@@ -1284,6 +1290,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             ShopClosed = function()
                 shopHandled = false
                 endTask("shop")
+                lastShopKey = ""
                 shopClosedAt = deps.clock()
             end,
             VoteEnded = function()
