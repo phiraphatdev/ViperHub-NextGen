@@ -4,7 +4,7 @@ Tier: beta
 Games: AnimeVanguards,AnimeExpeditions
 sourceCommit: none (single-commit build)
 artifactRevision: main (mutable)
-loader f9e15ee6448812bba1a0fc85cd22b79dfb49815c357ac963bdb6a053a3fbf05f 89798 bytes
+loader bc37c0b985d8f9522c5b9ac2457d26fe987e8ed06f4399bc1a72b2fc661d4aa0 90863 bytes
 ui 612e851a65d7bb4983ce2f334edc14f7fb4415a9dfee9204c37bd4300f1641ad 1349224 bytes
 AnimeExpeditions 3e2f74c4f329f0e04f7620b195bc58088809073fbf3caf3e6ed060afbf5b2c3d 2359 bytes
 AnimeVanguards b756029c5fe55979246a12cc0421355dd885bb4e480258bce5a8effdaaafce92 714186 bytes

@@ -16,6 +16,7 @@ local GLOW_ALPHA = 0.8
 local FADE_SECONDS = 0.18
 local CORNER_RADIUS = 14
 local GLOW_INSET = 0
+local MAX_DEPTH = 8
 local EDGE_FADE = 0.55 -- gradient transparency at the card edges: the whole card tints, the cursor spot is brighter
 
 local HoverGlow = {}
@@ -24,17 +25,31 @@ local function isButton(object: any): boolean
     return object:IsA("TextButton") or object:IsA("ImageButton")
 end
 
+-- A card's UIPadding shrinks the area its children's scale sizes refer to; cancel it so the glow covers the whole box.
+local function fit(glow: any, card: any)
+    local pad: any = card:FindFirstChildOfClass("UIPadding")
+    local width = card.AbsoluteSize.X
+    local height = card.AbsoluteSize.Y
+    local left, right, top, bottom = 0, 0, 0, 0
+    if pad then
+        left = pad.PaddingLeft.Scale * width + pad.PaddingLeft.Offset
+        right = pad.PaddingRight.Scale * width + pad.PaddingRight.Offset
+        top = pad.PaddingTop.Scale * height + pad.PaddingTop.Offset
+        bottom = pad.PaddingBottom.Scale * height + pad.PaddingBottom.Offset
+    end
+    glow.Size = ENV.UDim2.new(1, left + right - GLOW_INSET * 2, 1, top + bottom - GLOW_INSET * 2)
+    glow.Position = ENV.UDim2.fromOffset(GLOW_INSET - left, GLOW_INSET - top)
+end
+
 -- Builds the glow once per card: a rounded frame under the content, brightest where the mouse is.
 local function buildGlow(card: any, color: any): any
     local create = ENV.Instance
     local glow = create.new("Frame")
     glow.Name = GLOW_NAME
-    glow.Size = ENV.UDim2.new(1, -GLOW_INSET * 2, 1, -GLOW_INSET * 2)
-    glow.Position = ENV.UDim2.fromOffset(GLOW_INSET, GLOW_INSET)
     glow.BackgroundColor3 = color
     glow.BackgroundTransparency = 1
     glow.BorderSizePixel = 0
-    glow.ZIndex = 0
+    glow.ZIndex = 1
     glow.Active = false
     local corner = create.new("UICorner")
     corner.CornerRadius = ENV.UDim.new(0, CORNER_RADIUS)
@@ -47,6 +62,7 @@ local function buildGlow(card: any, color: any): any
     })
     gradient.Parent = glow
     glow.Parent = card
+    fit(glow, card)
     return glow
 end
 
@@ -93,11 +109,19 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
         end
         wired[button] = true
         local glow: any = nil
-        -- The card is the button's parent when it is the squircle outline; otherwise the button itself.
+        -- The card is the element's full box: the ancestor sitting directly in the page's scrolling list
+        -- (toggles, sliders and dropdowns only make a small part of it the button); else the button itself.
         local function card(): any
-            local parent: any = button.Parent
-            if parent and parent:IsA("ImageLabel") and parent.AbsoluteSize.X >= button.AbsoluteSize.X then
-                return parent
+            local node: any = button
+            for _ = 1, MAX_DEPTH do
+                local parent: any = node.Parent
+                if parent == nil then
+                    break
+                end
+                if parent:IsA("ScrollingFrame") then
+                    return node
+                end
+                node = parent
             end
             return button
         end
@@ -125,6 +149,7 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
                     table.insert(glows, glow)
                 end
                 glow.BackgroundColor3 = themeColor(library)
+                fit(glow, glow.Parent)
                 follow()
                 fade(glow, GLOW_ALPHA)
             end) :: any

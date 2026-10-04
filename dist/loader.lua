@@ -1521,23 +1521,38 @@ do
             local FADE_SECONDS = 0.18
             local CORNER_RADIUS = 14
             local GLOW_INSET = 0
+            local MAX_DEPTH = 8
             local EDGE_FADE = 0.55
             local HoverGlow = {}
 
             local function isButton(object)
                 return object:IsA('TextButton') or object:IsA('ImageButton')
             end
+            local function fit(glow, card)
+                local pad = card:FindFirstChildOfClass('UIPadding')
+                local width = card.AbsoluteSize.X
+                local height = card.AbsoluteSize.Y
+                local left, right, top, bottom = 0, 0, 0, 0
+
+                if pad then
+                    left = pad.PaddingLeft.Scale * width + pad.PaddingLeft.Offset
+                    right = pad.PaddingRight.Scale * width + pad.PaddingRight.Offset
+                    top = pad.PaddingTop.Scale * height + pad.PaddingTop.Offset
+                    bottom = pad.PaddingBottom.Scale * height + pad.PaddingBottom.Offset
+                end
+
+                glow.Size = ENV.UDim2.new(1, left + right - GLOW_INSET * 2, 1, top + bottom - GLOW_INSET * 2)
+                glow.Position = ENV.UDim2.fromOffset(GLOW_INSET - left, GLOW_INSET - top)
+            end
             local function buildGlow(card, color)
                 local create = ENV.Instance
                 local glow = create.new('Frame')
 
                 glow.Name = GLOW_NAME
-                glow.Size = ENV.UDim2.new(1, -GLOW_INSET * 2, 1, -GLOW_INSET * 2)
-                glow.Position = ENV.UDim2.fromOffset(GLOW_INSET, GLOW_INSET)
                 glow.BackgroundColor3 = color
                 glow.BackgroundTransparency = 1
                 glow.BorderSizePixel = 0
-                glow.ZIndex = 0
+                glow.ZIndex = 1
                 glow.Active = false
 
                 local corner = create.new('UICorner')
@@ -1554,6 +1569,8 @@ do
                 })
                 gradient.Parent = glow
                 glow.Parent = card
+
+                fit(glow, card)
 
                 return glow
             end
@@ -1605,10 +1622,19 @@ do
                     local glow = nil
 
                     local function card()
-                        local parent = button.Parent
+                        local node = button
 
-                        if parent and parent:IsA('ImageLabel') and parent.AbsoluteSize.X >= button.AbsoluteSize.X then
-                            return parent
+                        for _ = 1, MAX_DEPTH do
+                            local parent = node.Parent
+
+                            if parent == nil then
+                                break
+                            end
+                            if parent:IsA('ScrollingFrame') then
+                                return node
+                            end
+
+                            node = parent
                         end
 
                         return button
@@ -1642,6 +1668,7 @@ do
 
                         glow.BackgroundColor3 = themeColor(library)
 
+                        fit(glow, glow.Parent)
                         follow()
                         fade(glow, GLOW_ALPHA)
                     end)))
