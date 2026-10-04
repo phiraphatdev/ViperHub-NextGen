@@ -179,4 +179,42 @@ function Choice.shopPurchases(stock: any, budget: number, wants: any): { any }
     return plan
 end
 
+local UNIT_RARITY = {
+    Vanguard = 9,
+    Exclusive = 8,
+    Secret = 7,
+    Mythic = 6,
+    Legendary = 5,
+    Epic = 4,
+    Rare = 3,
+    Uncommon = 2,
+    Common = 1,
+}
+
+--- Picks the offered reward unit of the highest rarity (the first on a tie; the first when no rarity is readable).
+--- The offer is the UnitRewardEvent "Offer" data; its exact shape is not yet observed, so options are read from
+--- `Options`, `Units` or the data itself when it is a list, and each option's rarity from `Rarity` or `UnitRarity`.
+--- Returns the 1-based index, or nil when there is nothing to pick.
+function Choice.pickUnitReward(data: any): number?
+    if type(data) ~= "table" then
+        return nil
+    end
+    local options: any = data.Options or data.Units or data.Choices or data
+    if type(options) ~= "table" or #options == 0 then
+        return nil
+    end
+    local best: number = 1
+    local bestRank = -math.huge
+    for index = 1, #options do
+        local option = options[index]
+        local rarity = if type(option) == "table" then option.Rarity or option.UnitRarity else nil
+        local rank = if type(rarity) == "string" then UNIT_RARITY[rarity] or 0 else 0
+        if rank > bestRank then
+            best = index
+            bestRank = rank
+        end
+    end
+    return best
+end
+
 return Choice

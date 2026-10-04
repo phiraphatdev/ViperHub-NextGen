@@ -1140,4 +1140,72 @@ test("The shop watcher asks for the shop when a Shop room is current and the ope
     runtime.stop()
 end)
 
+test("Adventure picks a reward unit after an Elite floor", function()
+    assert(AdventureChoice.pickUnitReward({
+        Options = { { Rarity = "Rare" }, { Rarity = "Exclusive" }, { Rarity = "Mythic" } },
+    }) == 2)
+    assert(AdventureChoice.pickUnitReward({ { Rarity = "Epic" }, { Rarity = "Epic" } }) == 1)
+    assert(
+        AdventureChoice.pickUnitReward({ Units = { { Name = "A" }, { Name = "B" } } }) == 1,
+        "no rarity: the first"
+    )
+    assert(AdventureChoice.pickUnitReward({}) == nil and AdventureChoice.pickUnitReward(nil) == nil)
+
+    local settings = AdventureSettings.new(AdventureCatalog.fromModules(nil), {})
+    local box: any = { fired = {} }
+    local pending: { any } = {}
+    local remote: any = {
+        OnClientEvent = {
+            Connect = function(_self: any, callback: any)
+                box.callback = callback
+                return {
+                    Disconnect = function() end,
+                }
+            end,
+        },
+        FireServer = function(_self: any, ...: any)
+            table.insert(box.fired, { ... })
+        end,
+    }
+    local runtime = AdventureRuntime.new(function()
+        return settings
+    end, {
+        clock = function()
+            return 1
+        end,
+        task = {
+            delay = function(_seconds: number, callback: any)
+                table.insert(pending, callback)
+            end,
+        },
+        isAdventure = function()
+            return true
+        end,
+        unitReward = remote,
+        events = { CardPickBasicOffer = { On = function() end } },
+    })
+    local function flush()
+        local batch = pending
+        pending = {}
+        for _, callback in batch do
+            local run: any = callback
+            run()
+        end
+    end
+    assert(runtime.start())
+    local offer: any = box.callback
+    offer("Offer", { Options = { { Rarity = "Rare" }, { Rarity = "Secret" } } })
+    flush()
+    assert(#box.fired == 0, "Auto Choose Unit Reward is off")
+    settings.set("autoUnitReward", true)
+    offer("Close", {})
+    flush()
+    assert(#box.fired == 0, "only an Offer is answered")
+    offer("Offer", { Options = { { Rarity = "Rare" }, { Rarity = "Secret" } } })
+    assert(#box.fired == 0, "the answer waits a moment")
+    flush()
+    assert(#box.fired == 1 and box.fired[1][1] == "Pick" and box.fired[1][2] == 2 and runtime.units == 1)
+    runtime.stop()
+end)
+
 print(string.format("PASS: %d unit scenarios (part 4)", passed))

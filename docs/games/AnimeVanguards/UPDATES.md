@@ -1,5 +1,10 @@
 # Updates
 
+## Local: unattended run from Floor 1 and Auto Choose Unit Reward
+
+- Found live: the first Elite floor of a new run (team of one) shows "CLAIM YOUR REWARDS: choose one unit from your starting loadout" (UnitRewardEvent "Offer"; the server answers a pick with "Close") and the run waits for it, so without Auto Choose Unit Reward a fresh run stalls at its first Elite. Added Auto Choose Unit Reward: on an Offer it picks the highest-rarity unit (rarity read from `Rarity`/`UnitRarity`, else the first) with `FireServer("Pick", index)`. The offer's data shape is not yet observed (mock tests only); a mouse click on Choose did unblock the run.
+- Live (new run, floors 1-7, hub loaded at the start, nothing clicked): Auto Join, Basic Card, Route Atlas, Character Card (2 picks) and Auto Stitches Shop (Trait, Memoria and basic cards bought on two Shop floors, 5 and 7 items) all ran by themselves, including the shop watcher.
+
 ## Local: Auto Stitches Shop — verified live
 
 - On a Shop floor the runtime reads the shop (`ShopOpened` / `ShopStockUpdated` payload: `Stock[] {Index, Cost, Purchased, Kind, ...}`, `Budget`, `Spent`) and buys what the Auto Stitches Shop switch and its four lists select: basic cards (`BasicCardName`), starter cards (Kind Power, by name), traits (`TraitName` + tier I/II/III from `TraitIndex`, target `TraitUnitGUID`) and Memoria (by rarity, target the run character's unit GUID, found on a trait offered for it). Order: powers, basic cards by Card Priority, traits, Memoria by rarity, while the budget lasts; the purchase is `ShopPurchase({StockIndex, TargetUnitGUID?})`, one per 1.2 s, then the shop is left when Leave Shop Rooms is on. A shop that was already open when the hub loaded is handled from its first stock update.

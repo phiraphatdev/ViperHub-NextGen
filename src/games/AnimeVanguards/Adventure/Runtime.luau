@@ -83,6 +83,12 @@ local function liveDependencies(): any
                 then data.AdventureFloor
                 else nil
         end,
+        unitReward = (function(): any
+            local networking = replicated:FindFirstChild("Networking")
+            local odyssey = networking and networking:FindFirstChild("Odyssey")
+            local adventure = odyssey and odyssey:FindFirstChild("Adventure")
+            return adventure and adventure:FindFirstChild("UnitRewardEvent")
+        end)(),
         placedUnitGuid = function(name: any): string?
             local handler = optionalModule(env.game:GetService("StarterPlayer"), paths.clientUnitHandler)
             if type(handler) ~= "table" or type(handler.GetAllPlacedUnits) ~= "function" then
@@ -110,8 +116,16 @@ end
 
 --- Creates a stopped controller; getSettings returns the shared Adventure settings (read lazily); deps are injectable.
 function Runtime.new(getSettings: () -> any, injected: any?): any
-    local self: any =
-        { status = "Idle", picked = 0, routed = 0, cards = 0, chests = 0, bought = 0, onStatus = nil }
+    local self: any = {
+        status = "Idle",
+        picked = 0,
+        routed = 0,
+        cards = 0,
+        chests = 0,
+        bought = 0,
+        units = 0,
+        onStatus = nil,
+    }
     local deps: any = injected
     local disconnects: { () -> () } = {}
     local lastKey = ""
@@ -580,6 +594,43 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         end
     end
 
+    -- After an Elite floor the game may offer one unit of the starting loadout (UnitRewardEvent: "Offer", answered
+    -- with FireServer("Pick", index); the server then sends "Close"). The run waits for the answer.
+    local function onUnitReward(kind: any, data: any)
+        if
+            kind ~= "Offer"
+            or not self.active
+            or getSettings().get("autoUnitReward") ~= true
+            or not deps.isAdventure()
+        then
+            return
+        end
+        local index = Choice.pickUnitReward(data)
+        local remote: any = deps.unitReward
+        if not index or remote == nil then
+            setStatus("Auto Choose Unit Reward: no unit offered")
+            return
+        end
+        local function answer()
+            if not self.active or getSettings().get("autoUnitReward") ~= true then
+                return
+            end
+            local okFire = pcall(function()
+                remote:FireServer("Pick", index)
+            end)
+            if okFire then
+                self.units += 1
+                setStatus("Auto Choose Unit Reward: picked unit option " .. tostring(index))
+            end
+        end
+        local taskApi: any = deps.task
+        if type(taskApi) == "table" and type(taskApi.delay) == "function" then
+            (taskApi.delay :: any)(PICK_DELAY_SECONDS, answer)
+        else
+            answer()
+        end
+    end
+
     -- Event handlers run inside the game's signal code, where an error would vanish: report it in the status instead.
     local function guarded(name: string, handler: (any) -> ()): (any) -> ()
         return function(payload: any)
@@ -711,6 +762,22 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         end
         self.active = true
         setStatus("Listening for card and room offers")
+        local rewardRemote: any = deps.unitReward
+        if rewardRemote ~= nil then
+            local okReward, connection = pcall(function()
+                return rewardRemote.OnClientEvent:Connect(function(kind: any, data: any)
+                    local okHandler, err = pcall(onUnitReward, kind, data)
+                    if not okHandler then
+                        setStatus("Adventure unit reward failed: " .. string.sub(tostring(err), 1, 90))
+                    end
+                end)
+            end)
+            if okReward and connection then
+                table.insert(disconnects, function()
+                    connection:Disconnect()
+                end)
+            end
+        end
         local roomKindDep: any = deps.roomKind
         if type(roomKindDep) == "function" then
             watchShop()

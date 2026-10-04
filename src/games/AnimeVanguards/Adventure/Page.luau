@@ -28,6 +28,7 @@ local UNLOCKED: { [string]: boolean } = {
     openTreasure = true,
     closeMap = true,
     autoStitchesShop = true,
+    autoUnitReward = true,
     buyBasicCards = true,
     buyStarterCards = true,
     buyTraits = true,

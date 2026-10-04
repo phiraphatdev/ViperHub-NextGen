@@ -7507,6 +7507,7 @@ do
                 openTreasure = true,
                 closeMap = true,
                 autoStitchesShop = true,
+                autoUnitReward = true,
                 buyBasicCards = true,
                 buyStarterCards = true,
                 buyTraits = true,
@@ -8326,6 +8327,46 @@ do
                 return plan
             end
 
+            local UNIT_RARITY = {
+                Vanguard = 9,
+                Exclusive = 8,
+                Secret = 7,
+                Mythic = 6,
+                Legendary = 5,
+                Epic = 4,
+                Rare = 3,
+                Uncommon = 2,
+                Common = 1,
+            }
+
+            function Choice.pickUnitReward(data)
+                if type(data) ~= 'table' then
+                    return nil
+                end
+
+                local options = data.Options or data.Units or data.Choices or data
+
+                if type(options) ~= 'table' or #options == 0 then
+                    return nil
+                end
+
+                local best = 1
+                local bestRank = -math.huge
+
+                for index = 1, #options do
+                    local option = options[index]
+                    local rarity = if type(option) == 'table'then option.Rarity or option.UnitRarity else nil
+                    local rank = if type(rarity) == 'string'then UNIT_RARITY[rarity] or 0 else 0
+
+                    if rank > bestRank then
+                        best = index
+                        bestRank = rank
+                    end
+                end
+
+                return best
+            end
+
             return Choice
         end
 
@@ -8424,6 +8465,13 @@ do
 
                         return if type(data) == 'table' and type(data.AdventureFloor) == 'number'then data.AdventureFloor else nil
                     end,
+                    unitReward = (function()
+                        local networking = replicated:FindFirstChild('Networking')
+                        local odyssey = networking and networking:FindFirstChild('Odyssey')
+                        local adventure = odyssey and odyssey:FindFirstChild('Adventure')
+
+                        return adventure and adventure:FindFirstChild('UnitRewardEvent')
+                    end)(),
                     placedUnitGuid = function(name)
                         local handler = optionalModule(env.game:GetService('StarterPlayer'), paths.clientUnitHandler)
 
@@ -8457,6 +8505,7 @@ do
                     cards = 0,
                     chests = 0,
                     bought = 0,
+                    units = 0,
                     onStatus = nil,
                 }
                 local deps = injected
@@ -8942,6 +8991,44 @@ do
                         end
                     end
                 end
+                local function onUnitReward(kind, data)
+                    if kind ~= 'Offer' or not self.active or getSettings().get('autoUnitReward') ~= true or not deps.isAdventure() then
+                        return
+                    end
+
+                    local index = Choice.pickUnitReward(data)
+                    local remote = deps.unitReward
+
+                    if not index or remote == nil then
+                        setStatus('Auto Choose Unit Reward: no unit offered')
+
+                        return
+                    end
+
+                    local function answer()
+                        if not self.active or getSettings().get('autoUnitReward') ~= true then
+                            return
+                        end
+
+                        local okFire = pcall(function()
+                            remote:FireServer('Pick', index)
+                        end)
+
+                        if okFire then
+                            self.units += 1
+
+                            setStatus('Auto Choose Unit Reward: picked unit option ' .. tostring(index))
+                        end
+                    end
+
+                    local taskApi = deps.task
+
+                    if type(taskApi) == 'table' and type(taskApi.delay) == 'function' then
+                        (taskApi.delay)(PICK_DELAY_SECONDS, answer)
+                    else
+                        answer()
+                    end
+                end
                 local function guarded(name, handler)
                     return function(payload)
                         local ok, err = pcall(handler, payload)
@@ -9098,6 +9185,29 @@ do
                     self.active = true
 
                     setStatus('Listening for card and room offers')
+
+                    local rewardRemote = deps.unitReward
+
+                    if rewardRemote ~= nil then
+                        local okReward, connection = pcall(function()
+                            return rewardRemote.OnClientEvent:Connect(function(
+                                kind,
+                                data
+                            )
+                                local okHandler, err = pcall(onUnitReward, kind, data)
+
+                                if not okHandler then
+                                    setStatus('Adventure unit reward failed: ' .. string.sub(tostring(err), 1, 90))
+                                end
+                            end)
+                        end)
+
+                        if okReward and connection then
+                            table.insert(disconnects, function()
+                                connection:Disconnect()
+                            end)
+                        end
+                    end
 
                     local roomKindDep = deps.roomKind
 
