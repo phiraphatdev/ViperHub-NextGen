@@ -8604,7 +8604,7 @@ do
             local SHOP_ASK_SECONDS = (config).thresholds.adventureShopAskSeconds
             local SHOP_UI_GRACE_SECONDS = (config).thresholds.adventureShopUiGraceSeconds
             local HISTORY_LIMIT = 40
-            local END_SCREEN_SECONDS = 6
+            local END_SCREEN_SECONDS = 1
             local LOBBY_RETRY_SECONDS = 20
             local NEW_RUN_FALLBACK_SECONDS = 40
             local TASK_WAIT_SECONDS = (config).thresholds.adventureTaskWaitSeconds
