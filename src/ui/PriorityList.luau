@@ -330,6 +330,7 @@ function PriorityList.mount(host: any, options: Options): Handle
         local tagColor = if tag then Theme.color(tag.color) else nil
         local row = New.new("TextButton")
         row.Name = "Row"
+        row:SetAttribute("NoGlow", true) -- rows have their own hover highlight; the hover glow skips them
         row.Text = ""
         row.AutoButtonColor = false
         row.BorderSizePixel = 0

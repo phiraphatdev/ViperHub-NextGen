@@ -2573,6 +2573,9 @@ do
                     local row = New.new('TextButton')
 
                     row.Name = 'Row'
+
+                    row:SetAttribute('NoGlow', true)
+
                     row.Text = ''
                     row.AutoButtonColor = false
                     row.BorderSizePixel = 0

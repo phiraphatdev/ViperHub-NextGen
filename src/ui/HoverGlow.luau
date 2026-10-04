@@ -11,6 +11,7 @@ local ENV: { [string]: any } = getfenv()
 
 local MIN_WIDTH = 110
 local MIN_HEIGHT = 26
+local MAX_HEIGHT = 200 -- taller buttons are containers (a card holding a list): hovering a row inside is not hovering the card
 local GLOW_NAME = "ViperGlow"
 local GLOW_ALPHA = 0.8
 local FADE_SECONDS = 0.18
@@ -152,7 +153,12 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
         table.insert(
             connections,
             button.MouseEnter:Connect(function()
-                if button.AbsoluteSize.X < MIN_WIDTH or button.AbsoluteSize.Y < MIN_HEIGHT then
+                if
+                    button.AbsoluteSize.X < MIN_WIDTH
+                    or button.AbsoluteSize.Y < MIN_HEIGHT
+                    or button.AbsoluteSize.Y > MAX_HEIGHT
+                    or button:GetAttribute("NoGlow") == true
+                then
                     return
                 end
                 if not glow or not glow.Parent then
