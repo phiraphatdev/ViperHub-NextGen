@@ -1076,8 +1076,9 @@ do
 
             Theme.DEFAULT = 'Viper'
 
-            local BACKDROP_TINT = 0.38
+            local BACKDROP_TINT = 0.3
             local BACKDROP_ROTATION = 125
+            local BACKDROP_STOPS = 10
 
             Theme.colors = table.freeze({
                 primary = '#10b981',
@@ -1425,22 +1426,23 @@ do
                     }, {Rotation = rotation})
                 end
                 local function backdrop(spec)
-                    local tint = hex(spec.background[2]):Lerp(hex(spec.button[1]), BACKDROP_TINT)
+                    local from = hex(spec.background[1])
+                    local body = hex(spec.background[2])
+                    local tint = body:Lerp(hex(spec.button[1]), BACKDROP_TINT)
+                    local stops = {}
 
-                    return (lib.Gradient)(lib, {
-                        ['0'] = {
-                            Color = hex(spec.background[1]),
+                    for step = 0, BACKDROP_STOPS do
+                        local t = step / BACKDROP_STOPS
+                        local eased = t * t * (3 - 2 * t)
+                        local color = if eased < 0.5 then from:Lerp(body, eased * 2)else body:Lerp(tint, (eased - 0.5) * 2)
+
+                        stops[tostring(math.floor(t * 100 + 0.5))] = {
+                            Color = color,
                             Transparency = 0,
-                        },
-                        ['55'] = {
-                            Color = hex(spec.background[2]),
-                            Transparency = 0,
-                        },
-                        ['100'] = {
-                            Color = tint,
-                            Transparency = 0,
-                        },
-                    }, {Rotation = BACKDROP_ROTATION})
+                        }
+                    end
+
+                    return (lib.Gradient)(lib, stops, {Rotation = BACKDROP_ROTATION})
                 end
 
                 for _, spec in Theme.SPECS do

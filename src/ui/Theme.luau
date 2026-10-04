@@ -10,8 +10,9 @@ local Theme = {}
 
 Theme.DEFAULT = "Viper"
 
-local BACKDROP_TINT = 0.38 -- share of the button color mixed into the far corner of the window fill
+local BACKDROP_TINT = 0.3 -- share of the button color mixed into the far corner of the window fill
 local BACKDROP_ROTATION = 125
+local BACKDROP_STOPS = 10 -- keypoints across the window fill (ColorSequence allows 20)
 
 -- Brand colors shared by window tags, tab icons and page accents.
 Theme.colors = table.freeze({
@@ -272,14 +273,22 @@ function Theme.register(library: any, preferred: string?): string
             ["100"] = { Color = colors[2], Transparency = 0 },
         }, { Rotation = rotation })
     end
-    -- Window fill: dark corner -> body -> a soft tint of the theme's button color, diagonal so it is clearly graded.
+    -- Window fill: dark corner -> body -> a soft tint of the button color. Many eased stops (smoothstep, no hard
+    -- kink at a middle stop) keep the transition smooth; two or three stops show visible bands on dark colors.
     local function backdrop(spec: Spec): any
-        local tint = hex(spec.background[2]):Lerp(hex(spec.button[1]), BACKDROP_TINT)
-        return (lib.Gradient :: any)(lib, {
-            ["0"] = { Color = hex(spec.background[1]), Transparency = 0 },
-            ["55"] = { Color = hex(spec.background[2]), Transparency = 0 },
-            ["100"] = { Color = tint, Transparency = 0 },
-        }, { Rotation = BACKDROP_ROTATION })
+        local from = hex(spec.background[1])
+        local body = hex(spec.background[2])
+        local tint = body:Lerp(hex(spec.button[1]), BACKDROP_TINT)
+        local stops: { [string]: any } = {}
+        for step = 0, BACKDROP_STOPS do
+            local t = step / BACKDROP_STOPS
+            local eased = t * t * (3 - 2 * t)
+            local color = if eased < 0.5
+                then from:Lerp(body, eased * 2)
+                else body:Lerp(tint, (eased - 0.5) * 2)
+            stops[tostring(math.floor(t * 100 + 0.5))] = { Color = color, Transparency = 0 }
+        end
+        return (lib.Gradient :: any)(lib, stops, { Rotation = BACKDROP_ROTATION })
     end
     for _, spec in Theme.SPECS do
         pcall(function()
