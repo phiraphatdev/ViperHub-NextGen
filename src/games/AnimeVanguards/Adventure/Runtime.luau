@@ -423,6 +423,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             return
         end
         shopHandled = true
+        setStatus("Shop: opened, planning purchases")
         -- The shop can announce itself more than once: act on one opening at a time.
         local stock: any = if type(info) == "table" then info.Stock else nil
         local now = deps.clock()
@@ -451,6 +452,13 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                 }
             )
         end
+        setStatus(
+            "Shop: "
+                .. tostring(#plan)
+                .. " item(s) to buy (budget "
+                .. tostring(if type(info) == "table" then info.Budget else nil)
+                .. ")"
+        )
         local taskApi: any = deps.task
         local function later(seconds: number, action: () -> ())
             if type(taskApi) == "table" and type(taskApi.delay) == "function" then

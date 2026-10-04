@@ -8781,6 +8781,8 @@ do
 
                     shopHandled = true
 
+                    setStatus('Shop: opened, planning purchases')
+
                     local stock = if type(info) == 'table'then info.Stock else nil
                     local now = deps.clock()
                     local key = 'shop:' .. tostring(if type(info) == 'table'then info.Budget else nil) .. ':' .. tostring(type(stock) == 'table' and #stock or 0)
@@ -8804,6 +8806,8 @@ do
                             rank = saved.get('cardPriority'),
                         })
                     end
+
+                    setStatus('Shop: ' .. tostring(#plan) .. ' item(s) to buy (budget ' .. tostring(if type(info) == 'table'then info.Budget else nil) .. ')')
 
                     local taskApi = deps.task
 
