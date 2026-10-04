@@ -26,6 +26,7 @@ local HISTORY_LIMIT = 40
 local END_SCREEN_SECONDS = 1
 local LOBBY_RETRY_SECONDS = 20
 local NEW_RUN_FALLBACK_SECONDS = 40
+local MAP_POLL_SECONDS = 10
 local TASK_WAIT_SECONDS: number = (config :: any).thresholds.adventureTaskWaitSeconds
 local TASK_WAIT_RETRY_SECONDS: number = (config :: any).thresholds.adventureTaskWaitRetrySeconds
 local VOTE_RETRY_SECONDS: number = (config :: any).thresholds.adventureVoteRetrySeconds
@@ -1093,11 +1094,24 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
     local endSince: number? = nil
     local lastLobbyAt = -math.huge
     local lastNewRunAt = -math.huge
+    local lastMapPoll = -math.huge
     local lastEndRunAt = -math.huge
     local function watchShop()
         local taskApi: any = deps.task
         if not self.active or type(taskApi) ~= "table" or type(taskApi.delay) ~= "function" then
             return
+        end
+        -- Missed vote safety: ask for the map now and then while no vote is known (handled on the snapshot).
+        if
+            not voteOpen
+            and getSettings().get("autoRoute") == true
+            and deps.clock() - lastMapPoll >= MAP_POLL_SECONDS
+        then
+            lastMapPoll = deps.clock()
+            local askMap = if deps.events then deps.events.MapRequestSnapshot else nil
+            if type(askMap) == "table" and type(askMap.Fire) == "function" then
+                pcall(askMap.Fire)
+            end
         end
         -- The game re-subscribes its own listeners (a new run, a UI remount): stay attached next to them.
         for _, sub in subscriptions do
@@ -1322,6 +1336,36 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                 local waiting = pendingRooms
                 if waiting ~= nil then
                     guarded("room offer", onRoomOffer)(waiting)
+                    return
+                end
+                -- A vote is open on the map (next-floor nodes are selectable) but its offer never reached the hub
+                -- (the hub loaded late or the event went to another listener): vote from the map itself.
+                if voteOpen or type(data) ~= "table" or type(data.Nodes) ~= "table" then
+                    return
+                end
+                local nextFloor = (tonumber(data.CurrentFloor) or 0) + 1
+                local options: { any } = {}
+                for _, node in data.Nodes do
+                    if type(node) == "table" and node.IsSelectable == true then
+                        local lane = tonumber(node.Lane)
+                        local floorNo = tonumber(node.Floor)
+                        if (lane == nil or floorNo == nil) and type(node.Id) == "string" then
+                            local f, l = string.match(node.Id, "^F(%d+)_L(%d+)$")
+                            floorNo, lane = tonumber(f), tonumber(l)
+                        end
+                        if lane and floorNo == nextFloor and type(node.Kind) == "string" then
+                            table.insert(options, {
+                                Index = lane,
+                                AdventureRoomKind = node.Kind,
+                                AdventureFloor = floorNo,
+                                BossRoom = node.Kind == "Boss",
+                            })
+                        end
+                    end
+                end
+                if #options > 0 then
+                    setStatus("Auto Route Atlas: vote found on the map without an offer")
+                    guarded("room offer", onRoomOffer)({ Options = options })
                 end
             end)
             if okRelay and type(undoRelay) == "function" then
