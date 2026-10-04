@@ -11,9 +11,9 @@ local Theme = require("./Theme")
 local HoverGlow = require("./HoverGlow")
 local Dither = require("./Dither")
 local ENV: { [string]: any } = getfenv()
-local WINDOW_WIDTH = 680
-local WINDOW_HEIGHT = 460
-local SIDEBAR_WIDTH = 210
+local WINDOW_WIDTH = 600
+local WINDOW_HEIGHT = 400
+local SIDEBAR_WIDTH = 180
 local WindUIAdapter = {}
 --- Owns library resources for context; registers teardown and returns nothing.
 function WindUIAdapter.own(library: any, context: Types.Context)

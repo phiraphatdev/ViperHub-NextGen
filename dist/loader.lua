@@ -1845,9 +1845,9 @@ do
             local HoverGlow = __DARKLUA_BUNDLE_MODULES.w()
             local Dither = __DARKLUA_BUNDLE_MODULES.x()
             local ENV = getfenv()
-            local WINDOW_WIDTH = 680
-            local WINDOW_HEIGHT = 460
-            local SIDEBAR_WIDTH = 210
+            local WINDOW_WIDTH = 600
+            local WINDOW_HEIGHT = 400
+            local SIDEBAR_WIDTH = 180
             local WindUIAdapter = {}
 
             function WindUIAdapter.own(library, context)
