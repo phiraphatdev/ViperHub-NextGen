@@ -6,6 +6,7 @@ Output: Settings tab
 Dependencies: ConfigStore; WindUI keybind; runtime task scheduler
 ]]
 
+local Theme = require("../Theme")
 local Settings = {}
 local runtimeTask: any = getfenv().task
 local function applyToggleKey(window: any, store: any, keyCodes: any, value: any, control: any?)
@@ -50,8 +51,8 @@ function Settings.mount(window: any, store: any, library: any, keyCodes: any, co
     })
     controls.theme = tab:Dropdown({
         Title = "Theme",
-        Desc = "Viper is the ViperHub emerald theme; Dark is the plain library theme.",
-        Values = { "Viper", "Dark" },
+        Desc = "ViperHub themes first, then the library's own. Changes apply instantly.",
+        Values = Theme.list(library),
         Value = config.theme,
         Callback = function(value: string)
             store.update("theme", value)

@@ -627,8 +627,10 @@ do
 
                 output.uiScale = Validation.number(data.uiScale, 0.8, 1.3, Defaults.uiScale)
 
-                if data.theme == 'Viper' or (data.theme == 'Dark' and data.themeVersion == THEME_VERSION) then
-                    output.theme = data.theme
+                local theme = data.theme
+
+                if type(theme) == 'string' and #theme > 0 and #theme <= 32 and string.match(theme, '^[%w %-]+$') ~= nil and (theme ~= 'Dark' or data.themeVersion == THEME_VERSION) then
+                    output.theme = theme
                 end
                 if type(data.toggleKey) == 'string' and (KEYS)[data.toggleKey] then
                     output.toggleKey = data.toggleKey
@@ -1073,10 +1075,6 @@ do
             local Theme = {}
 
             Theme.DEFAULT = 'Viper'
-            Theme.NAMES = table.freeze({
-                'Viper',
-                'Dark',
-            })
             Theme.colors = table.freeze({
                 primary = '#10b981',
                 secondary = '#2dd4bf',
@@ -1087,14 +1085,317 @@ do
                 orange = '#fb923c',
                 slate = '#94a3b8',
             })
+            Theme.SPECS = table.freeze({
+                {
+                    name = 'Viper',
+                    accent = '#0b3b2e',
+                    dialog = '#071a15',
+                    outline = '#34d399',
+                    text = '#ecfdf5',
+                    placeholder = '#6ee7b7',
+                    background = {
+                        '#030d0b',
+                        '#0a231d',
+                    },
+                    button = {
+                        '#059669',
+                        '#14b8a6',
+                    },
+                    icon = '#34d399',
+                    element = '#0f2a23',
+                },
+                {
+                    name = 'Sakura',
+                    accent = '#4a1530',
+                    dialog = '#2a0b1b',
+                    outline = '#f9a8d4',
+                    text = '#fdf2f8',
+                    placeholder = '#f9a8d4',
+                    background = {
+                        '#14060d',
+                        '#2b0d1d',
+                    },
+                    button = {
+                        '#ec4899',
+                        '#f472b6',
+                    },
+                    icon = '#f472b6',
+                    element = '#2e1220',
+                },
+                {
+                    name = 'Ocean',
+                    accent = '#0c3352',
+                    dialog = '#061a2b',
+                    outline = '#38bdf8',
+                    text = '#e0f2fe',
+                    placeholder = '#7dd3fc',
+                    background = {
+                        '#020b14',
+                        '#06223a',
+                    },
+                    button = {
+                        '#0284c7',
+                        '#06b6d4',
+                    },
+                    icon = '#38bdf8',
+                    element = '#0b2538',
+                },
+                {
+                    name = 'Sunset',
+                    accent = '#4a1d12',
+                    dialog = '#2a0f0a',
+                    outline = '#fb923c',
+                    text = '#fff7ed',
+                    placeholder = '#fdba74',
+                    background = {
+                        '#140805',
+                        '#2e0f16',
+                    },
+                    button = {
+                        '#f97316',
+                        '#e11d48',
+                    },
+                    icon = '#fb923c',
+                    element = '#2c1612',
+                },
+                {
+                    name = 'Galaxy',
+                    accent = '#2e1065',
+                    dialog = '#160734',
+                    outline = '#a78bfa',
+                    text = '#f5f3ff',
+                    placeholder = '#c4b5fd',
+                    background = {
+                        '#07041a',
+                        '#1a0b3d',
+                    },
+                    button = {
+                        '#7c3aed',
+                        '#4f46e5',
+                    },
+                    icon = '#a78bfa',
+                    element = '#1c1238',
+                },
+                {
+                    name = 'Blood Moon',
+                    accent = '#450a0a',
+                    dialog = '#1f0505',
+                    outline = '#f87171',
+                    text = '#fef2f2',
+                    placeholder = '#fca5a5',
+                    background = {
+                        '#0a0202',
+                        '#230606',
+                    },
+                    button = {
+                        '#b91c1c',
+                        '#ef4444',
+                    },
+                    icon = '#f87171',
+                    element = '#2a0d0d',
+                },
+                {
+                    name = 'Gold Rush',
+                    accent = '#3a2a06',
+                    dialog = '#1c1404',
+                    outline = '#fbbf24',
+                    text = '#fffbeb',
+                    placeholder = '#fcd34d',
+                    background = {
+                        '#0a0803',
+                        '#1f1706',
+                    },
+                    button = {
+                        '#d97706',
+                        '#facc15',
+                    },
+                    icon = '#fbbf24',
+                    element = '#26200f',
+                },
+                {
+                    name = 'Frost',
+                    accent = '#16384a',
+                    dialog = '#0b1e29',
+                    outline = '#a5f3fc',
+                    text = '#f0fdff',
+                    placeholder = '#a5f3fc',
+                    background = {
+                        '#06121a',
+                        '#0f2a36',
+                    },
+                    button = {
+                        '#22d3ee',
+                        '#93c5fd',
+                    },
+                    icon = '#67e8f9',
+                    element = '#13303d',
+                },
+                {
+                    name = 'Matrix',
+                    accent = '#052e16',
+                    dialog = '#021a0c',
+                    outline = '#22c55e',
+                    text = '#dcfce7',
+                    placeholder = '#4ade80',
+                    background = {
+                        '#000000',
+                        '#03140a',
+                    },
+                    button = {
+                        '#16a34a',
+                        '#22c55e',
+                    },
+                    icon = '#22c55e',
+                    element = '#071a0e',
+                },
+                {
+                    name = 'Cyberpunk',
+                    accent = '#3b0a45',
+                    dialog = '#1d0624',
+                    outline = '#facc15',
+                    text = '#fefce8',
+                    placeholder = '#f0abfc',
+                    background = {
+                        '#0b0418',
+                        '#25082f',
+                    },
+                    button = {
+                        '#d946ef',
+                        '#facc15',
+                    },
+                    icon = '#f0abfc',
+                    element = '#22102c',
+                },
+                {
+                    name = 'Lava',
+                    accent = '#4a1a04',
+                    dialog = '#260c02',
+                    outline = '#fb923c',
+                    text = '#fff7ed',
+                    placeholder = '#fdba74',
+                    background = {
+                        '#120501',
+                        '#2e0d02',
+                    },
+                    button = {
+                        '#dc2626',
+                        '#f97316',
+                    },
+                    icon = '#f97316',
+                    element = '#2d1408',
+                },
+                {
+                    name = 'Royal',
+                    accent = '#2e1a4a',
+                    dialog = '#170c26',
+                    outline = '#fbbf24',
+                    text = '#faf5ff',
+                    placeholder = '#d8b4fe',
+                    background = {
+                        '#0b0614',
+                        '#1e1033',
+                    },
+                    button = {
+                        '#7e22ce',
+                        '#d97706',
+                    },
+                    icon = '#c084fc',
+                    element = '#201433',
+                },
+                {
+                    name = 'Toxic',
+                    accent = '#283a06',
+                    dialog = '#141d03',
+                    outline = '#a3e635',
+                    text = '#f7fee7',
+                    placeholder = '#bef264',
+                    background = {
+                        '#070a01',
+                        '#172206',
+                    },
+                    button = {
+                        '#65a30d',
+                        '#a3e635',
+                    },
+                    icon = '#a3e635',
+                    element = '#1a240b',
+                },
+                {
+                    name = 'Shadow',
+                    accent = '#1f1f23',
+                    dialog = '#111113',
+                    outline = '#a1a1aa',
+                    text = '#fafafa',
+                    placeholder = '#a1a1aa',
+                    background = {
+                        '#050505',
+                        '#141416',
+                    },
+                    button = {
+                        '#3f3f46',
+                        '#71717a',
+                    },
+                    icon = '#d4d4d8',
+                    element = '#18181b',
+                },
+            })
 
-            function Theme.register(library, preferred)
-                local wanted = if preferred and table.find(Theme.NAMES, preferred)then preferred else Theme.DEFAULT
+            local BUILT_IN_ORDER = {
+                'Dark',
+                'Light',
+                'Emerald',
+                'Midnight',
+                'Crimson',
+                'Rose',
+                'Violet',
+                'Indigo',
+                'Sky',
+                'Amber',
+            }
 
-                if wanted ~= 'Viper' then
-                    return wanted
+            local function customNames()
+                local names = {}
+
+                for _, spec in Theme.SPECS do
+                    table.insert(names, spec.name)
                 end
 
+                return names
+            end
+
+            function Theme.list(library)
+                local names = customNames()
+                local themes = if type(library) == 'table' and type(library.Themes) == 'table'then library.Themes else nil
+
+                if not themes then
+                    table.insert(names, 'Dark')
+
+                    return names
+                end
+
+                for _, name in BUILT_IN_ORDER do
+                    if themes[name] ~= nil and not table.find(names, name) then
+                        table.insert(names, name)
+                    end
+                end
+
+                local rest = {}
+
+                for name in themes do
+                    if type(name) == 'string' and not table.find(names, name) then
+                        table.insert(rest, name)
+                    end
+                end
+
+                table.sort(rest)
+
+                for _, name in rest do
+                    table.insert(names, name)
+                end
+
+                return names
+            end
+            function Theme.register(library, preferred)
                 local env = getfenv()
                 local color3 = env.Color3
 
@@ -1103,48 +1404,57 @@ do
                 end
 
                 local lib = library
-                local ok = pcall(function()
-                    local function hex(value)
-                        return color3.fromHex(value)
-                    end
-                    local function gradient(from, to, rotation)
-                        return (lib.Gradient)(lib, {
-                            ['0'] = {
-                                Color = from,
-                                Transparency = 0,
-                            },
-                            ['100'] = {
-                                Color = to,
-                                Transparency = 0,
-                            },
-                        }, {Rotation = rotation})
-                    end
 
-                    (lib.AddTheme)(lib, {
-                        Name = 'Viper',
-                        Accent = hex('#0b3b2e'),
-                        Dialog = hex('#071a15'),
-                        Outline = hex('#34d399'),
-                        Text = hex('#ecfdf5'),
-                        Placeholder = hex('#6ee7b7'),
-                        Background = gradient('#030d0b', '#0a231d', 90),
-                        Button = gradient('#059669', '#14b8a6', 45),
-                        Icon = hex('#34d399'),
-                        Toggle = gradient('#10b981', '#2dd4bf', 45),
-                        Slider = hex('#10b981'),
-                        Checkbox = gradient('#10b981', '#2dd4bf', 45),
-                        Primary = hex('#10b981'),
-                        SliderIcon = hex('#6ee7b7'),
-                        PanelBackground = hex('#FFFFFF'),
-                        PanelBackgroundTransparency = 0.96,
-                        LabelBackground = hex('#000000'),
-                        LabelBackgroundTransparency = 0.78,
-                        ElementBackground = hex('#0f2a23'),
-                        ElementBackgroundTransparency = 0,
-                    })
-                end)
+                local function hex(value)
+                    return color3.fromHex(value)
+                end
+                local function gradient(colors, rotation)
+                    return (lib.Gradient)(lib, {
+                        ['0'] = {
+                            Color = colors[1],
+                            Transparency = 0,
+                        },
+                        ['100'] = {
+                            Color = colors[2],
+                            Transparency = 0,
+                        },
+                    }, {Rotation = rotation})
+                end
 
-                return if ok then'Viper'else'Dark'
+                for _, spec in Theme.SPECS do
+                    pcall(function()
+                        (lib.AddTheme)(lib, {
+                            Name = spec.name,
+                            Accent = hex(spec.accent),
+                            Dialog = hex(spec.dialog),
+                            Outline = hex(spec.outline),
+                            Text = hex(spec.text),
+                            Placeholder = hex(spec.placeholder),
+                            Background = gradient(spec.background, 90),
+                            Button = gradient(spec.button, 45),
+                            Icon = hex(spec.icon),
+                            Toggle = gradient(spec.button, 45),
+                            Slider = hex(spec.button[1]),
+                            Checkbox = gradient(spec.button, 45),
+                            Primary = hex(spec.button[1]),
+                            SliderIcon = hex(spec.placeholder),
+                            PanelBackground = hex('#FFFFFF'),
+                            PanelBackgroundTransparency = 0.96,
+                            LabelBackground = hex('#000000'),
+                            LabelBackgroundTransparency = 0.78,
+                            ElementBackground = hex(spec.element),
+                            ElementBackgroundTransparency = 0,
+                        })
+                    end)
+                end
+
+                local themes = if type(lib.Themes) == 'table'then lib.Themes else{}
+
+                if preferred and themes[preferred] ~= nil then
+                    return preferred
+                end
+
+                return if themes[Theme.DEFAULT] ~= nil then Theme.DEFAULT else'Dark'
             end
             function Theme.color(value)
                 local env = getfenv()
@@ -1389,6 +1699,7 @@ do
     end
     do
         local function __modImpl()
+            local Theme = __DARKLUA_BUNDLE_MODULES.v()
             local Settings = {}
             local runtimeTask = getfenv().task
 
@@ -1462,11 +1773,8 @@ do
                 controls.theme = tab:Dropdown({
                     Title = 'Theme',
                     Desc =
-[[Viper is the ViperHub emerald theme; Dark is the plain library theme.]],
-                    Values = {
-                        'Viper',
-                        'Dark',
-                    },
+[[ViperHub themes first, then the library's own. Changes apply instantly.]],
+                    Values = Theme.list(library),
                     Value = config.theme,
                     Callback = function(value)
                         store.update('theme', value)

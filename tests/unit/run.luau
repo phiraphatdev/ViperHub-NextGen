@@ -155,6 +155,11 @@ test("config rejects future schema and sanitizes fields", function()
         Schema.decode({ schemaVersion = 1, theme = "Dark", themeVersion = 2 }).theme == "Dark",
         "chosen Dark kept"
     )
+    assert(Schema.decode({ schemaVersion = 1, theme = "Blood Moon" }).theme == "Blood Moon")
+    assert(
+        Schema.decode({ schemaVersion = 1, theme = "../evil" }).theme == "Viper",
+        "unsafe names are refused"
+    )
     assert(Schema.decode(nil).uiScale == 1)
     for _, key in
         { "RightShift", "RightControl", "LeftControl", "Insert", "Delete", "Home", "End", "F1", "F4", "F12" }

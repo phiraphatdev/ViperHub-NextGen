@@ -62,8 +62,16 @@ function Schema.decode(value: unknown): (Config, boolean)
     end
     output.uiScale = Validation.number(data.uiScale, 0.8, 1.3, Defaults.uiScale)
     -- Before themeVersion 2 "Dark" was the only option and was saved without being chosen; those files get Viper.
-    if data.theme == "Viper" or (data.theme == "Dark" and data.themeVersion == THEME_VERSION) then
-        output.theme = data.theme
+    -- Any theme name the UI knows is accepted; an unknown name falls back to the default when the window opens.
+    local theme = data.theme
+    if
+        type(theme) == "string"
+        and #theme > 0
+        and #theme <= 32
+        and string.match(theme, "^[%w %-]+$") ~= nil
+        and (theme ~= "Dark" or data.themeVersion == THEME_VERSION)
+    then
+        output.theme = theme
     end
     if type(data.toggleKey) == "string" and (KEYS :: { [string]: boolean })[data.toggleKey] then
         output.toggleKey = data.toggleKey
