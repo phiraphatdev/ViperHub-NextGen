@@ -3,6 +3,7 @@
 local AdventureAdapter = require("../../src/games/AnimeVanguards/Adventure/Adapter")
 local AdventureCatalog = require("../../src/games/AnimeVanguards/Adventure/Catalog")
 local AdventureDetect = require("../../src/games/AnimeVanguards/Adventure/Detect")
+local AdventureChoice = require("../../src/games/AnimeVanguards/Adventure/Choice")
 local AdventureSettings = require("../../src/games/AnimeVanguards/Adventure/Settings")
 local JoinerRuntime = require("../../src/games/AnimeVanguards/Joiner/Runtime")
 local JoinerSettings = require("../../src/games/AnimeVanguards/Joiner/Settings")
@@ -272,6 +273,27 @@ test("Joiner reports why Odyssey Adventure is not started and stays out of Adven
     assert(inMatch.returnOnMatchEnd == false, "the joiner never sends an Adventure match back to the lobby")
     inMatch.stop()
     JoinerSettings.setPaused(true)
+end)
+
+test("Adventure picks the offered basic card with the highest priority number", function()
+    local offer: any = {
+        { CardName = "Slayer Rounds", Rarity = "Rare", OfferedLevel = 1 },
+        { CardName = "Adrenaline Shot", Rarity = "Rare", OfferedLevel = 3 },
+        { CardName = "Boxing Gloves", Rarity = "Rare", OfferedLevel = 3 },
+    }
+    local catalog = AdventureCatalog.fromModules(nil)
+    local ranks = AdventureSettings.new(catalog, {}).get("cardPriority")
+    assert(
+        AdventureChoice.pickBasicCard(offer, ranks) == 2,
+        "default order: Adrenaline Shot before Boxing Gloves"
+    )
+    assert(AdventureChoice.pickBasicCard(offer, { ["Boxing Gloves"] = 9, ["Slayer Rounds"] = 5 }) == 3)
+    assert(AdventureChoice.pickBasicCard(offer, { ["Slayer Rounds"] = 50 }) == 1)
+    assert(AdventureChoice.pickBasicCard(offer, {}) == 1, "unknown cards tie at 0 and keep the game's order")
+    assert(
+        AdventureChoice.pickBasicCard({}, ranks) == nil and AdventureChoice.pickBasicCard(nil, ranks) == nil
+    )
+    assert(AdventureChoice.pickBasicCard({ "bad", { CardName = 5 }, { CardName = "Ambush" } }, ranks) == 3)
 end)
 
 print(string.format("PASS: %d unit scenarios (part 4)", passed))
