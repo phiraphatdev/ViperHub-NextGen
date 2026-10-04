@@ -8,22 +8,17 @@ Dependencies: None
 
 local Detect = {}
 
---- True when the game data marks an Adventure match. INFERENCE: the exact field is not yet observed in a live run
---- (docs/games/AnimeVanguards/README.md, Phase 0), so any Adventure/Odyssey marker counts; wrongly true only means
---- the joiner and Auto Back to Lobby stay out of that match.
+--- True when the game data belongs to an Adventure run. Observed live (2026-10-04): an Adventure match has
+--- StageType "Odyssey" (shared with the other Odyssey modes) with SubMode "Adventure" (the game's own check), plus
+--- AdventureFloor, AdventureRoomKind and AdventureData.
 function Detect.isAdventureMatch(matchData: any): boolean
     if type(matchData) ~= "table" then
         return false
     end
-    if matchData.Adventure ~= nil or matchData.IsAdventure == true then
-        return true
-    end
-    local stageType = matchData.StageType
-    return type(stageType) == "string"
-        and (
-            string.find(stageType, "Adventure", 1, true) ~= nil
-            or string.find(stageType, "Odyssey", 1, true) ~= nil
-        )
+    return (matchData.StageType == "Odyssey" and matchData.SubMode == "Adventure")
+        or matchData.AdventureFloor ~= nil
+        or matchData.AdventureRoomKind ~= nil
+        or matchData.AdventureData ~= nil
 end
 
 return Detect

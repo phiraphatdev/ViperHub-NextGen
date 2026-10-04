@@ -15,3 +15,17 @@ Auto Play tab: "Auto play - ingame" drives the game's native Auto Play (vote sta
 Production availability: check current status.json; beta foundation was enabled in v0.1.0.
 Game patch compatibility: unknown; a public page identity is not a runtime compatibility test.
 Executor compatibility: Potassium v2.4.9 / Windows and current-source Potassium v2.5.0 / Windows foundation checks passed partially; other environments unverified. See ../../EXECUTORS.md and ../../../tests/runtime/AnimeVanguards-2026-09-24.json.
+
+## Odyssey: Adventure (observed 2026-10-04)
+
+Observed in a live lobby and an Adventure match; inferences are marked.
+
+**Lobby** (`NetworkCode.LobbySpecialEventsClient`)
+- State: `RequestAdventureState.Fire()` is answered through `AdventureFullStateChanged.On` with `Characters[]` (`CharacterName`, `UnlockedPowerIds`, `Loadout{Slot1,Slot2}`, `OwnsLoadoutSlot2`, `Proficiency`), `UnlockedPowerIds`, `OwnsLoadoutSlot2`, `Ascension`, `LastSelectedCharacter`. The reply can take a minute; an empty slot is nil.
+- Start: `StartOdysseyAdventure.Fire({LoadoutProvided, CharacterName, Slot1, Slot2})` creates the hosted Adventure room (Start / Leave / Invite). The run begins when `LobbyMatchmakingClient.StartMatch.Fire()` is pressed in that room, like the stage modes. It did not teleport on its own.
+
+**Match** (`GameHandler.GameData`)
+- `StageType = "Odyssey"` and `SubMode = "Adventure"` (the game's own check); also `AdventureFloor`, `AdventureRoomKind` (Battle/Challenge/Elite/Shop/Treasure/Boss), `AdventureData`, `AdventureBossFloorInterval` (30), `AdventureMapSeed`, `AdventureRunSeed`, `OdysseyRoom`, `CurrentRewardPulls`.
+- Remotes on `NetworkCode.GameOdysseyClient`. Fire: `SelectRoomChoose({RoomIndex})`, `CardPickPick({Choice})`, `CardPickSkip()`, `CardPickReroll()`, `CardPickExchangeBasicCards`, `CardPickSetBasicCardActive`, `BossRewardPick/Skip`, `TreasureOpenChest`, `OdysseyShopRequestStock/Purchase`, `ShopRequestState/Purchase/Reroll/RerollSection/SetLocked/Close`, `StateRunStartFamiliarPick`, `StateRunStartMemoriaPick`, `StateRunStartRequestPendingPicks`, `PickupRequest/Use`, `VoteCast`, `MapRequestSnapshot/SetCursor/PingNode`. On: `SelectRoomSelectionStarted/Ended` (Options with `Index`, `StageType`, `Stage`, `Act`), `CardPickBasicOffer` (`Options`, `RerollsRemaining`, `RerollsUsed`, `RerollCost`), `CardPickCharacterOffer` (`Options`, `AtCap`, `ExistingCards`), `BossRewardOffer`, `ShopOpened`, `OdysseyShopStockUpdated`, `StateOdysseyCoinsUpdated`, `StateRunRewardsUpdated`, `TreasureBegin...`.
+- Not yet observed: the cash out remote, the shape of a card option (what `Choice` takes) and the unit reward offer. Next: read these from a run (inference: `Choice` is the option itself or its index).
+

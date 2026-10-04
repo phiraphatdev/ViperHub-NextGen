@@ -4892,13 +4892,8 @@ do
                 if type(matchData) ~= 'table' then
                     return false
                 end
-                if matchData.Adventure ~= nil or matchData.IsAdventure == true then
-                    return true
-                end
 
-                local stageType = matchData.StageType
-
-                return type(stageType) == 'string' and (string.find(stageType, 'Adventure', 1, true) ~= nil or string.find(stageType, 'Odyssey', 1, true) ~= nil)
+                return (matchData.StageType == 'Odyssey' and matchData.SubMode == 'Adventure') or matchData.AdventureFloor ~= nil or matchData.AdventureRoomKind ~= nil or matchData.AdventureData ~= nil
             end
 
             return Detect

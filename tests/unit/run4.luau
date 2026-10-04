@@ -80,11 +80,18 @@ end)
 test("Adventure detect recognizes Adventure match data only", function()
     assert(not AdventureDetect.isAdventureMatch(nil) and not AdventureDetect.isAdventureMatch("x"))
     assert(not AdventureDetect.isAdventureMatch({ StageType = "Story" }))
-    assert(AdventureDetect.isAdventureMatch({ StageType = "OdysseyAdventure" }))
     assert(
-        AdventureDetect.isAdventureMatch({ Adventure = {} })
-            and AdventureDetect.isAdventureMatch({ IsAdventure = true })
+        not AdventureDetect.isAdventureMatch({ StageType = "Odyssey" }),
+        "regular Odyssey is not Adventure"
     )
+    assert(not AdventureDetect.isAdventureMatch({ StageType = "Odyssey", SubMode = "Limitless" }))
+    assert(AdventureDetect.isAdventureMatch({ StageType = "Odyssey", SubMode = "Adventure" }))
+    assert(AdventureDetect.isAdventureMatch({
+        StageType = "Odyssey",
+        AdventureFloor = 2,
+        AdventureRoomKind = "Elite",
+    }))
+    assert(AdventureDetect.isAdventureMatch({ AdventureData = {} }))
 end)
 
 test("Adventure adapter waits for the game's state, then plans a validated start", function()
@@ -249,7 +256,7 @@ test("Joiner reports why Odyssey Adventure is not started and stays out of Adven
     runtime.stop()
     runtime.setEnabled("Odyssey Adventure", false)
 
-    local matchData: any = { StageType = "OdysseyAdventure" }
+    local matchData: any = { StageType = "Odyssey", AdventureFloor = 2 }
     local inMatch = JoinerRuntime.new({
         game = { PlaceId = 16277809958, GetService = lobbyGame().GetService },
         task = { spawn = function() end, wait = function() end },
