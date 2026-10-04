@@ -420,6 +420,15 @@ test(
                 == 7
         )
         assert(AdventureChoice.pickRoom(nil, first, second, 30) == nil)
+        local bossOffer: any = {
+            { Index = 1, AdventureRoomKind = "LichSovereign", BossRoom = true, AdventureFloor = 30 },
+            { Index = 2, AdventureRoomKind = "Battle", AdventureFloor = 30 },
+        }
+        assert(
+            AdventureChoice.pickRoom(bossOffer, { Boss = 9, Battle = 1 }, second, 99) == 1,
+            "a boss room counts as Boss"
+        )
+        assert(AdventureChoice.pickRoom(bossOffer, { Boss = 0, Battle = 1 }, second, 99) == 2)
         local withTreasure: any = {
             { Index = 1, AdventureRoomKind = "Treasure", AdventureFloor = 17 },
             { Index = 2, AdventureRoomKind = "Battle", AdventureFloor = 17 },
@@ -546,6 +555,95 @@ test("Adventure runtime chooses the next room only in Adventure matches with Aut
     offerRooms()
     flush()
     assert(#chosen == 1, "an identical selection right away is ignored")
+    runtime.stop()
+end)
+
+test("Adventure picks the highest rarity character card; a full hand is skipped; shops are left", function()
+    assert(
+        AdventureChoice.pickCharacterCard({ { Rarity = "Rare" }, { Rarity = "Epic" }, { Rarity = "Epic" } })
+            == 2
+    )
+    assert(AdventureChoice.pickCharacterCard({ { Rarity = "Legendary" }, { Rarity = "Mythic" } }) == 2)
+    assert(AdventureChoice.pickCharacterCard({ { Rarity = "Odd" }, { Rarity = "Rare" } }) == 2)
+    assert(AdventureChoice.pickCharacterCard({}) == nil and AdventureChoice.pickCharacterCard(nil) == nil)
+
+    local settings = AdventureSettings.new(AdventureCatalog.fromModules(nil), {})
+    local box: any = {}
+    local fired: { string } = {}
+    local pending: { any } = {}
+    local runtime = AdventureRuntime.new(function()
+        return settings
+    end, {
+        clock = function()
+            return 10
+        end,
+        task = {
+            delay = function(_seconds: number, callback: any)
+                table.insert(pending, callback)
+            end,
+        },
+        isAdventure = function()
+            return true
+        end,
+        events = {
+            CardPickBasicOffer = { On = function() end },
+            CardPickCharacterOffer = {
+                On = function(callback: any)
+                    box.character = callback
+                    return function() end
+                end,
+            },
+            ShopOpened = {
+                On = function(callback: any)
+                    box.shop = callback
+                    return function() end
+                end,
+            },
+            CardPickPick = {
+                Fire = function(payload: any)
+                    table.insert(fired, "pick" .. payload.Choice)
+                end,
+            },
+            CardPickSkip = {
+                Fire = function()
+                    table.insert(fired, "skip")
+                end,
+            },
+            ShopClose = {
+                Fire = function()
+                    table.insert(fired, "close")
+                end,
+            },
+        },
+    })
+    local function flush()
+        for _, callback in pending do
+            local run: any = callback
+            run()
+        end
+        pending = {}
+    end
+    assert(runtime.start())
+    local offer: any = box.character
+    local opened: any = box.shop
+    local options: any = { { Rarity = "Rare" }, { Rarity = "Epic" } }
+    offer({ Options = options, AtCap = false })
+    flush()
+    assert(#fired == 0, "Auto Character Card is off")
+    settings.set("autoCharacterCard", true)
+    offer({ Options = options, AtCap = false })
+    flush()
+    assert(fired[1] == "pick2" and runtime.cards == 1)
+    offer({ Options = options, AtCap = true })
+    flush()
+    assert(fired[2] == "skip", "a full hand is skipped, not replaced")
+    opened()
+    flush()
+    assert(fired[3] == "close", "the shop is left (default on)")
+    settings.set("leaveShop", false)
+    opened()
+    flush()
+    assert(#fired == 3, "Leave Shop Rooms off: the player decides")
     runtime.stop()
 end)
 

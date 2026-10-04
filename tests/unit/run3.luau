@@ -253,7 +253,6 @@ test("Adventure page mounts the requested layout and binds every control", funct
     end
     for _, title in
         {
-            "Auto Character Card",
             "Auto Cash Out",
             "Buy Unit Trait",
             "Memoria",
@@ -282,6 +281,7 @@ test("Adventure page mounts the requested layout and binds every control", funct
         ["Auto Basic Card"] = "Auto Basic Card/",
         ["Card Priority"] = "Auto Basic Card/Card Priority/",
         ["Auto Stitches Shop"] = "Auto Stitches Shop/",
+        ["Leave Shop Rooms"] = "Auto Stitches Shop/",
         ["Buy Basic Card"] = "Auto Stitches Shop/",
         ["Buy Starter Card"] = "Auto Stitches Shop/",
         ["Buy Unit Trait"] = "Auto Stitches Shop/",

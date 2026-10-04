@@ -23,6 +23,8 @@ local UNLOCKED: { [string]: boolean } = {
     autoBasicCard = true,
     cardPriority = true,
     autoRoute = true,
+    autoCharacterCard = true,
+    leaveShop = true,
     secondPriorityFloor = true,
     floorPriority = true,
     secondFloorPriority = true,
@@ -35,7 +37,7 @@ end
 local ADVENTURE: any = (config :: any).adventure
 
 local PENDING =
-    "Live: Auto Join with the character and slots, Auto Basic Card and Auto Route Atlas. The other controls are locked (Coming soon) until their automation is built."
+    "Live: Auto Join with the character and slots, Auto Basic Card, Auto Route Atlas, Auto Character Card and Leave Shop Rooms. The other controls are locked (Coming soon) until their automation is built."
 
 local function setDesc(control: any, text: string)
     if type(control) == "table" and type(control.SetDesc) == "function" then
@@ -265,6 +267,13 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?, joi
     )
 
     local shop = Style.section(tab, "Auto Stitches Shop", "store", false)
+    toggle(
+        shop,
+        settings,
+        "leaveShop",
+        "Leave Shop Rooms",
+        "On a Shop floor, close the shop without buying so the run goes on (a Shop floor ends only when it is closed)."
+    )
     toggle(
         shop,
         settings,

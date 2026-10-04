@@ -65,7 +65,7 @@ end
 
 --- Creates a stopped controller; getSettings returns the shared Adventure settings (read lazily); deps are injectable.
 function Runtime.new(getSettings: () -> any, injected: any?): any
-    local self: any = { status = "Idle", picked = 0, routed = 0, onStatus = nil }
+    local self: any = { status = "Idle", picked = 0, routed = 0, cards = 0, onStatus = nil }
     local deps: any = injected
     local disconnects: { () -> () } = {}
     local lastKey = ""
@@ -254,6 +254,67 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         end
     end
 
+    -- A character card offer (after an Elite floor): the highest rarity; a full hand (AtCap) is skipped, because
+    -- replacing a card is a choice for the player.
+    local function onCharacterOffer(offer: any)
+        if not self.active or getSettings().get("autoCharacterCard") ~= true or not deps.isAdventure() then
+            return
+        end
+        local options: any = if type(offer) == "table" then offer.Options else nil
+        local atCap = type(offer) == "table" and offer.AtCap == true
+        local index = if atCap then nil else Choice.pickCharacterCard(options)
+        local function answer()
+            if not self.active or getSettings().get("autoCharacterCard") ~= true then
+                return
+            end
+            local events: any = deps.events
+            local remoteName = if index then "CardPickPick" else "CardPickSkip"
+            local entry = if events then events[remoteName] else nil
+            if type(entry) ~= "table" or type(entry.Fire) ~= "function" then
+                return
+            end
+            local fireFn: any = entry.Fire
+            local ok = if index then pcall(fireFn, { Choice = index }) else pcall(fireFn)
+            if ok then
+                self.cards += 1
+                setStatus(
+                    if index
+                        then "Auto Character Card: picked option " .. tostring(index)
+                        else "Auto Character Card: skipped (hand full)"
+                )
+            end
+        end
+        local taskApi: any = deps.task
+        if type(taskApi) == "table" and type(taskApi.delay) == "function" then
+            (taskApi.delay :: any)(PICK_DELAY_SECONDS, answer)
+        else
+            answer()
+        end
+    end
+
+    -- A Shop floor ends when the shop is closed; this build never buys, so it closes the shop to keep the run going.
+    local function onShopOpened()
+        if not self.active or getSettings().get("leaveShop") ~= true or not deps.isAdventure() then
+            return
+        end
+        local function leave()
+            local events: any = deps.events
+            local entry = if events then events.ShopClose else nil
+            if self.active and type(entry) == "table" and type(entry.Fire) == "function" then
+                local fireFn: any = entry.Fire
+                if pcall(fireFn) then
+                    setStatus("Left the shop without buying")
+                end
+            end
+        end
+        local taskApi: any = deps.task
+        if type(taskApi) == "table" and type(taskApi.delay) == "function" then
+            (taskApi.delay :: any)(PICK_DELAY_SECONDS, leave)
+        else
+            leave()
+        end
+    end
+
     --- Starts listening for offers; returns whether the match events exist (false in the lobby). Safe to repeat.
     function self.start(): boolean
         if self.active then
@@ -274,6 +335,18 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         end
         if type(undo) == "function" then
             table.insert(disconnects, undo)
+        end
+        local extras: { [string]: any } =
+            { CardPickCharacterOffer = onCharacterOffer, ShopOpened = onShopOpened }
+        for eventName, handler in extras do
+            local extra = events[eventName]
+            if type(extra) == "table" and type(extra.On) == "function" then
+                local extraOn: any = extra.On
+                local okExtra, undoExtra = pcall(extraOn, handler)
+                if okExtra and type(undoExtra) == "function" then
+                    table.insert(disconnects, undoExtra)
+                end
+            end
         end
         local relay: any = deps.mapRelay
         if type(relay) == "table" and type(relay.OnSnapshot) == "function" then

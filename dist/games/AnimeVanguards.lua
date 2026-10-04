@@ -7068,6 +7068,10 @@ do
                     kind = 'bool',
                     default = false,
                 },
+                leaveShop = {
+                    kind = 'bool',
+                    default = true,
+                },
                 secondPriorityFloor = {
                     kind = 'number',
                     range = ADVENTURE.secondPriorityFloor,
@@ -7480,6 +7484,8 @@ do
                 autoBasicCard = true,
                 cardPriority = true,
                 autoRoute = true,
+                autoCharacterCard = true,
+                leaveShop = true,
                 secondPriorityFloor = true,
                 floorPriority = true,
                 secondFloorPriority = true,
@@ -7491,7 +7497,7 @@ do
 
             local ADVENTURE = (config).adventure
             local PENDING =
-[[Live: Auto Join with the character and slots, Auto Basic Card and Auto Route Atlas. The other controls are locked (Coming soon) until their automation is built.]]
+[[Live: Auto Join with the character and slots, Auto Basic Card, Auto Route Atlas, Auto Character Card and Leave Shop Rooms. The other controls are locked (Coming soon) until their automation is built.]]
 
             local function setDesc(control, text)
                 if type(control) == 'table' and type(control.SetDesc) == 'function' then
@@ -7668,6 +7674,8 @@ do
 
                 local shop = Style.section(tab, 'Auto Stitches Shop', 'store', false)
 
+                toggle(shop, settings, 'leaveShop', 'Leave Shop Rooms',
+[[On a Shop floor, close the shop without buying so the run goes on (a Shop floor ends only when it is closed).]])
                 toggle(shop, settings, 'autoStitchesShop', 'Auto Stitches Shop',
 [[On a Shop floor, buy the items selected below with Odyssey Coins; skipped when off.]])
                 multi(shop, settings, 'buyBasicCards', 'Buy Basic Card', 'Basic cards to buy.', catalog.basicCards)
@@ -8114,15 +8122,47 @@ do
                     local option = options[position]
 
                     if type(option) == 'table' and type(option.AdventureRoomKind) == 'string' then
+                        local kind = if option.BossRoom == true then'Boss'else option.AdventureRoomKind
                         local floor = if type(option.AdventureFloor) == 'number'then option.AdventureFloor else 0
                         local ranks = if floor >= secondFromFloor then second else first
-                        local rank = ranks[option.AdventureRoomKind]
+                        local rank = ranks[kind]
                         local value = if type(rank) == 'number'then rank else-1
                         local index = if type(option.Index) == 'number'then option.Index else position
 
                         if (reachable == nil or reachable[index] == true) and value > bestRank then
                             best = index
                             bestRank = value
+                        end
+                    end
+                end
+
+                return best
+            end
+
+            local CHARACTER_RARITY = {
+                Mythic = 4,
+                Legendary = 3,
+                Epic = 2,
+                Rare = 1,
+            }
+
+            function Choice.pickCharacterCard(options)
+                if type(options) ~= 'table' then
+                    return nil
+                end
+
+                local best = nil
+                local bestRank = -math.huge
+
+                for index = 1, #options do
+                    local option = options[index]
+
+                    if type(option) == 'table' and type(option.Rarity) == 'string' then
+                        local rank = CHARACTER_RARITY[option.Rarity] or 0
+
+                        if rank > bestRank then
+                            best = index
+                            bestRank = rank
                         end
                     end
                 end
@@ -8215,6 +8255,7 @@ do
                     status = 'Idle',
                     picked = 0,
                     routed = 0,
+                    cards = 0,
                     onStatus = nil,
                 }
                 local deps = injected
@@ -8402,6 +8443,73 @@ do
                     end
                 end
 
+                local function onCharacterOffer(offer)
+                    if not self.active or getSettings().get('autoCharacterCard') ~= true or not deps.isAdventure() then
+                        return
+                    end
+
+                    local options = if type(offer) == 'table'then offer.Options else nil
+                    local atCap = type(offer) == 'table' and offer.AtCap == true
+                    local index = if atCap then nil else Choice.pickCharacterCard(options)
+
+                    local function answer()
+                        if not self.active or getSettings().get('autoCharacterCard') ~= true then
+                            return
+                        end
+
+                        local events = deps.events
+                        local remoteName = if index then'CardPickPick'else'CardPickSkip'
+                        local entry = if events then events[remoteName]else nil
+
+                        if type(entry) ~= 'table' or type(entry.Fire) ~= 'function' then
+                            return
+                        end
+
+                        local fireFn = entry.Fire
+                        local ok = if index then pcall(fireFn, {Choice = index})else pcall(fireFn)
+
+                        if ok then
+                            self.cards += 1
+
+                            setStatus(if index then'Auto Character Card: picked option ' .. tostring(index)else'Auto Character Card: skipped (hand full)')
+                        end
+                    end
+
+                    local taskApi = deps.task
+
+                    if type(taskApi) == 'table' and type(taskApi.delay) == 'function' then
+                        (taskApi.delay)(PICK_DELAY_SECONDS, answer)
+                    else
+                        answer()
+                    end
+                end
+                local function onShopOpened()
+                    if not self.active or getSettings().get('leaveShop') ~= true or not deps.isAdventure() then
+                        return
+                    end
+
+                    local function leave()
+                        local events = deps.events
+                        local entry = if events then events.ShopClose else nil
+
+                        if self.active and type(entry) == 'table' and type(entry.Fire) == 'function' then
+                            local fireFn = entry.Fire
+
+                            if pcall(fireFn) then
+                                setStatus('Left the shop without buying')
+                            end
+                        end
+                    end
+
+                    local taskApi = deps.task
+
+                    if type(taskApi) == 'table' and type(taskApi.delay) == 'function' then
+                        (taskApi.delay)(PICK_DELAY_SECONDS, leave)
+                    else
+                        leave()
+                    end
+                end
+
                 function self.start()
                     if self.active then
                         return true
@@ -8428,6 +8536,24 @@ do
                     end
                     if type(undo) == 'function' then
                         table.insert(disconnects, undo)
+                    end
+
+                    local extras = {
+                        CardPickCharacterOffer = onCharacterOffer,
+                        ShopOpened = onShopOpened,
+                    }
+
+                    for eventName, handler in extras do
+                        local extra = events[eventName]
+
+                        if type(extra) == 'table' and type(extra.On) == 'function' then
+                            local extraOn = extra.On
+                            local okExtra, undoExtra = pcall(extraOn, handler)
+
+                            if okExtra and type(undoExtra) == 'function' then
+                                table.insert(disconnects, undoExtra)
+                            end
+                        end
                     end
 
                     local relay = deps.mapRelay

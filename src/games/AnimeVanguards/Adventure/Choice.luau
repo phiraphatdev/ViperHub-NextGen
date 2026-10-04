@@ -50,14 +50,39 @@ function Choice.pickRoom(
     for position = 1, #options do
         local option = options[position]
         if type(option) == "table" and type(option.AdventureRoomKind) == "string" then
+            -- Boss rooms carry the boss's name as their kind (observed: "LichSovereign") with BossRoom = true.
+            local kind: string = if option.BossRoom == true then "Boss" else option.AdventureRoomKind
             local floor = if type(option.AdventureFloor) == "number" then option.AdventureFloor else 0
             local ranks = if floor >= secondFromFloor then second else first
-            local rank = ranks[option.AdventureRoomKind]
+            local rank = ranks[kind]
             local value = if type(rank) == "number" then rank else -1
             local index = if type(option.Index) == "number" then option.Index else position
             if (reachable == nil or reachable[index] == true) and value > bestRank then
                 best = index
                 bestRank = value
+            end
+        end
+    end
+    return best
+end
+
+local CHARACTER_RARITY = { Mythic = 4, Legendary = 3, Epic = 2, Rare = 1 }
+
+--- Picks the offered character card of the highest rarity (the first one on a tie). Options are the game's
+--- CardPickCharacterOffer entries ({CharacterName, CardId, Rarity, RankRequirement}, observed live).
+function Choice.pickCharacterCard(options: any): number?
+    if type(options) ~= "table" then
+        return nil
+    end
+    local best: number? = nil
+    local bestRank = -math.huge
+    for index = 1, #options do
+        local option = options[index]
+        if type(option) == "table" and type(option.Rarity) == "string" then
+            local rank = CHARACTER_RARITY[option.Rarity] or 0
+            if rank > bestRank then
+                best = index
+                bestRank = rank
             end
         end
     end
