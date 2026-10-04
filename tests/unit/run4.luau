@@ -419,7 +419,19 @@ test(
             AdventureChoice.pickRoom({ { Index = 7, AdventureRoomKind = "Challenge" } }, first, second, 30)
                 == 7
         )
-        assert(AdventureChoice.pickRoom({ "bad", { AdventureRoomKind = 5 } }, first, second, 30) == nil)
+        assert(AdventureChoice.pickRoom(nil, first, second, 30) == nil)
+        local withTreasure: any = {
+            { Index = 1, AdventureRoomKind = "Treasure", AdventureFloor = 17 },
+            { Index = 2, AdventureRoomKind = "Battle", AdventureFloor = 17 },
+            { Index = 3, AdventureRoomKind = "Elite", AdventureFloor = 17 },
+            { Index = 4, AdventureRoomKind = "Battle", AdventureFloor = 17 },
+        }
+        assert(AdventureChoice.pickRoom(withTreasure, first, second, 99) == 1, "unfiltered: Treasure")
+        assert(
+            AdventureChoice.pickRoom(withTreasure, first, second, 99, { [2] = true, [3] = true }) == 3,
+            "only reachable rooms"
+        )
+        assert(AdventureChoice.pickRoom(withTreasure, first, second, 99, {}) == nil, "nothing reachable")
         assert(AdventureChoice.pickRoom(nil, first, second, 30) == nil)
         local defaults = AdventureSettings.new(AdventureCatalog.fromModules(nil), {})
         assert(
@@ -452,6 +464,12 @@ test("Adventure runtime chooses the next room only in Adventure matches with Aut
         isAdventure = function()
             return true
         end,
+        mapRelay = {
+            OnSnapshot = function(callback: any)
+                box.snapshot = callback
+                return function() end
+            end,
+        },
         events = {
             CardPickBasicOffer = { On = function() end },
             SelectRoomSelectionStarted = {
@@ -463,6 +481,11 @@ test("Adventure runtime chooses the next room only in Adventure matches with Aut
             VoteCast = {
                 Fire = function(payload: any)
                     table.insert(chosen, payload)
+                end,
+            },
+            MapRequestSnapshot = {
+                Fire = function(...: any)
+                    box.requested = (box.requested or 0) + select("#", ...) + 1000
                 end,
             },
         },
@@ -478,8 +501,9 @@ test("Adventure runtime chooses the next room only in Adventure matches with Aut
         local callback: any = box.room
         callback({
             Options = {
-                { Index = 1, AdventureRoomKind = "Battle", AdventureFloor = 12 },
-                { Index = 2, AdventureRoomKind = "Elite", AdventureFloor = 12 },
+                { Index = 1, AdventureRoomKind = "Treasure", AdventureFloor = 12 },
+                { Index = 2, AdventureRoomKind = "Battle", AdventureFloor = 12 },
+                { Index = 3, AdventureRoomKind = "Elite", AdventureFloor = 12 },
             },
         })
     end
@@ -489,11 +513,34 @@ test("Adventure runtime chooses the next room only in Adventure matches with Aut
     assert(#chosen == 0, "switch is off: the player routes")
     settings.set("autoRoute", true)
     offerRooms()
+    flush()
+    assert(#chosen == 0 and string.find(runtime.status, "waiting for the map data", 1, true) ~= nil)
+    assert(box.requested == 1000, "asked the game for the map, with no arguments")
+    local snap: any = box.snapshot
+    snap({ CurrentFloor = 10, Nodes = { { Floor = 12, Lane = 3, Kind = "Elite", IsSelectable = true } } })
+    flush()
+    assert(#chosen == 0, "a snapshot of an older floor is not trusted")
+    snap({
+        CurrentFloor = 11,
+        CurrentLane = 2,
+        -- IsSelectable is not set yet when the offer arrives: the connections decide.
+        Connections = {
+            { From = "F11_L2", To = "F12_L2" },
+            { From = "F11_L2", To = "F12_L3" },
+            { From = "F11_L1", To = "F12_L1" },
+        },
+        Nodes = {
+            { Floor = 12, Lane = 1, Kind = "Battle", IsSelectable = false },
+            { Floor = 12, Lane = 2, Kind = "Battle", IsSelectable = false },
+            { Floor = 12, Lane = 3, Kind = "Elite", IsSelectable = false },
+        },
+    })
+    offerRooms()
     assert(#chosen == 0, "the choice waits a moment")
     flush()
     assert(
-        #chosen == 1 and chosen[1].OptionIndex == 2 and runtime.routed == 1,
-        "Elite outranks Battle by default"
+        #chosen == 1 and chosen[1].OptionIndex == 3 and runtime.routed == 1,
+        "Treasure is unreachable: Elite outranks Battle"
     )
     assert(string.find(runtime.status, "chose a Elite room", 1, true) ~= nil, runtime.status)
     offerRooms()

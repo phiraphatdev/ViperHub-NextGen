@@ -55,6 +55,7 @@ local function liveDependencies(): any
     return {
         task = env.task,
         clock = os.clock,
+        mapRelay = optionalModule(env.game:GetService("StarterPlayer"), paths.adventureMapRelay),
         events = optionalModule(replicated, paths.gameOdysseyClient),
         isAdventure = function(): boolean
             return handler ~= nil and Detect.isAdventureMatch(handler.GameData)
@@ -69,6 +70,9 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
     local disconnects: { () -> () } = {}
     local lastKey = ""
     local lastAt = -math.huge
+    local snapshot: any = nil
+    local pendingRooms: any = nil
+    local onRoomOffer: (any) -> ()
     local lastRoomKey = ""
     local lastRoomAt = -math.huge
 
@@ -128,17 +132,80 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
     end
 
     -- A room selection: pick the next room by the floor priorities (the second list from the chosen floor on).
-    local function onRoomOffer(offer: any)
+    onRoomOffer = function(offer: any)
         local saved = getSettings()
         if not self.active or saved.get("autoRoute") ~= true or not deps.isAdventure() then
             return
         end
         local options: any = if type(offer) == "table" then offer.Options else nil
+        -- Only rooms the Route Atlas connects to the current floor can be voted (observed: offers also list
+        -- unreachable rooms); the map snapshot marks them IsSelectable, and an option's Index is its lane.
+        local reachable: { [number]: boolean } = {}
+        local floor = if type(options) == "table" and type(options[1]) == "table"
+            then options[1].AdventureFloor
+            else nil
+        local known = false
+        -- The snapshot must belong to the floor just cleared: IsSelectable is relative to its CurrentFloor.
+        if
+            type(snapshot) == "table"
+            and type(snapshot.Nodes) == "table"
+            and type(floor) == "number"
+            and snapshot.CurrentFloor == floor - 1
+        then
+            known = true
+            -- Reachable lanes come from the map connections (current node -> next floor); IsSelectable is only set once
+            -- the vote has started, so it is used just when the snapshot has no connections.
+            local from = "F" .. tostring(snapshot.CurrentFloor) .. "_L" .. tostring(snapshot.CurrentLane)
+            local prefix = "F" .. tostring(floor) .. "_L"
+            local connected = false
+            if type(snapshot.Connections) == "table" then
+                for _, connection in snapshot.Connections do
+                    if
+                        type(connection) == "table"
+                        and connection.From == from
+                        and type(connection.To) == "string"
+                    then
+                        local toId: string = connection.To
+                        local captured = string.match(toId, "^" .. prefix .. "(%d+)$")
+                        local lane = if captured then tonumber(captured) else nil
+                        if lane then
+                            reachable[lane] = true
+                            connected = true
+                        end
+                    end
+                end
+            end
+            if not connected then
+                for _, node in snapshot.Nodes do
+                    if
+                        type(node) == "table"
+                        and node.Floor == floor
+                        and node.IsSelectable == true
+                        and type(node.Lane) == "number"
+                    then
+                        reachable[node.Lane] = true
+                    end
+                end
+            end
+        end
+        if not known then
+            -- The snapshot may not have arrived yet (or the hub loaded mid-run): ask for it and decide when it comes.
+            pendingRooms = offer
+            local ask = if deps.events then deps.events.MapRequestSnapshot else nil
+            if type(ask) == "table" and type(ask.Fire) == "function" then
+                local askFire: any = ask.Fire
+                pcall(askFire)
+            end
+            setStatus("Auto Route Atlas: waiting for the map data")
+            return
+        end
+        pendingRooms = nil
         local index = Choice.pickRoom(
             options,
             saved.get("floorPriority"),
             saved.get("secondFloorPriority"),
-            saved.get("secondPriorityFloor")
+            saved.get("secondPriorityFloor"),
+            reachable
         )
         if not index then
             setStatus("Auto Route Atlas: no valid room offered")
@@ -207,6 +274,19 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         end
         if type(undo) == "function" then
             table.insert(disconnects, undo)
+        end
+        local relay: any = deps.mapRelay
+        if type(relay) == "table" and type(relay.OnSnapshot) == "function" then
+            local okRelay, undoRelay = pcall(relay.OnSnapshot, function(data: any)
+                snapshot = data
+                local waiting = pendingRooms
+                if waiting ~= nil then
+                    onRoomOffer(waiting)
+                end
+            end)
+            if okRelay and type(undoRelay) == "function" then
+                table.insert(disconnects, undoRelay)
+            end
         end
         local roomEntry = if type(events) == "table" then events.SelectRoomSelectionStarted else nil
         if type(roomEntry) == "table" and type(roomEntry.On) == "function" then

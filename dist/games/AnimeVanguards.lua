@@ -71,6 +71,7 @@ do
                     gameHandler = 'Modules.Gameplay.GameHandler',
                     autoPlayHandler = 'Modules.Gameplay.AutoPlay.AutoPlayHandler',
                     gameOdysseyClient = 'NetworkCode.GameOdysseyClient',
+                    adventureMapRelay = 'Modules.Gameplay.Odyssey.Adventure.MapSnapshotRelay',
                     autoPlayClient = 'NetworkCode.GameAutoPlayClient',
                     wavesClient = 'NetworkCode.GameWavesClient',
                     wavesHud = 'Modules.Interface.Loader.HUD.Waves',
@@ -7478,6 +7479,10 @@ do
                 slot2 = true,
                 autoBasicCard = true,
                 cardPriority = true,
+                autoRoute = true,
+                secondPriorityFloor = true,
+                floorPriority = true,
+                secondFloorPriority = true,
             }
 
             local function isLocked(key)
@@ -7486,7 +7491,7 @@ do
 
             local ADVENTURE = (config).adventure
             local PENDING =
-[[Live: Auto Join with the character and slots, and Auto Basic Card. The other controls are locked (Coming soon) until their automation is built.]]
+[[Live: Auto Join with the character and slots, Auto Basic Card and Auto Route Atlas. The other controls are locked (Coming soon) until their automation is built.]]
 
             local function setDesc(control, text)
                 if type(control) == 'table' and type(control.SetDesc) == 'function' then
@@ -8091,7 +8096,13 @@ do
 
                 return best
             end
-            function Choice.pickRoom(options, first, second, secondFromFloor)
+            function Choice.pickRoom(
+                options,
+                first,
+                second,
+                secondFromFloor,
+                reachable
+            )
                 if type(options) ~= 'table' then
                     return nil
                 end
@@ -8109,7 +8120,7 @@ do
                         local value = if type(rank) == 'number'then rank else-1
                         local index = if type(option.Index) == 'number'then option.Index else position
 
-                        if value > bestRank then
+                        if (reachable == nil or reachable[index] == true) and value > bestRank then
                             best = index
                             bestRank = value
                         end
@@ -8191,6 +8202,7 @@ do
                 return {
                     task = env.task,
                     clock = os.clock,
+                    mapRelay = optionalModule(env.game:GetService('StarterPlayer'), paths.adventureMapRelay),
                     events = optionalModule(replicated, paths.gameOdysseyClient),
                     isAdventure = function()
                         return handler ~= nil and Detect.isAdventureMatch(handler.GameData)
@@ -8209,6 +8221,9 @@ do
                 local disconnects = {}
                 local lastKey = ''
                 local lastAt = -math.huge
+                local snapshot = nil
+                local pendingRooms = nil
+                local onRoomOffer
                 local lastRoomKey = ''
                 local lastRoomAt = -math.huge
 
@@ -8275,7 +8290,8 @@ do
                         pick()
                     end
                 end
-                local function onRoomOffer(offer)
+
+                onRoomOffer = function(offer)
                     local saved = getSettings()
 
                     if not self.active or saved.get('autoRoute') ~= true or not deps.isAdventure() then
@@ -8283,7 +8299,58 @@ do
                     end
 
                     local options = if type(offer) == 'table'then offer.Options else nil
-                    local index = Choice.pickRoom(options, saved.get('floorPriority'), saved.get('secondFloorPriority'), saved.get('secondPriorityFloor'))
+                    local reachable = {}
+                    local floor = if type(options) == 'table' and type(options[1]) == 'table'then options[1].AdventureFloor else nil
+                    local known = false
+
+                    if type(snapshot) == 'table' and type(snapshot.Nodes) == 'table' and type(floor) == 'number' and snapshot.CurrentFloor == floor - 1 then
+                        known = true
+
+                        local from = 'F' .. tostring(snapshot.CurrentFloor) .. '_L' .. tostring(snapshot.CurrentLane)
+                        local prefix = 'F' .. tostring(floor) .. '_L'
+                        local connected = false
+
+                        if type(snapshot.Connections) == 'table' then
+                            for _, connection in snapshot.Connections do
+                                if type(connection) == 'table' and connection.From == from and type(connection.To) == 'string' then
+                                    local toId = connection.To
+                                    local captured = string.match(toId, '^' .. prefix .. '(%d+)$')
+                                    local lane = if captured then tonumber(captured)else nil
+
+                                    if lane then
+                                        reachable[lane] = true
+                                        connected = true
+                                    end
+                                end
+                            end
+                        end
+                        if not connected then
+                            for _, node in snapshot.Nodes do
+                                if type(node) == 'table' and node.Floor == floor and node.IsSelectable == true and type(node.Lane) == 'number' then
+                                    reachable[node.Lane] = true
+                                end
+                            end
+                        end
+                    end
+                    if not known then
+                        pendingRooms = offer
+
+                        local ask = if deps.events then deps.events.MapRequestSnapshot else nil
+
+                        if type(ask) == 'table' and type(ask.Fire) == 'function' then
+                            local askFire = ask.Fire
+
+                            pcall(askFire)
+                        end
+
+                        setStatus('Auto Route Atlas: waiting for the map data')
+
+                        return
+                    end
+
+                    pendingRooms = nil
+
+                    local index = Choice.pickRoom(options, saved.get('floorPriority'), saved.get('secondFloorPriority'), saved.get('secondPriorityFloor'), reachable)
 
                     if not index then
                         setStatus('Auto Route Atlas: no valid room offered')
@@ -8361,6 +8428,26 @@ do
                     end
                     if type(undo) == 'function' then
                         table.insert(disconnects, undo)
+                    end
+
+                    local relay = deps.mapRelay
+
+                    if type(relay) == 'table' and type(relay.OnSnapshot) == 'function' then
+                        local okRelay, undoRelay = pcall(relay.OnSnapshot, function(
+                            data
+                        )
+                            snapshot = data
+
+                            local waiting = pendingRooms
+
+                            if waiting ~= nil then
+                                onRoomOffer(waiting)
+                            end
+                        end)
+
+                        if okRelay and type(undoRelay) == 'function' then
+                            table.insert(disconnects, undoRelay)
+                        end
                     end
 
                     local roomEntry = if type(events) == 'table'then events.SelectRoomSelectionStarted else nil

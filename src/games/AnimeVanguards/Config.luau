@@ -23,6 +23,7 @@ return table.freeze({
         gameHandler = "Modules.Gameplay.GameHandler",
         autoPlayHandler = "Modules.Gameplay.AutoPlay.AutoPlayHandler",
         gameOdysseyClient = "NetworkCode.GameOdysseyClient",
+        adventureMapRelay = "Modules.Gameplay.Odyssey.Adventure.MapSnapshotRelay", -- StarterPlayer
         autoPlayClient = "NetworkCode.GameAutoPlayClient",
         wavesClient = "NetworkCode.GameWavesClient",
         wavesHud = "Modules.Interface.Loader.HUD.Waves",

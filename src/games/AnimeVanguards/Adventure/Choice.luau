@@ -33,12 +33,14 @@ end
 
 --- Picks the offered room whose kind ranks highest. Options are the game's room selection entries ({Index,
 --- AdventureRoomKind, AdventureFloor, ...}, observed live). From secondPriorityFloor on, the second ranks apply.
+--- When reachable (option Index = lane -> true) is given, only those rooms may be chosen.
 --- Unknown kinds (e.g. Challenge) rank below every listed kind. Returns the option's Index (sent as VoteCast OptionIndex).
 function Choice.pickRoom(
     options: any,
     first: { [string]: number },
     second: { [string]: number },
-    secondFromFloor: number
+    secondFromFloor: number,
+    reachable: { [number]: boolean }?
 ): number?
     if type(options) ~= "table" then
         return nil
@@ -53,7 +55,7 @@ function Choice.pickRoom(
             local rank = ranks[option.AdventureRoomKind]
             local value = if type(rank) == "number" then rank else -1
             local index = if type(option.Index) == "number" then option.Index else position
-            if value > bestRank then
+            if (reachable == nil or reachable[index] == true) and value > bestRank then
                 best = index
                 bestRank = value
             end

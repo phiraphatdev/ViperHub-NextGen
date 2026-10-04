@@ -1,10 +1,11 @@
 # Updates
 
-## Local Auto Route Atlas — built, NOT working yet (locked)
+## Local Auto Route Atlas — verified live
 
-- Live findings: `SelectRoomChoose` is ignored in Adventure; the next room is voted with `VoteCast({OptionIndex})` after `VoteStarted` (observed: `SelectRoomSelectionStarted` Options carry `Index`, `AdventureRoomKind`, `AdventureFloor`; `VoteStarted.OptionCount` = number of options). The runtime now sends `VoteCast`.
-- Not working: the option list includes rooms that are NOT reachable from the current node on the Route Atlas (4 options offered, only 2 connected), so picking the top-ranked kind (Treasure) cast an unreachable vote and the run stayed on the same floor. No tally or `VoteEnded` was seen. Need the reachable options (map snapshot / lane data) before it can choose correctly. The Adventure tab keeps Auto Route Atlas and its priorities locked.
-- Verified live this session: Auto Join through the hosted room and Start into an Adventure match; Auto Basic Card picked a card after a floor.
+- The next room is voted with `VoteCast({OptionIndex = lane})` (SelectRoomChoose is ignored in Adventure). Room offers (`SelectRoomSelectionStarted`) list every lane of the next floor, including rooms the Route Atlas does not connect to the current room; the lane is the option's `Index`.
+- Reachability comes from the map snapshot (`MapSnapshotRelay.OnSnapshot`, or `MapRequestSnapshot` when none arrived): lanes whose `Connections` go from the current node (`F<floor>_L<lane>`) to the next floor. `IsSelectable` is only set after the vote starts, so it is used just when no connection exists. A snapshot is trusted only when its `CurrentFloor` is the floor before the offered one; otherwise the offer waits and re-runs when a matching snapshot arrives.
+- Live: Floor 22 -> 23 chosen by the hub on its own after the card pick (Auto Basic Card and Auto Route Atlas together); earlier floors were voted with the same rule by hand. The Adventure tab unlocks Auto Route Atlas and the two priority lists.
+- Known gap: after a floor the game waits for "Vote start" on the next floor; with one player this needs a click or the existing vote handling (not automated here).
 
 ## Local Odyssey Adventure: Auto Basic Card — partly verified live
 
