@@ -97,8 +97,10 @@ function App.mount(
     if not hasHome then
         Overview.mount(host(HOME_GROUP), metadata)
     end
+    -- Pages without a group are listed under the game's own name, so every game gets a grouped sidebar.
     for _, page in pages or {} do
-        mountPage(host(page.group or (if page.home then HOME_GROUP else nil)), window, context, page)
+        local group = page.group or (if page.home then HOME_GROUP else tostring(metadata.name))
+        mountPage(host(group), window, context, page)
     end
     Settings.mount(window, store, library, keyCodes, context, host(SYSTEM_GROUP))
     local refreshDiagnostics = Diagnostics.mount(host(SYSTEM_GROUP), buffer)

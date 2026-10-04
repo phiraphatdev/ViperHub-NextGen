@@ -1,5 +1,13 @@
 # Updates
 
+## Local UI Base, Misc and Unit Contribution — not published
+
+- UI base for all games: Viper theme (14 ViperHub themes plus the library's, live switch in Settings; an old stored "Dark" default migrates to Viper), sidebar sections, title-bar tags, player card, page headers, shared `ui/Style`. Anime Vanguards adds a live Dashboard home page and drops the empty Lobby tab. Live: Viper, Sakura and Ocean themes and the Dashboard checked in the client.
+- Misc tab: Anti-AFK (on), Auto Reconnect (off; allow-listed disconnect codes only, 5 tries to the lobby), Re-run after teleport (off; queue_on_teleport of the player's loadstring). Live: Anti-AFK nudge confirmed via the idle signal; re-run reloaded the hub in the lobby and the next match automatically. Auto Reconnect needs a real disconnect: pending.
+- Webhook: Unit Contribution field from the end summary's `UnitStats` (observed live: DisplayName, Rarity, Damage, Takedowns, PlacementCount, TimeDeployed, YenSpent); player DPS and kills/min removed. Live: rows read from a real summary; Discord delivery of the new field pending the next match.
+- Joiner: Change Stage in Match yields to a higher-priority playable Rift/challenge; Rift waits up to 45 s for attempt data before skipping; silent skips are traced.
+- Status page re-checks after the game loads settings (all settings checks turned ✓ live).
+
 ## Local Code Audit Fixes — not published
 
 Full read of `src` with fixes: Worldline end no longer switches Auto Next/Replay off before deciding to stay; repeating joiner/auto play states reach Discord once per change; an unreadable Joiner settings file is no longer overwritten with defaults (which also re-enabled "Disable Auto Joiners"); Auto Back to Lobby shows its saved value; a failing page no longer aborts startup; the match place caches the activity record (10 s); the joiner trace keeps history across loads; Status re-probe updates check marks; Worldline Traits/NoTraits is kept and selectable; macro and joiner game paths live in `Config.instancePaths`.

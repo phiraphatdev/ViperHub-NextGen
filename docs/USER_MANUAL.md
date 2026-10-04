@@ -62,6 +62,12 @@ loadstring(game:HttpGet("http://127.0.0.1:8766/runtime-smoke.lua"))()
 
 ## 4. เมื่อเปิด UI ได้แล้ว
 
+### หน้าตาและธีม (ทุกเกม)
+
+- แถบซ้ายแบ่งกลุ่ม: **Home** (หน้าแรก), กลุ่มฟีเจอร์ของเกม และ **System** (Settings, Diagnostics) ด้านล่างมีการ์ดผู้เล่น แถบหัวมีแท็กชื่อเกมและเวอร์ชัน
+- เปลี่ยนธีมที่ **Settings → Theme** ได้ทันที มีธีมของ ViperHub 14 แบบ (Viper ค่าเริ่มต้น, Sakura, Ocean, Sunset, Galaxy, Blood Moon, Gold Rush, Frost, Matrix, Cyberpunk, Lava, Royal, Toxic, Shadow) และธีมของ WindUI อีกหลายแบบ ระบบจำค่าที่เลือก
+- Anime Vanguards มีหน้า **Dashboard** เป็นหน้าแรก: การ์ดผู้เล่น สถานะสดของ Joiner / Auto Play / Macro / Webhook / Session และยอด Gems, Gold, Rerolls, Trophies
+
 ### Overview
 
 แสดงชื่อเกมที่ตรวจพบ, เวอร์ชัน module และวันที่อัปเดต พร้อมข้อความว่าเป็น foundation เท่านั้น
@@ -131,3 +137,6 @@ loadstring(game:HttpGet("http://127.0.0.1:8766/runtime-smoke.lua"))()
 
 เอกสารเพิ่มเติม: [Testing](TESTING.md) · [Executors](EXECUTORS.md) · [Security](SECURITY.md)
 - **Webhook (Discord):** วาง URL เว็บฮุคของช่อง Discord ในแท็บ Webhook (ระบบเก็บในเครื่องและไม่แสดง URL อีกหลังกรอก) เปิด "Send notifications" แล้วกด "Send test message" เพื่อลอง ระบบแจ้งเตือนผล match, unit ใหม่ (เลือกระดับขั้นต่ำได้ Secret ขึ้นไปสามารถ ping คุณ), joiner เข้าด่าน/มีปัญหา, ความคืบหน้า Boss Bounty, Rift เปิด, Equipper, Auto Play, คำเตือน และเริ่มเซสชัน เปิด/ปิดได้ทีละเหตุการณ์ ตั้งชื่อบอท รูปบอท และซ่อนชื่อ/รูป Roblox ได้ ถ้า Discord ปฏิเสธ URL ระบบจะหยุดส่งและบอกสถานะ
+- **Misc (Anime Vanguards):** Anti-AFK (เปิดเป็นค่าเริ่มต้น) กันโดนเตะเมื่อ idle; Auto Reconnect (ปิดเป็นค่าเริ่มต้น) กลับ lobby เองเมื่อหลุดการเชื่อมต่อจริง เช่น Error 256/277 สูงสุด 5 ครั้ง ไม่ทำเมื่อโดน kick แบน หรือล็อกอินซ้อน; Re-run After Teleport ส่งบรรทัด loadstring ของคุณให้ฮับโหลดเองทุกครั้งที่เทเลพอร์ต (ต้องเปิด runtime server หรือใส่ Loader URL ที่ใช้ได้)
+- **Webhook ผลแมตช์:** มีช่อง Unit Contribution จากหน้า Summary ของเกม (สัดส่วนดาเมจ, ดาเมจ, DPS ขณะอยู่บนสนาม, takedowns, 👑 ยูนิตที่ทำดาเมจสูงสุด)
+

@@ -359,21 +359,7 @@ do
             local HEADING_SIZE = 18
             local SUB_HEADING_SIZE = 15
             local SUB_HEADING_DIM = 0.35
-            local JOINER_ICONS = {
-                Stage = 'map',
-                ['Legend Stage'] = 'crown',
-                Raid = 'swords',
-                Dungeon = 'skull',
-                ['Boss Event'] = 'flame',
-                Worldline = 'globe',
-                ['Elemental Towers'] = 'castle',
-                Portal = 'door-open',
-                ['Boss Bounties'] = 'target',
-                ['Regular Challenge'] = 'trophy',
-                ['Daily Challenge'] = 'calendar',
-                ['Weekly Challenge'] = 'clock',
-                Rift = 'zap',
-            }
+            local CARD_ICON_SIZE = 20
 
             function Style.section(host, title, icon, opened, size)
                 return host:Section({
@@ -399,8 +385,13 @@ do
                     Opened = opened ~= false,
                 })
             end
-            function Style.joiner(host, name, opened)
-                return Style.section(host, name .. ' Joiner', JOINER_ICONS[name], opened)
+            function Style.card(host, title, desc, icon)
+                return host:Paragraph({
+                    Title = title,
+                    Desc = desc,
+                    Image = icon,
+                    ImageSize = CARD_ICON_SIZE,
+                })
             end
 
             return Style
@@ -414,6 +405,50 @@ do
                     c = __modImpl(),
                 }
                 __DARKLUA_BUNDLE_MODULES.cache.d = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
+            local Base = __DARKLUA_BUNDLE_MODULES.d()
+            local Style = {}
+            local JOINER_ICONS = {
+                Stage = 'map',
+                ['Legend Stage'] = 'crown',
+                Raid = 'swords',
+                Dungeon = 'skull',
+                ['Boss Event'] = 'flame',
+                Worldline = 'globe',
+                ['Elemental Towers'] = 'castle',
+                Portal = 'door-open',
+                ['Boss Bounties'] = 'target',
+                ['Regular Challenge'] = 'trophy',
+                ['Daily Challenge'] = 'calendar',
+                ['Weekly Challenge'] = 'clock',
+                Rift = 'zap',
+            }
+
+            Style.section = Base.section
+            Style.sub = Base.sub
+            Style.card = Base.card
+
+            function Style.joiner(host, name, opened)
+                return Base.section(host, name .. ' Joiner', JOINER_ICONS[name], opened)
+            end
+
+            return Style
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.e()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.e
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.e = v
             end
 
             return v.c
@@ -486,14 +521,14 @@ do
             return Catalog
         end
 
-        function __DARKLUA_BUNDLE_MODULES.e()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.e
+        function __DARKLUA_BUNDLE_MODULES.f()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.f
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.e = v
+                __DARKLUA_BUNDLE_MODULES.cache.f = v
             end
 
             return v.c
@@ -518,14 +553,14 @@ do
             })
         end
 
-        function __DARKLUA_BUNDLE_MODULES.f()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.f
+        function __DARKLUA_BUNDLE_MODULES.g()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.g
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.f = v
+                __DARKLUA_BUNDLE_MODULES.cache.g = v
             end
 
             return v.c
@@ -651,14 +686,14 @@ do
             return TeamEquip
         end
 
-        function __DARKLUA_BUNDLE_MODULES.g()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.g
+        function __DARKLUA_BUNDLE_MODULES.h()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.h
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.g = v
+                __DARKLUA_BUNDLE_MODULES.cache.h = v
             end
 
             return v.c
@@ -757,14 +792,14 @@ do
             return MacroEquip
         end
 
-        function __DARKLUA_BUNDLE_MODULES.h()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.h
+        function __DARKLUA_BUNDLE_MODULES.i()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.i
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.h = v
+                __DARKLUA_BUNDLE_MODULES.cache.i = v
             end
 
             return v.c
@@ -789,14 +824,14 @@ do
             return Capabilities
         end
 
-        function __DARKLUA_BUNDLE_MODULES.i()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.i
+        function __DARKLUA_BUNDLE_MODULES.j()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.j
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.i = v
+                __DARKLUA_BUNDLE_MODULES.cache.j = v
             end
 
             return v.c
@@ -829,14 +864,14 @@ do
             return Validation
         end
 
-        function __DARKLUA_BUNDLE_MODULES.j()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.j
+        function __DARKLUA_BUNDLE_MODULES.k()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.k
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.j = v
+                __DARKLUA_BUNDLE_MODULES.cache.k = v
             end
 
             return v.c
@@ -844,8 +879,8 @@ do
     end
     do
         local function __modImpl()
-            local Capabilities = __DARKLUA_BUNDLE_MODULES.i()
-            local Validation = __DARKLUA_BUNDLE_MODULES.j()
+            local Capabilities = __DARKLUA_BUNDLE_MODULES.j()
+            local Validation = __DARKLUA_BUNDLE_MODULES.k()
             local FileStorage = {}
             local ROOT = 'ViperHubNextGen'
             local MAX_BYTES = 16384
@@ -904,14 +939,14 @@ do
             return FileStorage
         end
 
-        function __DARKLUA_BUNDLE_MODULES.k()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.k
+        function __DARKLUA_BUNDLE_MODULES.l()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.l
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.k = v
+                __DARKLUA_BUNDLE_MODULES.cache.l = v
             end
 
             return v.c
@@ -919,10 +954,10 @@ do
     end
     do
         local function __modImpl()
-            local definitions = __DARKLUA_BUNDLE_MODULES.f()
-            local TeamEquip = __DARKLUA_BUNDLE_MODULES.g()
-            local MacroEquip = __DARKLUA_BUNDLE_MODULES.h()
-            local FileStorage = __DARKLUA_BUNDLE_MODULES.k()
+            local definitions = __DARKLUA_BUNDLE_MODULES.g()
+            local TeamEquip = __DARKLUA_BUNDLE_MODULES.h()
+            local MacroEquip = __DARKLUA_BUNDLE_MODULES.i()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
             local Settings = {}
             local DEFAULT_COOLDOWN = 0
             local MAX_COOLDOWN = 300
@@ -1419,14 +1454,14 @@ do
             return Settings
         end
 
-        function __DARKLUA_BUNDLE_MODULES.l()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.l
+        function __DARKLUA_BUNDLE_MODULES.m()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.m
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.l = v
+                __DARKLUA_BUNDLE_MODULES.cache.m = v
             end
 
             return v.c
@@ -1434,10 +1469,10 @@ do
     end
     do
         local function __modImpl()
-            local Style = __DARKLUA_BUNDLE_MODULES.d()
-            local Catalog = __DARKLUA_BUNDLE_MODULES.e()
-            local definitions = __DARKLUA_BUNDLE_MODULES.f()
-            local Settings = __DARKLUA_BUNDLE_MODULES.l()
+            local Style = __DARKLUA_BUNDLE_MODULES.e()
+            local Catalog = __DARKLUA_BUNDLE_MODULES.f()
+            local definitions = __DARKLUA_BUNDLE_MODULES.g()
+            local Settings = __DARKLUA_BUNDLE_MODULES.m()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Page = {}
             local STARTUP_WAIT_TICKS = 60
@@ -2512,14 +2547,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.m()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.m
+        function __DARKLUA_BUNDLE_MODULES.n()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.n
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.m = v
+                __DARKLUA_BUNDLE_MODULES.cache.n = v
             end
 
             return v.c
@@ -2527,7 +2562,7 @@ do
     end
     do
         local function __modImpl()
-            local FileStorage = __DARKLUA_BUNDLE_MODULES.k()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local ActivityState = {}
             local STORAGE_KEY = 'AnimeVanguardsActivityState'
@@ -2798,14 +2833,14 @@ do
             return ActivityState
         end
 
-        function __DARKLUA_BUNDLE_MODULES.n()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.n
+        function __DARKLUA_BUNDLE_MODULES.o()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.o
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.n = v
+                __DARKLUA_BUNDLE_MODULES.cache.o = v
             end
 
             return v.c
@@ -3077,14 +3112,14 @@ do
             return Document
         end
 
-        function __DARKLUA_BUNDLE_MODULES.o()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.o
+        function __DARKLUA_BUNDLE_MODULES.p()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.p
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.o = v
+                __DARKLUA_BUNDLE_MODULES.cache.p = v
             end
 
             return v.c
@@ -3092,7 +3127,7 @@ do
     end
     do
         local function __modImpl()
-            local Document = __DARKLUA_BUNDLE_MODULES.o()
+            local Document = __DARKLUA_BUNDLE_MODULES.p()
             local Storage = {}
             local ROOT = 'ViperHubNextGen/macro/AnimeVanguards'
             local MAX_BYTES = 1024 * 1024
@@ -3252,14 +3287,14 @@ do
             return Storage
         end
 
-        function __DARKLUA_BUNDLE_MODULES.p()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.p
+        function __DARKLUA_BUNDLE_MODULES.q()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.q
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.p = v
+                __DARKLUA_BUNDLE_MODULES.cache.q = v
             end
 
             return v.c
@@ -3268,7 +3303,7 @@ do
     do
         local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local TeamEquip = __DARKLUA_BUNDLE_MODULES.g()
+            local TeamEquip = __DARKLUA_BUNDLE_MODULES.h()
             local Adapter = {}
 
             local function resolve(root, path)
@@ -3646,14 +3681,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.q()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.q
+        function __DARKLUA_BUNDLE_MODULES.r()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.r
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.q = v
+                __DARKLUA_BUNDLE_MODULES.cache.r = v
             end
 
             return v.c
@@ -3661,12 +3696,12 @@ do
     end
     do
         local function __modImpl()
-            local Settings = __DARKLUA_BUNDLE_MODULES.l()
-            local ActivityState = __DARKLUA_BUNDLE_MODULES.n()
-            local TeamEquip = __DARKLUA_BUNDLE_MODULES.g()
-            local MacroEquip = __DARKLUA_BUNDLE_MODULES.h()
-            local MacroStorage = __DARKLUA_BUNDLE_MODULES.p()
-            local TeamAdapter = __DARKLUA_BUNDLE_MODULES.q()
+            local Settings = __DARKLUA_BUNDLE_MODULES.m()
+            local ActivityState = __DARKLUA_BUNDLE_MODULES.o()
+            local TeamEquip = __DARKLUA_BUNDLE_MODULES.h()
+            local MacroEquip = __DARKLUA_BUNDLE_MODULES.i()
+            local MacroStorage = __DARKLUA_BUNDLE_MODULES.q()
+            local TeamAdapter = __DARKLUA_BUNDLE_MODULES.r()
             local metadata = __DARKLUA_BUNDLE_MODULES.b()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Runtime = {}
@@ -5386,14 +5421,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.r()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.r
+        function __DARKLUA_BUNDLE_MODULES.s()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.s
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.r = v
+                __DARKLUA_BUNDLE_MODULES.cache.s = v
             end
 
             return v.c
@@ -5401,9 +5436,9 @@ do
     end
     do
         local function __modImpl()
-            local Style = __DARKLUA_BUNDLE_MODULES.d()
-            local Storage = __DARKLUA_BUNDLE_MODULES.p()
-            local Document = __DARKLUA_BUNDLE_MODULES.o()
+            local Style = __DARKLUA_BUNDLE_MODULES.e()
+            local Storage = __DARKLUA_BUNDLE_MODULES.q()
+            local Document = __DARKLUA_BUNDLE_MODULES.p()
             local Page = {}
 
             local function humanError(code)
@@ -5834,14 +5869,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.s()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.s
+        function __DARKLUA_BUNDLE_MODULES.t()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.t
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.s = v
+                __DARKLUA_BUNDLE_MODULES.cache.t = v
             end
 
             return v.c
@@ -5850,7 +5885,7 @@ do
     do
         local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Document = __DARKLUA_BUNDLE_MODULES.o()
+            local Document = __DARKLUA_BUNDLE_MODULES.p()
             local Adapter = {}
             local Vector3 = ((getfenv())).Vector3
             local task = ((getfenv())).task
@@ -6692,14 +6727,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.t()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.t
+        function __DARKLUA_BUNDLE_MODULES.u()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.u
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.t = v
+                __DARKLUA_BUNDLE_MODULES.cache.u = v
             end
 
             return v.c
@@ -6707,8 +6742,8 @@ do
     end
     do
         local function __modImpl()
-            local Document = __DARKLUA_BUNDLE_MODULES.o()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.t()
+            local Document = __DARKLUA_BUNDLE_MODULES.p()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.u()
             local Runtime = {}
             local POLL_SECONDS = 0.2
             local ACTION_TIMEOUT = 12
@@ -7767,14 +7802,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.u()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.u
+        function __DARKLUA_BUNDLE_MODULES.v()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.v
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.u = v
+                __DARKLUA_BUNDLE_MODULES.cache.v = v
             end
 
             return v.c
@@ -7782,7 +7817,7 @@ do
     end
     do
         local function __modImpl()
-            local Style = __DARKLUA_BUNDLE_MODULES.d()
+            local Style = __DARKLUA_BUNDLE_MODULES.e()
             local Page = {}
             local SETTINGS = {
                 {
@@ -7914,14 +7949,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.v()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.v
+        function __DARKLUA_BUNDLE_MODULES.w()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.w
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.v = v
+                __DARKLUA_BUNDLE_MODULES.cache.w = v
             end
 
             return v.c
@@ -7930,7 +7965,7 @@ do
     do
         local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local FileStorage = __DARKLUA_BUNDLE_MODULES.k()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
             local Adapter = {}
             local SETTINGS_STORAGE_KEY = 'AnimeVanguardsGameSettings'
             local SCHEMA_VERSION = 1
@@ -8370,14 +8405,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.w()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.w
+        function __DARKLUA_BUNDLE_MODULES.x()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.x
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.w = v
+                __DARKLUA_BUNDLE_MODULES.cache.x = v
             end
 
             return v.c
@@ -8385,7 +8420,7 @@ do
     end
     do
         local function __modImpl()
-            local Style = __DARKLUA_BUNDLE_MODULES.d()
+            local Style = __DARKLUA_BUNDLE_MODULES.e()
             local Page = {}
             local RULES_ERRORS = {
                 AUTOPLAY_ENABLED = 'Turn off Auto play - ingame before changing presets.',
@@ -8644,14 +8679,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.x()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.x
+        function __DARKLUA_BUNDLE_MODULES.y()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.y
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.x = v
+                __DARKLUA_BUNDLE_MODULES.cache.y = v
             end
 
             return v.c
@@ -8803,14 +8838,14 @@ do
             return Rules
         end
 
-        function __DARKLUA_BUNDLE_MODULES.y()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.y
+        function __DARKLUA_BUNDLE_MODULES.z()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.z
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.y = v
+                __DARKLUA_BUNDLE_MODULES.cache.z = v
             end
 
             return v.c
@@ -8819,7 +8854,7 @@ do
     do
         local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Rules = __DARKLUA_BUNDLE_MODULES.y()
+            local Rules = __DARKLUA_BUNDLE_MODULES.z()
             local Adapter = {}
 
             local function resolve(root, path)
@@ -9244,14 +9279,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.z()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.z
+        function __DARKLUA_BUNDLE_MODULES.A()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.A
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.z = v
+                __DARKLUA_BUNDLE_MODULES.cache.A = v
             end
 
             return v.c
@@ -9259,10 +9294,10 @@ do
     end
     do
         local function __modImpl()
-            local FileStorage = __DARKLUA_BUNDLE_MODULES.k()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.z()
-            local Rules = __DARKLUA_BUNDLE_MODULES.y()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.A()
+            local Rules = __DARKLUA_BUNDLE_MODULES.z()
             local Runtime = {}
             local STORAGE_KEY = 'AnimeVanguardsAutoPlay'
             local SCHEMA_VERSION = 3
@@ -9849,14 +9884,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.A()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.A
+        function __DARKLUA_BUNDLE_MODULES.B()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.B
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.A = v
+                __DARKLUA_BUNDLE_MODULES.cache.B = v
             end
 
             return v.c
@@ -9864,7 +9899,7 @@ do
     end
     do
         local function __modImpl()
-            local Style = __DARKLUA_BUNDLE_MODULES.d()
+            local Style = __DARKLUA_BUNDLE_MODULES.e()
             local Page = {}
             local RECHECK_DELAYS = {
                 3,
@@ -10314,14 +10349,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.B()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.B
+        function __DARKLUA_BUNDLE_MODULES.C()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.C
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.B = v
+                __DARKLUA_BUNDLE_MODULES.cache.C = v
             end
 
             return v.c
@@ -10329,7 +10364,7 @@ do
     end
     do
         local function __modImpl()
-            local Style = __DARKLUA_BUNDLE_MODULES.d()
+            local Style = __DARKLUA_BUNDLE_MODULES.e()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local metadata = __DARKLUA_BUNDLE_MODULES.b()
             local Page = {}
@@ -10491,14 +10526,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.C()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.C
+        function __DARKLUA_BUNDLE_MODULES.D()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.D
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.C = v
+                __DARKLUA_BUNDLE_MODULES.cache.D = v
             end
 
             return v.c
@@ -10791,14 +10826,14 @@ do
             return Embed
         end
 
-        function __DARKLUA_BUNDLE_MODULES.D()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.D
+        function __DARKLUA_BUNDLE_MODULES.E()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.E
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.D = v
+                __DARKLUA_BUNDLE_MODULES.cache.E = v
             end
 
             return v.c
@@ -10806,7 +10841,7 @@ do
     end
     do
         local function __modImpl()
-            local Embed = __DARKLUA_BUNDLE_MODULES.D()
+            local Embed = __DARKLUA_BUNDLE_MODULES.E()
             local Events = {}
             local UNIT_ROWS = 6
             local SHARE_BAR = 10
@@ -11255,14 +11290,14 @@ do
             return Events
         end
 
-        function __DARKLUA_BUNDLE_MODULES.E()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.E
+        function __DARKLUA_BUNDLE_MODULES.F()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.F
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.E = v
+                __DARKLUA_BUNDLE_MODULES.cache.F = v
             end
 
             return v.c
@@ -11270,8 +11305,8 @@ do
     end
     do
         local function __modImpl()
-            local Style = __DARKLUA_BUNDLE_MODULES.d()
-            local Events = __DARKLUA_BUNDLE_MODULES.E()
+            local Style = __DARKLUA_BUNDLE_MODULES.e()
+            local Events = __DARKLUA_BUNDLE_MODULES.F()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Page = {}
             local WEBHOOK = (config).webhook
@@ -11439,14 +11474,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.F()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.F
+        function __DARKLUA_BUNDLE_MODULES.G()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.G
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.F = v
+                __DARKLUA_BUNDLE_MODULES.cache.G = v
             end
 
             return v.c
@@ -11662,14 +11697,14 @@ do
             return Sender
         end
 
-        function __DARKLUA_BUNDLE_MODULES.G()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.G
+        function __DARKLUA_BUNDLE_MODULES.H()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.H
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.G = v
+                __DARKLUA_BUNDLE_MODULES.cache.H = v
             end
 
             return v.c
@@ -11773,14 +11808,14 @@ do
             return Session
         end
 
-        function __DARKLUA_BUNDLE_MODULES.H()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.H
+        function __DARKLUA_BUNDLE_MODULES.I()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.I
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.H = v
+                __DARKLUA_BUNDLE_MODULES.cache.I = v
             end
 
             return v.c
@@ -11788,13 +11823,13 @@ do
     end
     do
         local function __modImpl()
-            local FileStorage = __DARKLUA_BUNDLE_MODULES.k()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local metadata = __DARKLUA_BUNDLE_MODULES.b()
-            local Embed = __DARKLUA_BUNDLE_MODULES.D()
-            local Events = __DARKLUA_BUNDLE_MODULES.E()
-            local Sender = __DARKLUA_BUNDLE_MODULES.G()
-            local Session = __DARKLUA_BUNDLE_MODULES.H()
+            local Embed = __DARKLUA_BUNDLE_MODULES.E()
+            local Events = __DARKLUA_BUNDLE_MODULES.F()
+            local Sender = __DARKLUA_BUNDLE_MODULES.H()
+            local Session = __DARKLUA_BUNDLE_MODULES.I()
             local Runtime = {}
             local STORAGE_KEY = 'AnimeVanguardsWebhook'
             local SCHEMA_VERSION = 1
@@ -13158,14 +13193,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.I()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.I
+        function __DARKLUA_BUNDLE_MODULES.J()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.J
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.I = v
+                __DARKLUA_BUNDLE_MODULES.cache.J = v
             end
 
             return v.c
@@ -13173,7 +13208,7 @@ do
     end
     do
         local function __modImpl()
-            local Style = __DARKLUA_BUNDLE_MODULES.d()
+            local Style = __DARKLUA_BUNDLE_MODULES.e()
             local Page = {}
 
             function Page.mount(tab, runtime)
@@ -13242,14 +13277,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.J()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.J
+        function __DARKLUA_BUNDLE_MODULES.K()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.K
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.J = v
+                __DARKLUA_BUNDLE_MODULES.cache.K = v
             end
 
             return v.c
@@ -13257,7 +13292,7 @@ do
     end
     do
         local function __modImpl()
-            local FileStorage = __DARKLUA_BUNDLE_MODULES.k()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local metadata = __DARKLUA_BUNDLE_MODULES.b()
             local Runtime = {}
@@ -13593,14 +13628,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.K()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.K
+        function __DARKLUA_BUNDLE_MODULES.L()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.L
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.K = v
+                __DARKLUA_BUNDLE_MODULES.cache.L = v
             end
 
             return v.c
@@ -13611,20 +13646,20 @@ end
 local Types = __DARKLUA_BUNDLE_MODULES.a()
 local metadata = __DARKLUA_BUNDLE_MODULES.b()
 local config = __DARKLUA_BUNDLE_MODULES.c()
-local JoinerPage = __DARKLUA_BUNDLE_MODULES.m()
-local JoinerRuntime = __DARKLUA_BUNDLE_MODULES.r()
-local MacroPage = __DARKLUA_BUNDLE_MODULES.s()
-local MacroRuntime = __DARKLUA_BUNDLE_MODULES.u()
-local GamePage = __DARKLUA_BUNDLE_MODULES.v()
-local GameAdapter = __DARKLUA_BUNDLE_MODULES.w()
-local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.x()
-local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.A()
-local StatusPage = __DARKLUA_BUNDLE_MODULES.B()
-local DashboardPage = __DARKLUA_BUNDLE_MODULES.C()
-local WebhookPage = __DARKLUA_BUNDLE_MODULES.F()
-local WebhookRuntime = __DARKLUA_BUNDLE_MODULES.I()
-local MiscPage = __DARKLUA_BUNDLE_MODULES.J()
-local MiscRuntime = __DARKLUA_BUNDLE_MODULES.K()
+local JoinerPage = __DARKLUA_BUNDLE_MODULES.n()
+local JoinerRuntime = __DARKLUA_BUNDLE_MODULES.s()
+local MacroPage = __DARKLUA_BUNDLE_MODULES.t()
+local MacroRuntime = __DARKLUA_BUNDLE_MODULES.v()
+local GamePage = __DARKLUA_BUNDLE_MODULES.w()
+local GameAdapter = __DARKLUA_BUNDLE_MODULES.x()
+local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.y()
+local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.B()
+local StatusPage = __DARKLUA_BUNDLE_MODULES.C()
+local DashboardPage = __DARKLUA_BUNDLE_MODULES.D()
+local WebhookPage = __DARKLUA_BUNDLE_MODULES.G()
+local WebhookRuntime = __DARKLUA_BUNDLE_MODULES.J()
+local MiscPage = __DARKLUA_BUNDLE_MODULES.K()
+local MiscRuntime = __DARKLUA_BUNDLE_MODULES.L()
 local active = false
 local joiner = JoinerRuntime.new()
 local macro = MacroRuntime.new()

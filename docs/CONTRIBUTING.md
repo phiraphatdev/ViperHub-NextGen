@@ -13,6 +13,14 @@
 6. เพิ่ม test exact-match, unsupported place และ lifecycle ของเกมนั้น
 7. ตรวจ local gates และยืนยัน behavior จริงก่อนเปลี่ยน availability
 
+## UI ของเกมใหม่ (ใช้ UI base เดียวกันทุกเกม)
+
+- ประกาศหน้าใน `GameModule.pages` เท่านั้น ห้ามเรียก WindUI ตรงจากโค้ดเกม
+- จัดกลุ่มแถบซ้ายด้วย `group` (เช่น `Farming`, `Tools`) ใส่ `iconColor` จากชื่อสีใน `src/ui/Theme.luau` และถ้ามีหน้าแรกของเกมเองให้ตั้ง `home = true`
+- หัวข้อและการ์ดในหน้าใช้ `src/ui/Style.luau` (`section`, `sub`, `card`) เพื่อให้หน้าตาเหมือนกันทุกเกม
+- ธีม, แท็กบนแถบหัว, การ์ดผู้เล่น, Settings และ Diagnostics มาให้อัตโนมัติ ไม่ต้องทำซ้ำในเกม
+- รายละเอียดฟิลด์ทั้งหมดอยู่ใน `docs/ARCHITECTURE.md` หัวข้อ "UI base (all games)"
+
 ## เมื่อเกม patch
 
 ระบุ affected game และหลักฐานที่เปลี่ยนก่อนแก้ ย้ายค่า path/name ที่เปลี่ยนบ่อยไว้ใน Config

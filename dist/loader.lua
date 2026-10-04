@@ -1998,7 +1998,9 @@ do
                 end
 
                 for _, page in pages or {}do
-                    mountPage(host(page.group or (if page.home then HOME_GROUP else nil)), window, context, page)
+                    local group = page.group or (if page.home then HOME_GROUP else tostring(metadata.name))
+
+                    mountPage(host(group), window, context, page)
                 end
 
                 Settings.mount(window, store, library, keyCodes, context, host(SYSTEM_GROUP))

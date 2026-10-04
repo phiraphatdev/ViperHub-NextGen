@@ -4,7 +4,9 @@
 ![Runtime](https://img.shields.io/badge/runtime-Potassium_Windows_limited-yellow)
 
 Multi-game Luau foundation พร้อม WindUI และโครงสร้างแยก game module
-สถานะปัจจุบัน: beta foundation; ตรวจสถานะเปิดใช้งานล่าสุดที่ `status.json` ก่อนโหลด; **ยังไม่มีฟีเจอร์ gameplay**
+สถานะปัจจุบัน: beta; ตรวจสถานะเปิดใช้งานล่าสุดที่ `status.json` ก่อนโหลด
+ทุกเกมใช้ UI base เดียวกัน (ธีม ViperHub 14 แบบ, แถบซ้ายแบ่งกลุ่ม, การ์ดผู้เล่น, Settings/Diagnostics) ดู `docs/ARCHITECTURE.md` หัวข้อ "UI base (all games)"
+Anime Vanguards (local, ยังไม่ publish): Dashboard, Joiner, Auto Play, Macro, Game settings, Discord Webhook, Misc (Anti-AFK, Auto Reconnect, Re-run after teleport)
 มีหลักฐาน runtime foundation บน Potassium/Windows ในทั้งสองเกม แต่ไม่ได้รับรองทุก executor หรือ physical/touch input; ดู `tests/runtime/` สำหรับบันทึกที่ติดตามใน repo โดย local build ไม่บังคับ JSON evidence gate
 
 | เกม | Place ID ที่ตรวจสอบแล้ว | Module | Runtime |

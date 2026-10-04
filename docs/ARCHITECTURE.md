@@ -84,3 +84,27 @@ The pipeline's `PROJECT_VERSION` generates the local candidate manifest version,
 - darklua: https://github.com/seaofvoices/darklua — native module bundling/transformation tool.
 
 These are public-source observations, not a claim about private or leaked internal hub architecture.
+
+## UI base (all games)
+
+Every game uses the same shared UI; games describe pages and never call WindUI directly.
+
+| Part | Where | What it gives every game |
+| --- | --- | --- |
+| Themes | `src/ui/Theme.luau` | 14 ViperHub themes (Viper default, Sakura, Ocean, Sunset, Galaxy, Blood Moon, Gold Rush, Frost, Matrix, Cyberpunk, Lava, Royal, Toxic, Shadow) plus the library's own themes; chosen in Settings, applied live, saved in the shared config (`theme`, `themeVersion`). |
+| Window | `src/ui/WindUIAdapter.luau` | Icon, 680x460 size, sidebar player card, gradient open button, layer tags. |
+| Layout | `src/ui/App.luau` | Title-bar tags (game name, module version); sidebar sections: `Home` (Overview or the game's home page), the game's groups, and `System` (Settings, Diagnostics). Each page shows its title and description. A failing page shows a placeholder instead of aborting startup. |
+| Page style | `src/ui/Style.luau` | `section` (boxed, iconed heading), `sub` (dim sub-heading), `card` (icon paragraph). Game style modules may extend it (Anime Vanguards adds Joiner row icons). |
+
+`GameModule.pages` entries (all optional beyond title/description, validated by `network/ModuleLoader`):
+
+| Field | Meaning |
+| --- | --- |
+| `title`, `description`, `icon` | Tab label, header description, icon name from the bundled icon set |
+| `render(tab, window)` | Builds the page; runs isolated |
+| `group` | Sidebar section title (max 24 characters); pages without one are listed under the game's name |
+| `iconColor` | Brand color name from `Theme.colors` (primary, secondary, gold, blue, violet, rose, orange, slate) or `#rrggbb` |
+| `home` | `true` replaces the shared Overview with this page |
+
+Compatibility: libraries or mocks without `Section`, `Tag`, `AddTheme` or `Gradient` fall back to the flat layout and the Dark theme; games without pages keep Overview, Settings and Diagnostics.
+
