@@ -1522,6 +1522,7 @@ do
             local CORNER_RADIUS = 14
             local GLOW_INSET = 0
             local MAX_DEPTH = 8
+            local SECTION_RATIO = 1.5
             local EDGE_FADE = 0.55
             local HoverGlow = {}
 
@@ -1625,6 +1626,13 @@ do
                         local node = button
 
                         for _ = 1, MAX_DEPTH do
+                            if node:IsA('ImageButton') and node.AbsoluteSize.X >= MIN_WIDTH then
+                                return node
+                            end
+                            if node:IsA('ImageLabel') and node.AbsoluteSize.X >= MIN_WIDTH then
+                                return if node.AbsoluteSize.Y <= button.AbsoluteSize.Y * SECTION_RATIO then node else button
+                            end
+
                             local parent = node.Parent
 
                             if parent == nil then

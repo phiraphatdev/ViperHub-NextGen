@@ -17,6 +17,7 @@ local FADE_SECONDS = 0.18
 local CORNER_RADIUS = 14
 local GLOW_INSET = 0
 local MAX_DEPTH = 8
+local SECTION_RATIO = 1.5
 local EDGE_FADE = 0.55 -- gradient transparency at the card edges: the whole card tints, the cursor spot is brighter
 
 local HoverGlow = {}
@@ -109,11 +110,21 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
         end
         wired[button] = true
         local glow: any = nil
-        -- The card is the element's full box: the ancestor sitting directly in the page's scrolling list
-        -- (toggles, sliders and dropdowns only make a small part of it the button); else the button itself.
+        -- The card is the nearest ancestor (or the button itself) that is drawn as a card, so a collapsible
+        -- section header glows alone, not its whole body. Elements whose card is not a drawn image fall back to
+        -- the ancestor sitting directly in the page's scrolling list; else the button itself.
         local function card(): any
             local node: any = button
             for _ = 1, MAX_DEPTH do
+                if node:IsA("ImageButton") and node.AbsoluteSize.X >= MIN_WIDTH then
+                    return node
+                end
+                if node:IsA("ImageLabel") and node.AbsoluteSize.X >= MIN_WIDTH then
+                    -- A label card much taller than the button wraps a whole section: glow the button only.
+                    return if node.AbsoluteSize.Y <= button.AbsoluteSize.Y * SECTION_RATIO
+                        then node
+                        else button
+                end
                 local parent: any = node.Parent
                 if parent == nil then
                     break
