@@ -1,5 +1,9 @@
 # Updates
 
+## Local: Close Map After Voting
+
+- The game opens the Route Atlas for every room vote and leaves it open. New setting "Close Map After Voting" (default on, under Auto Route Atlas): about 1.5 s after the hub's vote and again when the vote ends, the runtime hides `AdventureHUD.AdventureMapRoot` (a client-side window only; the run state is untouched). Live: after a hub vote the window was hidden.
+
 ## Local Odyssey Adventure: unattended run features
 
 - Live-verified this session (floors 14-37 of a real run): Auto Join into the hosted room and Start; Auto Basic Card; Auto Route Atlas (votes only rooms the map connects to the current room); the game's own Auto Skip Start starts each floor; closing a Shop floor with `ShopClose` ends it; `TreasureOpenChest({ChestIndex})` on 3 chests ends a Treasure floor (`TreasureComplete`).

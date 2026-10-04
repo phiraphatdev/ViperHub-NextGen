@@ -473,6 +473,9 @@ test("Adventure runtime chooses the next room only in Adventure matches with Aut
         isAdventure = function()
             return true
         end,
+        closeMap = function()
+            box.closed = (box.closed or 0) + 1
+        end,
         mapRelay = {
             OnSnapshot = function(callback: any)
                 box.snapshot = callback
@@ -552,6 +555,8 @@ test("Adventure runtime chooses the next room only in Adventure matches with Aut
         "Treasure is unreachable: Elite outranks Battle"
     )
     assert(string.find(runtime.status, "chose a Elite room", 1, true) ~= nil, runtime.status)
+    flush()
+    assert(box.closed == 1, "Close Map After Voting (default on) hid the Route Atlas")
     offerRooms()
     flush()
     assert(#chosen == 1, "an identical selection right away is ignored")

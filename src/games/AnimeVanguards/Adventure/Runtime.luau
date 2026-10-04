@@ -56,6 +56,16 @@ local function liveDependencies(): any
     return {
         task = env.task,
         clock = os.clock,
+        -- Hides the Route Atlas window (the game opens it for every vote and leaves it open).
+        closeMap = function()
+            local players = env.game:GetService("Players")
+            local gui = players.LocalPlayer and players.LocalPlayer:FindFirstChild("PlayerGui")
+            local hud = gui and gui:FindFirstChild("AdventureHUD")
+            local root = hud and hud:FindFirstChild("AdventureMapRoot")
+            if root and root.Visible then
+                root.Visible = false
+            end
+        end,
         mapRelay = optionalModule(env.game:GetService("StarterPlayer"), paths.adventureMapRelay),
         events = optionalModule(replicated, paths.gameOdysseyClient),
         isAdventure = function(): boolean
@@ -74,6 +84,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
     local snapshot: any = nil
     local pendingRooms: any = nil
     local onRoomOffer: (any) -> ()
+    local closeMapLater: () -> ()
     local lastRoomKey = ""
     local lastRoomAt = -math.huge
 
@@ -129,6 +140,21 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             (taskApi.delay :: any)(PICK_DELAY_SECONDS, pick)
         else
             pick()
+        end
+    end
+
+    -- Closes the Route Atlas shortly after a vote (and again when the vote ends), when the switch is on.
+    local function closeMapNow()
+        if self.active and getSettings().get("closeMap") == true and type(deps.closeMap) == "function" then
+            pcall(deps.closeMap)
+        end
+    end
+    closeMapLater = function()
+        local taskApi: any = deps.task
+        if type(taskApi) == "table" and type(taskApi.delay) == "function" then
+            (taskApi.delay :: any)(1.5, closeMapNow)
+        else
+            closeMapNow()
         end
     end
 
@@ -236,6 +262,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             end
             local fireFn: any = entry.Fire
             if pcall(fireFn, { OptionIndex = index }) then
+                closeMapLater()
                 self.routed += 1
                 local kind = "?"
                 for _, option in options do
@@ -413,6 +440,9 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             CardPickCharacterOffer = onCharacterOffer,
             ShopOpened = onShopOpened,
             TreasureBegin = onTreasureBegin,
+            VoteEnded = function()
+                closeMapLater()
+            end,
         }
         for eventName, handler in extras do
             local extra = events[eventName]

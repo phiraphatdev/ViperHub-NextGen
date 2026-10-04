@@ -7077,6 +7077,10 @@ do
                     kind = 'bool',
                     default = true,
                 },
+                closeMap = {
+                    kind = 'bool',
+                    default = true,
+                },
                 secondPriorityFloor = {
                     kind = 'number',
                     range = ADVENTURE.secondPriorityFloor,
@@ -7492,6 +7496,7 @@ do
                 autoCharacterCard = true,
                 leaveShop = true,
                 openTreasure = true,
+                closeMap = true,
                 secondPriorityFloor = true,
                 floorPriority = true,
                 secondFloorPriority = true,
@@ -7655,6 +7660,8 @@ do
 
                 toggle(route, settings, 'autoRoute', 'Auto Route Atlas',
 [[After each floor, choose the next room by the priorities below (highest number first).]])
+                toggle(route, settings, 'closeMap', 'Close Map After Voting',
+[[Hide the Route Atlas window after the room is chosen (the game opens it for every vote and leaves it open).]])
                 slider(route, settings, 'secondPriorityFloor', 'Use Second Prioritize after Floor',
 [[From this floor on, the Second Floor Prioritize order is used.]])
                 priorityEditor(route, settings, 'floorPriority', 'Floor Prioritize',
@@ -8251,6 +8258,16 @@ do
                 return {
                     task = env.task,
                     clock = os.clock,
+                    closeMap = function()
+                        local players = env.game:GetService('Players')
+                        local gui = players.LocalPlayer and players.LocalPlayer:FindFirstChild('PlayerGui')
+                        local hud = gui and gui:FindFirstChild('AdventureHUD')
+                        local root = hud and hud:FindFirstChild('AdventureMapRoot')
+
+                        if root and root.Visible then
+                            root.Visible = false
+                        end
+                    end,
                     mapRelay = optionalModule(env.game:GetService('StarterPlayer'), paths.adventureMapRelay),
                     events = optionalModule(replicated, paths.gameOdysseyClient),
                     isAdventure = function()
@@ -8275,6 +8292,7 @@ do
                 local snapshot = nil
                 local pendingRooms = nil
                 local onRoomOffer
+                local closeMapLater
                 local lastRoomKey = ''
                 local lastRoomAt = -math.huge
 
@@ -8341,7 +8359,21 @@ do
                         pick()
                     end
                 end
+                local function closeMapNow()
+                    if self.active and getSettings().get('closeMap') == true and type(deps.closeMap) == 'function' then
+                        pcall(deps.closeMap)
+                    end
+                end
 
+                closeMapLater = function()
+                    local taskApi = deps.task
+
+                    if type(taskApi) == 'table' and type(taskApi.delay) == 'function' then
+                        (taskApi.delay)(1.5, closeMapNow)
+                    else
+                        closeMapNow()
+                    end
+                end
                 onRoomOffer = function(offer)
                     local saved = getSettings()
 
@@ -8431,6 +8463,8 @@ do
                         local fireFn = entry.Fire
 
                         if pcall(fireFn, {OptionIndex = index}) then
+                            closeMapLater()
+
                             self.routed += 1
 
                             local kind = '?'
@@ -8631,6 +8665,9 @@ do
                         CardPickCharacterOffer = onCharacterOffer,
                         ShopOpened = onShopOpened,
                         TreasureBegin = onTreasureBegin,
+                        VoteEnded = function()
+                            closeMapLater()
+                        end,
                     }
 
                     for eventName, handler in extras do
