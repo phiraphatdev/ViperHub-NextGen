@@ -423,6 +423,34 @@ do
                         'Secret',
                         'Vanguard',
                     }),
+                    rarityColors = table.freeze({
+                        Mythic = 'rose',
+                        Legendary = 'gold',
+                        Epic = 'violet',
+                        Rare = 'blue',
+                    }),
+                    roomTags = table.freeze({
+                        Battle = table.freeze({
+                            text = '5 waves',
+                            color = 'slate',
+                        }),
+                        Elite = table.freeze({
+                            text = '15 waves',
+                            color = 'rose',
+                        }),
+                        Shop = table.freeze({
+                            text = 'Coins',
+                            color = 'blue',
+                        }),
+                        Treasure = table.freeze({
+                            text = 'Chests',
+                            color = 'gold',
+                        }),
+                        Boss = table.freeze({
+                            text = 'Every 30',
+                            color = 'violet',
+                        }),
+                    }),
                     secondPriorityFloor = table.freeze({
                         min = 1,
                         max = 200,
@@ -5679,7 +5707,7 @@ do
 
                 return result
             end
-            local function readBasicCards(module)
+            local function readBasicCards(module, rarityOf)
                 local result = {}
                 local byRarity = if type(module) == 'table'then module.CardsByRarity else nil
 
@@ -5697,6 +5725,8 @@ do
 
                             if validName(name) and not table.find(result, name) then
                                 table.insert(result, name)
+
+                                rarityOf[name] = rarity
                             end
                         end
                     end
@@ -5748,12 +5778,14 @@ do
             local function pick(live, fallback)
                 return if#live > 0 then live else copy(fallback)
             end
-            local function fallbackBasicCards()
+            local function fallbackBasicCards(rarityOf)
                 local result = {}
 
                 for _, rarity in ADVENTURE.basicCardRarities do
                     for _, name in ADVENTURE.basicCards[rarity]do
                         table.insert(result, name)
+
+                        rarityOf[name] = rarity
                     end
                 end
 
@@ -5776,12 +5808,20 @@ do
                     defaultCharacter = characters[1]
                 end
 
-                local basicCards = readBasicCards(m.basicCards)
+                local rarityOf = {}
+                local basicCards = readBasicCards(m.basicCards, rarityOf)
+
+                if #basicCards == 0 then
+                    rarityOf = {}
+                    basicCards = fallbackBasicCards(rarityOf)
+                end
+
                 local data = {
                     characters = characters,
                     defaultCharacter = defaultCharacter,
                     powers = pick(readPowers(m.powers), ADVENTURE.powers),
-                    basicCards = if#basicCards > 0 then basicCards else fallbackBasicCards(),
+                    basicCards = basicCards,
+                    basicCardRarity = rarityOf,
                     roomKinds = copy(ADVENTURE.roomKinds),
                     traits = pick(readTraits(m.traits), ADVENTURE.traits),
                     memoriaRarities = copy(ADVENTURE.memoriaRarities),
@@ -6286,16 +6326,440 @@ do
     end
     do
         local function __modImpl()
+            local Theme = {}
+
+            Theme.DEFAULT = 'Viper'
+            Theme.colors = table.freeze({
+                primary = '#10b981',
+                secondary = '#2dd4bf',
+                gold = '#fbbf24',
+                blue = '#38bdf8',
+                violet = '#a78bfa',
+                rose = '#fb7185',
+                orange = '#fb923c',
+                slate = '#94a3b8',
+            })
+            Theme.SPECS = table.freeze({
+                {
+                    name = 'Viper',
+                    accent = '#0b3b2e',
+                    dialog = '#071a15',
+                    outline = '#34d399',
+                    text = '#ecfdf5',
+                    placeholder = '#6ee7b7',
+                    background = {
+                        '#030d0b',
+                        '#0a231d',
+                    },
+                    button = {
+                        '#059669',
+                        '#14b8a6',
+                    },
+                    icon = '#34d399',
+                    element = '#0f2a23',
+                },
+                {
+                    name = 'Sakura',
+                    accent = '#4a1530',
+                    dialog = '#2a0b1b',
+                    outline = '#f9a8d4',
+                    text = '#fdf2f8',
+                    placeholder = '#f9a8d4',
+                    background = {
+                        '#14060d',
+                        '#2b0d1d',
+                    },
+                    button = {
+                        '#ec4899',
+                        '#f472b6',
+                    },
+                    icon = '#f472b6',
+                    element = '#2e1220',
+                },
+                {
+                    name = 'Ocean',
+                    accent = '#0c3352',
+                    dialog = '#061a2b',
+                    outline = '#38bdf8',
+                    text = '#e0f2fe',
+                    placeholder = '#7dd3fc',
+                    background = {
+                        '#020b14',
+                        '#06223a',
+                    },
+                    button = {
+                        '#0284c7',
+                        '#06b6d4',
+                    },
+                    icon = '#38bdf8',
+                    element = '#0b2538',
+                },
+                {
+                    name = 'Sunset',
+                    accent = '#4a1d12',
+                    dialog = '#2a0f0a',
+                    outline = '#fb923c',
+                    text = '#fff7ed',
+                    placeholder = '#fdba74',
+                    background = {
+                        '#140805',
+                        '#2e0f16',
+                    },
+                    button = {
+                        '#f97316',
+                        '#e11d48',
+                    },
+                    icon = '#fb923c',
+                    element = '#2c1612',
+                },
+                {
+                    name = 'Galaxy',
+                    accent = '#2e1065',
+                    dialog = '#160734',
+                    outline = '#a78bfa',
+                    text = '#f5f3ff',
+                    placeholder = '#c4b5fd',
+                    background = {
+                        '#07041a',
+                        '#1a0b3d',
+                    },
+                    button = {
+                        '#7c3aed',
+                        '#4f46e5',
+                    },
+                    icon = '#a78bfa',
+                    element = '#1c1238',
+                },
+                {
+                    name = 'Blood Moon',
+                    accent = '#450a0a',
+                    dialog = '#1f0505',
+                    outline = '#f87171',
+                    text = '#fef2f2',
+                    placeholder = '#fca5a5',
+                    background = {
+                        '#0a0202',
+                        '#230606',
+                    },
+                    button = {
+                        '#b91c1c',
+                        '#ef4444',
+                    },
+                    icon = '#f87171',
+                    element = '#2a0d0d',
+                },
+                {
+                    name = 'Gold Rush',
+                    accent = '#3a2a06',
+                    dialog = '#1c1404',
+                    outline = '#fbbf24',
+                    text = '#fffbeb',
+                    placeholder = '#fcd34d',
+                    background = {
+                        '#0a0803',
+                        '#1f1706',
+                    },
+                    button = {
+                        '#d97706',
+                        '#facc15',
+                    },
+                    icon = '#fbbf24',
+                    element = '#26200f',
+                },
+                {
+                    name = 'Frost',
+                    accent = '#16384a',
+                    dialog = '#0b1e29',
+                    outline = '#a5f3fc',
+                    text = '#f0fdff',
+                    placeholder = '#a5f3fc',
+                    background = {
+                        '#06121a',
+                        '#0f2a36',
+                    },
+                    button = {
+                        '#22d3ee',
+                        '#93c5fd',
+                    },
+                    icon = '#67e8f9',
+                    element = '#13303d',
+                },
+                {
+                    name = 'Matrix',
+                    accent = '#052e16',
+                    dialog = '#021a0c',
+                    outline = '#22c55e',
+                    text = '#dcfce7',
+                    placeholder = '#4ade80',
+                    background = {
+                        '#000000',
+                        '#03140a',
+                    },
+                    button = {
+                        '#16a34a',
+                        '#22c55e',
+                    },
+                    icon = '#22c55e',
+                    element = '#071a0e',
+                },
+                {
+                    name = 'Cyberpunk',
+                    accent = '#3b0a45',
+                    dialog = '#1d0624',
+                    outline = '#facc15',
+                    text = '#fefce8',
+                    placeholder = '#f0abfc',
+                    background = {
+                        '#0b0418',
+                        '#25082f',
+                    },
+                    button = {
+                        '#d946ef',
+                        '#facc15',
+                    },
+                    icon = '#f0abfc',
+                    element = '#22102c',
+                },
+                {
+                    name = 'Lava',
+                    accent = '#4a1a04',
+                    dialog = '#260c02',
+                    outline = '#fb923c',
+                    text = '#fff7ed',
+                    placeholder = '#fdba74',
+                    background = {
+                        '#120501',
+                        '#2e0d02',
+                    },
+                    button = {
+                        '#dc2626',
+                        '#f97316',
+                    },
+                    icon = '#f97316',
+                    element = '#2d1408',
+                },
+                {
+                    name = 'Royal',
+                    accent = '#2e1a4a',
+                    dialog = '#170c26',
+                    outline = '#fbbf24',
+                    text = '#faf5ff',
+                    placeholder = '#d8b4fe',
+                    background = {
+                        '#0b0614',
+                        '#1e1033',
+                    },
+                    button = {
+                        '#7e22ce',
+                        '#d97706',
+                    },
+                    icon = '#c084fc',
+                    element = '#201433',
+                },
+                {
+                    name = 'Toxic',
+                    accent = '#283a06',
+                    dialog = '#141d03',
+                    outline = '#a3e635',
+                    text = '#f7fee7',
+                    placeholder = '#bef264',
+                    background = {
+                        '#070a01',
+                        '#172206',
+                    },
+                    button = {
+                        '#65a30d',
+                        '#a3e635',
+                    },
+                    icon = '#a3e635',
+                    element = '#1a240b',
+                },
+                {
+                    name = 'Shadow',
+                    accent = '#1f1f23',
+                    dialog = '#111113',
+                    outline = '#a1a1aa',
+                    text = '#fafafa',
+                    placeholder = '#a1a1aa',
+                    background = {
+                        '#050505',
+                        '#141416',
+                    },
+                    button = {
+                        '#3f3f46',
+                        '#71717a',
+                    },
+                    icon = '#d4d4d8',
+                    element = '#18181b',
+                },
+            })
+
+            local BUILT_IN_ORDER = {
+                'Dark',
+                'Light',
+                'Emerald',
+                'Midnight',
+                'Crimson',
+                'Rose',
+                'Violet',
+                'Indigo',
+                'Sky',
+                'Amber',
+            }
+
+            local function customNames()
+                local names = {}
+
+                for _, spec in Theme.SPECS do
+                    table.insert(names, spec.name)
+                end
+
+                return names
+            end
+
+            function Theme.list(library)
+                local names = customNames()
+                local themes = if type(library) == 'table' and type(library.Themes) == 'table'then library.Themes else nil
+
+                if not themes then
+                    table.insert(names, 'Dark')
+
+                    return names
+                end
+
+                for _, name in BUILT_IN_ORDER do
+                    if themes[name] ~= nil and not table.find(names, name) then
+                        table.insert(names, name)
+                    end
+                end
+
+                local rest = {}
+
+                for name in themes do
+                    if type(name) == 'string' and not table.find(names, name) then
+                        table.insert(rest, name)
+                    end
+                end
+
+                table.sort(rest)
+
+                for _, name in rest do
+                    table.insert(names, name)
+                end
+
+                return names
+            end
+            function Theme.register(library, preferred)
+                local env = getfenv()
+                local color3 = env.Color3
+
+                if type(library) ~= 'table' or type(library.AddTheme) ~= 'function' or type(library.Gradient) ~= 'function' or color3 == nil then
+                    return 'Dark'
+                end
+
+                local lib = library
+
+                local function hex(value)
+                    return color3.fromHex(value)
+                end
+                local function gradient(colors, rotation)
+                    return (lib.Gradient)(lib, {
+                        ['0'] = {
+                            Color = colors[1],
+                            Transparency = 0,
+                        },
+                        ['100'] = {
+                            Color = colors[2],
+                            Transparency = 0,
+                        },
+                    }, {Rotation = rotation})
+                end
+
+                for _, spec in Theme.SPECS do
+                    pcall(function()
+                        (lib.AddTheme)(lib, {
+                            Name = spec.name,
+                            Accent = hex(spec.accent),
+                            Dialog = hex(spec.dialog),
+                            Outline = hex(spec.outline),
+                            Text = hex(spec.text),
+                            Placeholder = hex(spec.placeholder),
+                            Background = gradient(spec.background, 90),
+                            Button = gradient(spec.button, 45),
+                            Icon = hex(spec.icon),
+                            Toggle = gradient(spec.button, 45),
+                            Slider = hex(spec.button[1]),
+                            Checkbox = gradient(spec.button, 45),
+                            Primary = hex(spec.button[1]),
+                            SliderIcon = hex(spec.placeholder),
+                            PanelBackground = hex('#FFFFFF'),
+                            PanelBackgroundTransparency = 0.96,
+                            LabelBackground = hex('#000000'),
+                            LabelBackgroundTransparency = 0.78,
+                            ElementBackground = hex(spec.element),
+                            ElementBackgroundTransparency = 0,
+                        })
+                    end)
+                end
+
+                local themes = if type(lib.Themes) == 'table'then lib.Themes else{}
+
+                if preferred and themes[preferred] ~= nil then
+                    return preferred
+                end
+
+                return if themes[Theme.DEFAULT] ~= nil then Theme.DEFAULT else'Dark'
+            end
+            function Theme.color(value)
+                local env = getfenv()
+                local color3 = env.Color3
+
+                if color3 == nil then
+                    return nil
+                end
+
+                local text = (Theme.colors)[value] or value
+                local ok, result = pcall(color3.fromHex, text)
+
+                return if ok then result else nil
+            end
+
+            return Theme
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.v()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.v
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.v = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
+            local Theme = __DARKLUA_BUNDLE_MODULES.v()
             local PriorityList = {}
-            local ROW_HEIGHT = 30
+            local ROW_HEIGHT = 32
             local ROW_GAP = 4
+            local NUMBER_WIDTH = 30
+            local STRIPE_WIDTH = 3
+            local TAG_WIDTH = 74
             local DRAG_THRESHOLD = 4
-            local EDGE_SCROLL = 24
+            local EDGE_SCROLL = 28
             local SCROLL_STEP = 10
             local SUMMARY_ENTRIES = 6
-            local ROW_ALPHA = 0.93
-            local TARGET_ALPHA = 0.78
+            local DEFAULT_VISIBLE = 7
+            local SLIDE_SECONDS = 0.18
             local MESSAGE_SECONDS = 4
+            local ALPHA_REST = 0.93
+            local ALPHA_HOVER = 0.88
+            local ALPHA_TARGET = 0.8
+            local ALPHA_SOURCE = 0.97
 
             function PriorityList.labels(order)
                 local result = {}
@@ -6312,6 +6776,15 @@ do
                 end
 
                 return table.concat(order, ' > ', 1, SUMMARY_ENTRIES) .. string.format(' > \u{2026} (+%d)', #order - SUMMARY_ENTRIES)
+            end
+            function PriorityList.offsets(count)
+                local result = {}
+
+                for index = 1, count do
+                    result[index] = (index - 1) * (ROW_HEIGHT + ROW_GAP)
+                end
+
+                return result
             end
             function PriorityList.rowAt(tops, height, y)
                 for index, top in tops do
@@ -6332,25 +6805,26 @@ do
                 return if kind == 'Instance'then container else nil
             end
 
-            function PriorityList.mount(host, title, desc, order, onSwap)
-                local current = table.clone(order)
+            function PriorityList.mount(host, options)
+                local current = table.clone(options.order)
+                local tags = options.tags or {}
                 local message = nil
                 local card = host:Paragraph({
-                    Title = title,
-                    Desc = desc .. '\n' .. PriorityList.summary(current),
+                    Title = options.title,
+                    Desc = options.desc .. '\n' .. PriorityList.summary(current),
                 })
 
                 local function setDesc()
-                    local text = desc .. '\n' .. (message or PriorityList.summary(current))
+                    local text = options.desc .. '\n' .. (message or PriorityList.summary(current))
 
                     pcall(card.SetDesc, card, text)
                 end
 
                 local env = getfenv()
                 local container = containerOf(card)
-                local Instance = env.Instance
+                local New = env.Instance
 
-                if not container or not Instance or not env.game then
+                if not container or not New or not env.game then
                     return {
                         refresh = function(newOrder)
                             current = table.clone(newOrder)
@@ -6365,9 +6839,12 @@ do
                 local UDim = env.UDim
                 local Vector2 = env.Vector2
                 local Enum = env.Enum
+                local Font = env.Font
                 local taskApi = env.task
                 local input = env.game:GetService('UserInputService')
                 local guiService = env.game:GetService('GuiService')
+                local tweens = env.game:GetService('TweenService')
+                local slide = env.TweenInfo.new(SLIDE_SECONDS, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
                 local titleLabel = card.ParagraphFrame.UIElements.Title
 
                 local function textColor()
@@ -6377,30 +6854,27 @@ do
 
                     return if ok and color then color else env.Color3.new(1, 1, 1)
                 end
+                local function fontWith(weight)
+                    local ok, font = pcall(function()
+                        return Font.new(titleLabel.FontFace.Family, weight)
+                    end)
 
-                local visible = math.min(#current, 7)
-                local list = Instance.new('ScrollingFrame')
+                    return if ok then font else titleLabel.FontFace
+                end
+
+                local list = New.new('ScrollingFrame')
 
                 list.Name = 'PriorityList'
                 list.BackgroundTransparency = 1
                 list.BorderSizePixel = 0
-                list.Size = UDim2.new(1, 0, 0, visible * (ROW_HEIGHT + ROW_GAP))
-                list.CanvasSize = UDim2.new(0, 0, 0, 0)
-                list.AutomaticCanvasSize = Enum.AutomaticSize.Y
                 list.ScrollBarThickness = 4
                 list.ScrollingDirection = Enum.ScrollingDirection.Y
                 list.LayoutOrder = 100
-
-                local layout = Instance.new('UIListLayout')
-
-                layout.Padding = UDim.new(0, ROW_GAP)
-                layout.SortOrder = Enum.SortOrder.LayoutOrder
-                layout.Parent = list
                 list.Parent = container
 
                 local rows = {}
                 local drag = nil
-                local render
+                local hovered = nil
 
                 local function pointer()
                     return input:GetMouseLocation() - guiService:GetGuiInset()
@@ -6408,33 +6882,84 @@ do
                 local function rowUnder(position)
                     local tops = {}
 
-                    for index, row in rows do
-                        local inside = position.X >= row.AbsolutePosition.X and position.X <= row.AbsolutePosition.X + row.AbsoluteSize.X
+                    for index, name in current do
+                        local row = rows[name]
+                        local inside = row and position.X >= row.AbsolutePosition.X and position.X <= row.AbsolutePosition.X + row.AbsoluteSize.X
 
                         tops[index] = if inside then row.AbsolutePosition.Y else
 -math.huge
                     end
 
-                    return PriorityList.rowAt(tops, ROW_HEIGHT, position.Y)
+                    local index = PriorityList.rowAt(tops, ROW_HEIGHT, position.Y)
+
+                    return if index then current[index]else nil
                 end
                 local function paint()
                     local color = textColor()
 
-                    for index, row in rows do
+                    for name, row in rows do
+                        local isSource = drag ~= nil and drag.ghost ~= nil and drag.name == name
+                        local isTarget = drag ~= nil and drag.ghost ~= nil and drag.target == name and drag.target ~= drag.name
+
                         row.BackgroundColor3 = color
-                        row.BackgroundTransparency = if drag and drag.target == index and drag.target ~= drag.index then TARGET_ALPHA else ROW_ALPHA
+                        row.BackgroundTransparency = if isSource
+                            then ALPHA_SOURCE
+                            elseif isTarget
+                            then ALPHA_TARGET
+                            elseif hovered == name and not drag
+                            then ALPHA_HOVER
+                            else ALPHA_REST
+                        row.Number.TextColor3 = color
+                        row.Label.TextColor3 = color
+                        row.Grip.TextColor3 = color
+                        row.Number.TextTransparency = if isSource then 0.7 else 0
+                        row.Label.TextTransparency = if isSource then 0.7 else 0
+                        row.Grip.Text = if isTarget then'\u{21c4}'else'\u{2261}'
+                        row.Grip.TextTransparency = if isTarget then 0 else 0.55
+                        row.Stroke.Color = color
+                        row.Stroke.Transparency = if isTarget then 0.35 else 1
+                    end
+                end
+                local function place(animated)
+                    local tops = PriorityList.offsets(#current)
 
-                        local label = row:FindFirstChild('Label')
+                    for index, name in current do
+                        local row = rows[name]
 
-                        if label then
-                            label.TextColor3 = color
+                        if row then
+                            row.Number.Text = tostring(#current - index + 1)
+
+                            local goal = UDim2.new(0, 0, 0, tops[index])
+
+                            if animated then
+                                tweens:Create(row, slide, {Position = goal}):Play()
+                            else
+                                row.Position = goal
+                            end
                         end
+                    end
 
-                        local grip = row:FindFirstChild('Grip')
+                    local height = #current * (ROW_HEIGHT + ROW_GAP) - ROW_GAP
 
-                        if grip then
-                            grip.TextColor3 = color
-                        end
+                    list.CanvasSize = UDim2.new(0, 0, 0, math.max(height, 0))
+
+                    local visible = math.min(#current, options.visibleRows or DEFAULT_VISIBLE)
+
+                    list.Size = UDim2.new(1, 0, 0, math.max(visible * (ROW_HEIGHT + ROW_GAP) - ROW_GAP, 0))
+                end
+                local function showMessage(text)
+                    message = text
+
+                    setDesc()
+
+                    if taskApi and type(taskApi.delay) == 'function' then
+                        (taskApi.delay)(MESSAGE_SECONDS, function()
+                            if message == text then
+                                message = nil
+
+                                setDesc()
+                            end
+                        end)
                     end
                 end
                 local function endDrag(position)
@@ -6456,42 +6981,28 @@ do
 
                     local target = if position and active.ghost then rowUnder(position)else nil
 
-                    if target and target ~= active.index then
-                        local from, to = current[active.index], current[target]
-                        local newOrder = onSwap(from, to)
+                    if target and target ~= active.name then
+                        local newOrder = options.onSwap(active.name, target)
 
                         if newOrder then
                             current = table.clone(newOrder)
-                            message = string.format('Swapped %s \u{2194} %s', from, to)
 
-                            local shown = message
-
-                            if taskApi and type(taskApi.delay) == 'function' then
-                                (taskApi.delay)(MESSAGE_SECONDS, function()
-                                    if message == shown then
-                                        message = nil
-
-                                        setDesc()
-                                    end
-                                end)
-                            end
-
-                            render()
+                            place(true)
+                            showMessage(string.format('Swapped %s \u{21c4} %s', tostring(active.name), target))
                         end
                     end
 
                     paint()
                 end
-                local function startDrag(index)
+                local function startDrag(name)
                     if drag then
                         return
                     end
 
                     local start = pointer()
                     local state = {
-                        index = index,
-                        target = index,
-                        start = start,
+                        name = name,
+                        target = nil,
                         ghost = nil,
                         connections = {},
                     }
@@ -6512,13 +7023,14 @@ do
                                 return
                             end
 
-                            local source = rows[index]
+                            local source = rows[name]
                             local ghost = source:Clone()
 
                             ghost.Name = 'PriorityListGhost'
                             ghost.Size = UDim2.fromOffset(source.AbsoluteSize.X, source.AbsoluteSize.Y)
                             ghost.AnchorPoint = Vector2.new(0, 0.5)
-                            ghost.BackgroundTransparency = TARGET_ALPHA
+                            ghost.BackgroundTransparency = ALPHA_TARGET
+                            ghost.Stroke.Transparency = 0.3
                             ghost.ZIndex = 50
 
                             for _, child in ghost:GetDescendants()do
@@ -6560,79 +7072,149 @@ do
                     table.insert(state.connections, moved)
                     table.insert(state.connections, released)
                 end
+                local function makeRow(name)
+                    local tag = tags[name]
+                    local tagColor = if tag then Theme.color(tag.color)else nil
+                    local row = New.new('TextButton')
 
-                render = function()
+                    row.Name = 'Row'
+                    row.Text = ''
+                    row.AutoButtonColor = false
+                    row.BorderSizePixel = 0
+                    row.Size = UDim2.new(1, -8, 0, ROW_HEIGHT)
+
+                    local corner = New.new('UICorner')
+
+                    corner.CornerRadius = UDim.new(0, 7)
+                    corner.Parent = row
+
+                    local stroke = New.new('UIStroke')
+
+                    stroke.Name = 'Stroke'
+                    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                    stroke.Thickness = 1.5
+                    stroke.Transparency = 1
+                    stroke.Parent = row
+
+                    if tagColor then
+                        local stripe = New.new('Frame')
+
+                        stripe.Name = 'Stripe'
+                        stripe.BorderSizePixel = 0
+                        stripe.BackgroundColor3 = tagColor
+                        stripe.Position = UDim2.fromOffset(4, 7)
+                        stripe.Size = UDim2.new(0, STRIPE_WIDTH, 1, -14)
+
+                        local round = New.new('UICorner')
+
+                        round.CornerRadius = UDim.new(1, 0)
+                        round.Parent = stripe
+                        stripe.Parent = row
+                    end
+
+                    local number = New.new('TextLabel')
+
+                    number.Name = 'Number'
+                    number.BackgroundTransparency = 1
+                    number.Position = UDim2.fromOffset(10, 0)
+                    number.Size = UDim2.new(0, NUMBER_WIDTH, 1, 0)
+                    number.TextXAlignment = Enum.TextXAlignment.Right
+                    number.TextSize = 14
+                    number.FontFace = fontWith(Enum.FontWeight.Bold)
+                    number.Parent = row
+
+                    local label = New.new('TextLabel')
+
+                    label.Name = 'Label'
+                    label.BackgroundTransparency = 1
+                    label.Position = UDim2.fromOffset(10 + NUMBER_WIDTH + 10, 0)
+
+                    local reserved = if tag and tagColor then TAG_WIDTH + 8 else 0
+
+                    label.Size = UDim2.new(1, -(10 + NUMBER_WIDTH + 10 + reserved + 30), 1, 0)
+                    label.TextXAlignment = Enum.TextXAlignment.Left
+                    label.TextTruncate = Enum.TextTruncate.AtEnd
+                    label.TextSize = 14
+                    label.FontFace = fontWith(Enum.FontWeight.Medium)
+                    label.Text = name
+                    label.Parent = row
+
+                    if tag and tagColor then
+                        local chip = New.new('TextLabel')
+
+                        chip.Name = 'Tag'
+                        chip.AnchorPoint = Vector2.new(1, 0.5)
+                        chip.Position = UDim2.new(1, -30, 0.5, 0)
+                        chip.Size = UDim2.fromOffset(TAG_WIDTH, 18)
+                        chip.BackgroundColor3 = tagColor
+                        chip.BackgroundTransparency = 0.82
+                        chip.TextColor3 = tagColor
+                        chip.TextSize = 11
+                        chip.FontFace = fontWith(Enum.FontWeight.Bold)
+                        chip.Text = string.upper(tag.text)
+
+                        local round = New.new('UICorner')
+
+                        round.CornerRadius = UDim.new(1, 0)
+                        round.Parent = chip
+                        chip.Parent = row
+                    end
+
+                    local grip = New.new('TextLabel')
+
+                    grip.Name = 'Grip'
+                    grip.BackgroundTransparency = 1
+                    grip.AnchorPoint = Vector2.new(1, 0)
+                    grip.Position = UDim2.new(1, -6, 0, 0)
+                    grip.Size = UDim2.new(0, 20, 1, 0)
+                    grip.TextSize = 16
+                    grip.Text = '\u{2261}'
+                    grip.Parent = row
+
+                    row.MouseEnter:Connect(function()
+                        hovered = name
+
+                        paint()
+                    end)
+                    row.MouseLeave:Connect(function()
+                        if hovered == name then
+                            hovered = nil
+
+                            paint()
+                        end
+                    end)
+                    row.InputBegan:Connect(function(began)
+                        local kind = began.UserInputType
+
+                        if kind == Enum.UserInputType.MouseButton1 or kind == Enum.UserInputType.Touch then
+                            startDrag(name)
+                        end
+                    end)
+
+                    row.Parent = list
+
+                    return row
+                end
+                local function sync()
                     endDrag(nil)
 
-                    for _, row in rows do
-                        row:Destroy()
+                    for name, row in rows do
+                        if not table.find(current, name) then
+                            row:Destroy()
+
+                            rows[name] = nil
+                        end
                     end
-
-                    rows = {}
-
-                    local font = titleLabel.FontFace
-
-                    for index, label in PriorityList.labels(current)do
-                        local row = Instance.new('TextButton')
-
-                        row.Name = 'Row'
-                        row.Text = ''
-                        row.AutoButtonColor = false
-                        row.BorderSizePixel = 0
-                        row.Size = UDim2.new(1, -8, 0, ROW_HEIGHT)
-                        row.LayoutOrder = index
-
-                        local corner = Instance.new('UICorner')
-
-                        corner.CornerRadius = UDim.new(0, 6)
-                        corner.Parent = row
-
-                        local text = Instance.new('TextLabel')
-
-                        text.Name = 'Label'
-                        text.BackgroundTransparency = 1
-                        text.Position = UDim2.fromOffset(10, 0)
-                        text.Size = UDim2.new(1, -40, 1, 0)
-                        text.TextXAlignment = Enum.TextXAlignment.Left
-                        text.TextTruncate = Enum.TextTruncate.AtEnd
-                        text.TextSize = 14
-                        text.FontFace = font
-                        text.RichText = true
-
-                        local number, name = string.match(label, '^(%d+)%. (.+)$')
-
-                        text.Text = string.format('<b>%s</b>. %s', number or '', name or label)
-                        text.Parent = row
-
-                        local grip = Instance.new('TextLabel')
-
-                        grip.Name = 'Grip'
-                        grip.BackgroundTransparency = 1
-                        grip.AnchorPoint = Vector2.new(1, 0)
-                        grip.Position = UDim2.new(1, -8, 0, 0)
-                        grip.Size = UDim2.new(0, 20, 1, 0)
-                        grip.Text = '\u{2261}'
-                        grip.TextSize = 16
-                        grip.TextTransparency = 0.5
-                        grip.Parent = row
-
-                        row.InputBegan:Connect(function(began)
-                            local kind = began.UserInputType
-
-                            if kind == Enum.UserInputType.MouseButton1 or kind == Enum.UserInputType.Touch then
-                                startDrag(index)
-                            end
-                        end)
-
-                        row.Parent = list
-                        rows[index] = row
+                    for _, name in current do
+                        if not rows[name] then
+                            rows[name] = makeRow(name)
+                        end
                     end
-
-                    paint()
-                    setDesc()
                 end
 
-                render()
+                sync()
+                place(false)
+                paint()
                 pcall(function()
                     titleLabel:GetPropertyChangedSignal('TextColor3'):Connect(paint)
                 end)
@@ -6642,7 +7224,10 @@ do
                         current = table.clone(newOrder)
                         message = nil
 
-                        render()
+                        sync()
+                        place(true)
+                        paint()
+                        setDesc()
                     end,
                     card = card,
                 }
@@ -6651,14 +7236,14 @@ do
             return PriorityList
         end
 
-        function __DARKLUA_BUNDLE_MODULES.v()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.v
+        function __DARKLUA_BUNDLE_MODULES.w()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.w
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.v = v
+                __DARKLUA_BUNDLE_MODULES.cache.w = v
             end
 
             return v.c
@@ -6669,8 +7254,10 @@ do
             local Style = __DARKLUA_BUNDLE_MODULES.e()
             local Catalog = __DARKLUA_BUNDLE_MODULES.t()
             local Settings = __DARKLUA_BUNDLE_MODULES.u()
-            local PriorityList = __DARKLUA_BUNDLE_MODULES.v()
+            local PriorityList = __DARKLUA_BUNDLE_MODULES.w()
+            local config = __DARKLUA_BUNDLE_MODULES.c()
             local Page = {}
+            local ADVENTURE = (config).adventure
             local PENDING =
 [[Settings only for now: the Adventure automation is not built yet, so these choices are saved but nothing runs.]]
 
@@ -6679,22 +7266,45 @@ do
                     pcall(control.SetDesc, control, text)
                 end
             end
-            local function priorityEditor(host, settings, key, title, desc)
-                local list = PriorityList.mount(host, title, desc, settings.order(key), function(
-                    first,
-                    second
-                )
-                    return if settings.swap(key, first, second)then settings.order(key)else nil
-                end)
+            local function priorityEditor(
+                host,
+                settings,
+                key,
+                title,
+                desc,
+                tags
+            )
+                local section = Style.sub(host, title, 'list-ordered', false)
+                local list = PriorityList.mount(section, {
+                    title = title,
+                    desc = desc,
+                    order = settings.order(key),
+                    tags = tags,
+                    onSwap = function(first, second)
+                        return if settings.swap(key, first, second)then settings.order(key)else nil
+                    end,
+                })
 
-                host:Button({
-                    Title = title .. ': reset',
+                section:Button({
+                    Title = 'Reset ' .. title,
                     Desc = 'Restore the default order.',
                     Icon = 'rotate-ccw',
                     Callback = function()
                         list.refresh(settings.resetOrder(key))
                     end,
                 })
+            end
+            local function cardTags(catalog)
+                local tags = {}
+
+                for name, rarity in catalog.basicCardRarity do
+                    tags[name] = {
+                        text = rarity,
+                        color = ADVENTURE.rarityColors[rarity] or 'slate',
+                    }
+                end
+
+                return tags
             end
             local function toggle(host, settings, key, title, desc)
                 host:Toggle({
@@ -6784,9 +7394,9 @@ do
                 slider(route, settings, 'secondPriorityFloor', 'Use Second Prioritize after Floor',
 [[From this floor on, the Second Floor Prioritize order is used.]])
                 priorityEditor(route, settings, 'floorPriority', 'Floor Prioritize',
-[[Next room to pick on the Route Atlas; the highest number is preferred. Drag a row onto another to swap them.]])
+[[Next room to pick on the Route Atlas; the highest number is preferred. Drag a row onto another to swap them.]], ADVENTURE.roomTags)
                 priorityEditor(route, settings, 'secondFloorPriority', 'Second Floor Prioritize',
-[[Used instead after the floor above. Drag a row onto another to swap them.]])
+[[Used instead after the floor above. Drag a row onto another to swap them.]], ADVENTURE.roomTags)
                 toggle(misc, settings, 'autoUnitReward', 'Auto Choose Unit Reward',
 [[After an Elite floor, take the highest-rarity unit offered; skipped when off.]])
                 toggle(misc, settings, 'autoBuyItches', 'Auto Buy Itches',
@@ -6802,7 +7412,7 @@ do
                 toggle(basicCard, settings, 'autoBasicCard', 'Auto Basic Card',
 [[After each floor, pick a basic card by the priority below; skipped when off.]])
                 priorityEditor(basicCard, settings, 'cardPriority', 'Card Priority',
-[[Basic card (Odyssey modifier) to pick; the highest number is preferred. Drag a row onto another to swap them.]])
+[[Basic card (Odyssey modifier) to pick; the highest number is preferred. Drag a row onto another to swap them.]], cardTags(catalog))
 
                 local shop = Style.section(tab, 'Auto Stitches Shop', 'store', false)
 
@@ -6863,14 +7473,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.w()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.w
+        function __DARKLUA_BUNDLE_MODULES.x()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.x
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.w = v
+                __DARKLUA_BUNDLE_MODULES.cache.x = v
             end
 
             return v.c
@@ -7311,14 +7921,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.x()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.x
+        function __DARKLUA_BUNDLE_MODULES.y()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.y
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.x = v
+                __DARKLUA_BUNDLE_MODULES.cache.y = v
             end
 
             return v.c
@@ -8169,14 +8779,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.y()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.y
+        function __DARKLUA_BUNDLE_MODULES.z()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.z
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.y = v
+                __DARKLUA_BUNDLE_MODULES.cache.z = v
             end
 
             return v.c
@@ -8185,7 +8795,7 @@ do
     do
         local function __modImpl()
             local Document = __DARKLUA_BUNDLE_MODULES.p()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.y()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.z()
             local Runtime = {}
             local POLL_SECONDS = 0.2
             local ACTION_TIMEOUT = 12
@@ -9244,14 +9854,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.z()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.z
+        function __DARKLUA_BUNDLE_MODULES.A()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.A
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.z = v
+                __DARKLUA_BUNDLE_MODULES.cache.A = v
             end
 
             return v.c
@@ -9391,14 +10001,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.A()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.A
+        function __DARKLUA_BUNDLE_MODULES.B()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.B
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.A = v
+                __DARKLUA_BUNDLE_MODULES.cache.B = v
             end
 
             return v.c
@@ -9847,14 +10457,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.B()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.B
+        function __DARKLUA_BUNDLE_MODULES.C()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.C
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.B = v
+                __DARKLUA_BUNDLE_MODULES.cache.C = v
             end
 
             return v.c
@@ -10121,14 +10731,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.C()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.C
+        function __DARKLUA_BUNDLE_MODULES.D()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.D
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.C = v
+                __DARKLUA_BUNDLE_MODULES.cache.D = v
             end
 
             return v.c
@@ -10280,14 +10890,14 @@ do
             return Rules
         end
 
-        function __DARKLUA_BUNDLE_MODULES.D()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.D
+        function __DARKLUA_BUNDLE_MODULES.E()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.E
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.D = v
+                __DARKLUA_BUNDLE_MODULES.cache.E = v
             end
 
             return v.c
@@ -10296,7 +10906,7 @@ do
     do
         local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Rules = __DARKLUA_BUNDLE_MODULES.D()
+            local Rules = __DARKLUA_BUNDLE_MODULES.E()
             local Adapter = {}
 
             local function resolve(root, path)
@@ -10721,14 +11331,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.E()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.E
+        function __DARKLUA_BUNDLE_MODULES.F()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.F
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.E = v
+                __DARKLUA_BUNDLE_MODULES.cache.F = v
             end
 
             return v.c
@@ -10738,8 +11348,8 @@ do
         local function __modImpl()
             local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.E()
-            local Rules = __DARKLUA_BUNDLE_MODULES.D()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.F()
+            local Rules = __DARKLUA_BUNDLE_MODULES.E()
             local Runtime = {}
             local STORAGE_KEY = 'AnimeVanguardsAutoPlay'
             local SCHEMA_VERSION = 3
@@ -11326,14 +11936,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.F()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.F
+        function __DARKLUA_BUNDLE_MODULES.G()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.G
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.F = v
+                __DARKLUA_BUNDLE_MODULES.cache.G = v
             end
 
             return v.c
@@ -11791,14 +12401,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.G()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.G
+        function __DARKLUA_BUNDLE_MODULES.H()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.H
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.G = v
+                __DARKLUA_BUNDLE_MODULES.cache.H = v
             end
 
             return v.c
@@ -11968,14 +12578,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.H()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.H
+        function __DARKLUA_BUNDLE_MODULES.I()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.I
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.H = v
+                __DARKLUA_BUNDLE_MODULES.cache.I = v
             end
 
             return v.c
@@ -12268,14 +12878,14 @@ do
             return Embed
         end
 
-        function __DARKLUA_BUNDLE_MODULES.I()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.I
+        function __DARKLUA_BUNDLE_MODULES.J()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.J
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.I = v
+                __DARKLUA_BUNDLE_MODULES.cache.J = v
             end
 
             return v.c
@@ -12283,7 +12893,7 @@ do
     end
     do
         local function __modImpl()
-            local Embed = __DARKLUA_BUNDLE_MODULES.I()
+            local Embed = __DARKLUA_BUNDLE_MODULES.J()
             local Events = {}
             local UNIT_ROWS = 6
             local SHARE_BAR = 10
@@ -12732,14 +13342,14 @@ do
             return Events
         end
 
-        function __DARKLUA_BUNDLE_MODULES.J()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.J
+        function __DARKLUA_BUNDLE_MODULES.K()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.K
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.J = v
+                __DARKLUA_BUNDLE_MODULES.cache.K = v
             end
 
             return v.c
@@ -12748,7 +13358,7 @@ do
     do
         local function __modImpl()
             local Style = __DARKLUA_BUNDLE_MODULES.e()
-            local Events = __DARKLUA_BUNDLE_MODULES.J()
+            local Events = __DARKLUA_BUNDLE_MODULES.K()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Page = {}
             local WEBHOOK = (config).webhook
@@ -12916,14 +13526,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.K()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.K
+        function __DARKLUA_BUNDLE_MODULES.L()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.L
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.K = v
+                __DARKLUA_BUNDLE_MODULES.cache.L = v
             end
 
             return v.c
@@ -13139,14 +13749,14 @@ do
             return Sender
         end
 
-        function __DARKLUA_BUNDLE_MODULES.L()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.L
+        function __DARKLUA_BUNDLE_MODULES.M()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.M
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.L = v
+                __DARKLUA_BUNDLE_MODULES.cache.M = v
             end
 
             return v.c
@@ -13250,14 +13860,14 @@ do
             return Session
         end
 
-        function __DARKLUA_BUNDLE_MODULES.M()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.M
+        function __DARKLUA_BUNDLE_MODULES.N()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.N
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.M = v
+                __DARKLUA_BUNDLE_MODULES.cache.N = v
             end
 
             return v.c
@@ -13268,10 +13878,10 @@ do
             local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local metadata = __DARKLUA_BUNDLE_MODULES.b()
-            local Embed = __DARKLUA_BUNDLE_MODULES.I()
-            local Events = __DARKLUA_BUNDLE_MODULES.J()
-            local Sender = __DARKLUA_BUNDLE_MODULES.L()
-            local Session = __DARKLUA_BUNDLE_MODULES.M()
+            local Embed = __DARKLUA_BUNDLE_MODULES.J()
+            local Events = __DARKLUA_BUNDLE_MODULES.K()
+            local Sender = __DARKLUA_BUNDLE_MODULES.M()
+            local Session = __DARKLUA_BUNDLE_MODULES.N()
             local Runtime = {}
             local STORAGE_KEY = 'AnimeVanguardsWebhook'
             local SCHEMA_VERSION = 1
@@ -14635,14 +15245,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.N()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.N
+        function __DARKLUA_BUNDLE_MODULES.O()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.O
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.N = v
+                __DARKLUA_BUNDLE_MODULES.cache.O = v
             end
 
             return v.c
@@ -14719,14 +15329,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.O()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.O
+        function __DARKLUA_BUNDLE_MODULES.P()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.P
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.O = v
+                __DARKLUA_BUNDLE_MODULES.cache.P = v
             end
 
             return v.c
@@ -15070,14 +15680,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.P()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.P
+        function __DARKLUA_BUNDLE_MODULES.Q()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.Q
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.P = v
+                __DARKLUA_BUNDLE_MODULES.cache.Q = v
             end
 
             return v.c
@@ -15090,19 +15700,19 @@ local metadata = __DARKLUA_BUNDLE_MODULES.b()
 local config = __DARKLUA_BUNDLE_MODULES.c()
 local JoinerPage = __DARKLUA_BUNDLE_MODULES.n()
 local JoinerRuntime = __DARKLUA_BUNDLE_MODULES.s()
-local AdventurePage = __DARKLUA_BUNDLE_MODULES.w()
-local MacroPage = __DARKLUA_BUNDLE_MODULES.x()
-local MacroRuntime = __DARKLUA_BUNDLE_MODULES.z()
-local GamePage = __DARKLUA_BUNDLE_MODULES.A()
-local GameAdapter = __DARKLUA_BUNDLE_MODULES.B()
-local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.C()
-local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.F()
-local StatusPage = __DARKLUA_BUNDLE_MODULES.G()
-local DashboardPage = __DARKLUA_BUNDLE_MODULES.H()
-local WebhookPage = __DARKLUA_BUNDLE_MODULES.K()
-local WebhookRuntime = __DARKLUA_BUNDLE_MODULES.N()
-local MiscPage = __DARKLUA_BUNDLE_MODULES.O()
-local MiscRuntime = __DARKLUA_BUNDLE_MODULES.P()
+local AdventurePage = __DARKLUA_BUNDLE_MODULES.x()
+local MacroPage = __DARKLUA_BUNDLE_MODULES.y()
+local MacroRuntime = __DARKLUA_BUNDLE_MODULES.A()
+local GamePage = __DARKLUA_BUNDLE_MODULES.B()
+local GameAdapter = __DARKLUA_BUNDLE_MODULES.C()
+local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.D()
+local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.G()
+local StatusPage = __DARKLUA_BUNDLE_MODULES.H()
+local DashboardPage = __DARKLUA_BUNDLE_MODULES.I()
+local WebhookPage = __DARKLUA_BUNDLE_MODULES.L()
+local WebhookRuntime = __DARKLUA_BUNDLE_MODULES.O()
+local MiscPage = __DARKLUA_BUNDLE_MODULES.P()
+local MiscRuntime = __DARKLUA_BUNDLE_MODULES.Q()
 local active = false
 local joiner = JoinerRuntime.new()
 local macro = MacroRuntime.new()

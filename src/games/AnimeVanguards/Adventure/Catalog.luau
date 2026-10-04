@@ -19,6 +19,7 @@ export type Data = {
     defaultCharacter: string,
     powers: { string },
     basicCards: { string },
+    basicCardRarity: { [string]: string },
     roomKinds: { string },
     traits: { string },
     memoriaRarities: { string },
@@ -70,8 +71,8 @@ local function readPowers(module: any): { string }
     return result
 end
 
--- Basic card names from BasicCardPool.CardsByRarity, highest rarity first, game order inside a rarity.
-local function readBasicCards(module: any): { string }
+-- Basic card names from BasicCardPool.CardsByRarity, highest rarity first, game order inside a rarity; fills rarity.
+local function readBasicCards(module: any, rarityOf: { [string]: string }): { string }
     local result = {}
     local byRarity = if type(module) == "table" then module.CardsByRarity else nil
     if type(byRarity) ~= "table" then
@@ -85,6 +86,7 @@ local function readBasicCards(module: any): { string }
                 local name = if type(item) == "table" then item.Name else item
                 if validName(name) and not table.find(result, name) then
                     table.insert(result, name)
+                    rarityOf[name] = rarity
                 end
             end
         end
@@ -127,11 +129,12 @@ local function pick(live: { string }, fallback: any): { string }
     return if #live > 0 then live else copy(fallback)
 end
 
-local function fallbackBasicCards(): { string }
+local function fallbackBasicCards(rarityOf: { [string]: string }): { string }
     local result = {}
     for _, rarity in ADVENTURE.basicCardRarities do
         for _, name in ADVENTURE.basicCards[rarity] do
             table.insert(result, name)
+            rarityOf[name] = rarity
         end
     end
     return result
@@ -151,12 +154,18 @@ function Catalog.fromModules(modules: any): Data
     if not table.find(characters, defaultCharacter) then
         defaultCharacter = characters[1]
     end
-    local basicCards = readBasicCards(m.basicCards)
+    local rarityOf: { [string]: string } = {}
+    local basicCards = readBasicCards(m.basicCards, rarityOf)
+    if #basicCards == 0 then
+        rarityOf = {}
+        basicCards = fallbackBasicCards(rarityOf)
+    end
     local data: Data = {
         characters = characters,
         defaultCharacter = defaultCharacter,
         powers = pick(readPowers(m.powers), ADVENTURE.powers),
-        basicCards = if #basicCards > 0 then basicCards else fallbackBasicCards(),
+        basicCards = basicCards,
+        basicCardRarity = rarityOf,
         roomKinds = copy(ADVENTURE.roomKinds),
         traits = pick(readTraits(m.traits), ADVENTURE.traits),
         memoriaRarities = copy(ADVENTURE.memoriaRarities),

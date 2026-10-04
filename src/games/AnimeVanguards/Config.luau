@@ -298,6 +298,16 @@ return table.freeze({
             "Prodigy",
         }),
         memoriaRarities = table.freeze({ "Rare", "Epic", "Legendary", "Mythic", "Secret", "Vanguard" }),
+        -- Priority list tag colors (ui/Theme color names).
+        rarityColors = table.freeze({ Mythic = "rose", Legendary = "gold", Epic = "violet", Rare = "blue" }),
+        -- Room tags: a short fact from the wiki and a color.
+        roomTags = table.freeze({
+            Battle = table.freeze({ text = "5 waves", color = "slate" }),
+            Elite = table.freeze({ text = "15 waves", color = "rose" }),
+            Shop = table.freeze({ text = "Coins", color = "blue" }),
+            Treasure = table.freeze({ text = "Chests", color = "gold" }),
+            Boss = table.freeze({ text = "Every 30", color = "violet" }),
+        }),
         -- Slider ranges and defaults.
         secondPriorityFloor = table.freeze({ min = 1, max = 200, default = 30 }),
         cashOutFloor = table.freeze({ min = 1, max = 100, default = 30 }),

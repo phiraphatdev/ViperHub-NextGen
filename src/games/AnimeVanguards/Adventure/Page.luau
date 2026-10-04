@@ -4,14 +4,17 @@ Purpose: Render the Odyssey Adventure tab: auto join, character and powers, Rout
          choices, run completion, Memorized memoria and the stage failsafe (settings only; automation is pending)
 Input: WindUI tab handle, an optional catalog and an optional settings object (built from live game data when absent)
 Output: Mounted controls bound to saved Adventure settings
-Dependencies: Style; ui/PriorityList; Adventure/Catalog; Adventure/Settings
+Dependencies: Style; Config; ui/PriorityList; Adventure/Catalog; Adventure/Settings
 ]]
 
 local Style = require("../Style")
 local Catalog = require("./Catalog")
 local Settings = require("./Settings")
 local PriorityList = require("../../../ui/PriorityList")
+local config = require("../Config")
 local Page = {}
+
+local ADVENTURE: any = (config :: any).adventure
 
 local PENDING =
     "Settings only for now: the Adventure automation is not built yet, so these choices are saved but nothing runs."
@@ -22,25 +25,36 @@ local function setDesc(control: any, text: string)
     end
 end
 
--- A priority list like the reference hub: drag a row onto another to swap them; Reset restores the default order.
-local function priorityEditor(host: any, settings: any, key: string, title: string, desc: string)
-    local list = PriorityList.mount(
-        host,
-        title,
-        desc,
-        settings.order(key),
-        function(first: string, second: string)
+-- A priority list like the reference hub, in its own collapsible sub-section: drag a row onto another to swap them;
+-- Reset restores the default order.
+local function priorityEditor(host: any, settings: any, key: string, title: string, desc: string, tags: any)
+    local section = Style.sub(host, title, "list-ordered", false)
+    local list = PriorityList.mount(section, {
+        title = title,
+        desc = desc,
+        order = settings.order(key),
+        tags = tags,
+        onSwap = function(first: string, second: string): { string }?
             return if settings.swap(key, first, second) then settings.order(key) else nil
-        end
-    )
-    host:Button({
-        Title = title .. ": reset",
+        end,
+    })
+    section:Button({
+        Title = "Reset " .. title,
         Desc = "Restore the default order.",
         Icon = "rotate-ccw",
         Callback = function()
             list.refresh(settings.resetOrder(key))
         end,
     })
+end
+
+-- Rarity tags for basic cards.
+local function cardTags(catalog: any): { [string]: any }
+    local tags = {}
+    for name, rarity in catalog.basicCardRarity do
+        tags[name] = { text = rarity, color = ADVENTURE.rarityColors[rarity] or "slate" }
+    end
+    return tags
 end
 
 local function toggle(host: any, settings: any, key: string, title: string, desc: string)
@@ -159,14 +173,16 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?): an
         settings,
         "floorPriority",
         "Floor Prioritize",
-        "Next room to pick on the Route Atlas; the highest number is preferred. Drag a row onto another to swap them."
+        "Next room to pick on the Route Atlas; the highest number is preferred. Drag a row onto another to swap them.",
+        ADVENTURE.roomTags
     )
     priorityEditor(
         route,
         settings,
         "secondFloorPriority",
         "Second Floor Prioritize",
-        "Used instead after the floor above. Drag a row onto another to swap them."
+        "Used instead after the floor above. Drag a row onto another to swap them.",
+        ADVENTURE.roomTags
     )
     toggle(
         misc,
@@ -205,7 +221,8 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?): an
         settings,
         "cardPriority",
         "Card Priority",
-        "Basic card (Odyssey modifier) to pick; the highest number is preferred. Drag a row onto another to swap them."
+        "Basic card (Odyssey modifier) to pick; the highest number is preferred. Drag a row onto another to swap them.",
+        cardTags(catalog)
     )
 
     local shop = Style.section(tab, "Auto Stitches Shop", "store", false)

@@ -46,6 +46,10 @@ test("Adventure catalog falls back to the observed config lists", function()
     assert(#catalog.characters == #ADVENTURE.characters and catalog.defaultCharacter == "Iscanur (Pride)")
     assert(#catalog.powers == 14 and catalog.powers[12] == "Memorized")
     assert(#catalog.basicCards == 33 and catalog.basicCards[1] == "Limit Break")
+    assert(
+        catalog.basicCardRarity["Limit Break"] == "Mythic"
+            and catalog.basicCardRarity["Military Training"] == "Rare"
+    )
     assert(catalog.basicCards[33] == "Military Training")
     assert(table.concat(catalog.roomKinds, ",") == "Battle,Elite,Shop,Treasure,Boss")
     assert(catalog.traits[1] == "Vigor I" and #catalog.memoriaRarities == 6)
@@ -82,6 +86,7 @@ test("Adventure catalog reads live-shaped game modules and ignores malformed ent
     assert(catalog.defaultCharacter == "Zed (New)")
     assert(table.concat(catalog.powers, ",") == "Full Deck,Flight")
     assert(table.concat(catalog.basicCards, ",") == "Golden Age,Ambush")
+    assert(catalog.basicCardRarity["Golden Age"] == "Mythic" and catalog.basicCardRarity.Ambush == "Rare")
     assert(table.concat(catalog.traits, ",") == "Vigor I,Vigor II,Vigor III,Blitz")
     local failing = AdventureCatalog.fromModules({
         characters = {
@@ -152,6 +157,8 @@ test("Priority list labels, summary and row hit test", function()
     assert(
         PriorityList.summary({ "A", "B", "C", "D", "E", "F", "G", "H" }) == "A > B > C > D > E > F > … (+2)"
     )
+    local offsets = PriorityList.offsets(3)
+    assert(offsets[1] == 0 and offsets[2] == 36 and offsets[3] == 72, "32px rows with a 4px gap")
     local tops = { 100, 134, 168 }
     assert(PriorityList.rowAt(tops, 30, 100) == 1 and PriorityList.rowAt(tops, 30, 150) == 2)
     assert(PriorityList.rowAt(tops, 30, 131) == nil, "the gap between rows is not a row")
@@ -234,7 +241,7 @@ test("Adventure page mounts the requested layout and binds every control", funct
     assert(string.find(statusText, "not built yet", 1, true), statusText)
     assert(
         table.concat(sections, "|")
-            == "Character|Miscellaneous|Miscellaneous/Auto Route Atlas|Auto Character Card|Auto Basic Card|Auto Stitches Shop|Run Completion|Memorized Modifier|Stage Failsafe",
+            == "Character|Miscellaneous|Miscellaneous/Auto Route Atlas|Miscellaneous/Auto Route Atlas/Floor Prioritize|Miscellaneous/Auto Route Atlas/Second Floor Prioritize|Auto Character Card|Auto Basic Card|Auto Basic Card/Card Priority|Auto Stitches Shop|Run Completion|Memorized Modifier|Stage Failsafe",
         table.concat(sections, "|")
     )
     local expected: { [string]: string } = {
@@ -243,13 +250,13 @@ test("Adventure page mounts the requested layout and binds every control", funct
         ["Slot 1"] = "Character/",
         ["Slot 2"] = "Character/",
         ["Use Second Prioritize after Floor"] = "Miscellaneous/Auto Route Atlas/",
-        ["Floor Prioritize"] = "Miscellaneous/Auto Route Atlas/",
-        ["Second Floor Prioritize"] = "Miscellaneous/Auto Route Atlas/",
+        ["Floor Prioritize"] = "Miscellaneous/Auto Route Atlas/Floor Prioritize/",
+        ["Second Floor Prioritize"] = "Miscellaneous/Auto Route Atlas/Second Floor Prioritize/",
         ["Auto Choose Unit Reward"] = "Miscellaneous/",
         ["Auto Buy Itches"] = "Miscellaneous/",
         ["Auto Character Card"] = "Auto Character Card/",
         ["Auto Basic Card"] = "Auto Basic Card/",
-        ["Card Priority"] = "Auto Basic Card/",
+        ["Card Priority"] = "Auto Basic Card/Card Priority/",
         ["Auto Stitches Shop"] = "Auto Stitches Shop/",
         ["Buy Basic Card"] = "Auto Stitches Shop/",
         ["Buy Starter Card"] = "Auto Stitches Shop/",
@@ -288,14 +295,14 @@ test("Adventure page mounts the requested layout and binds every control", funct
     local card = controls["Card Priority"]
     assert(string.find(card.desc, "Limit Break > Golden Age", 1, true) ~= nil)
     assert(string.find(card.desc, "(+27)", 1, true) ~= nil, card.desc)
-    assert(buttons["Miscellaneous/Auto Route Atlas/Floor Prioritize: reset"])
-    assert(buttons["Miscellaneous/Auto Route Atlas/Second Floor Prioritize: reset"])
+    assert(buttons["Miscellaneous/Auto Route Atlas/Floor Prioritize/Reset Floor Prioritize"])
+    assert(buttons["Miscellaneous/Auto Route Atlas/Second Floor Prioritize/Reset Second Floor Prioritize"])
     assert(settings.swap("floorPriority", "Treasure", "Boss"))
-    buttons["Miscellaneous/Auto Route Atlas/Floor Prioritize: reset"].options.Callback()
+    buttons["Miscellaneous/Auto Route Atlas/Floor Prioritize/Reset Floor Prioritize"].options.Callback()
     assert(settings.order("floorPriority")[1] == "Treasure")
     assert(string.find(floor.desc, "Treasure > Elite", 1, true) ~= nil)
     assert(settings.swap("cardPriority", "Limit Break", "Ambush"))
-    buttons["Auto Basic Card/Card Priority: reset"].options.Callback()
+    buttons["Auto Basic Card/Card Priority/Reset Card Priority"].options.Callback()
     assert(
         settings.order("cardPriority")[1] == "Limit Break"
             and string.find(card.desc, "Limit Break >", 1, true) ~= nil

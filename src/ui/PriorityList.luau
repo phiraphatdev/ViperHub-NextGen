@@ -1,25 +1,45 @@
 --!strict
 --[[
 Purpose: Shared drag-to-swap priority list (UI base for every game): a card with numbered rows, highest number on
-         top; hold a row and drop it on another row to swap the two (mouse or touch)
-Input: A WindUI tab or section handle, a title, a description, the current order and a swap callback
+         top; hold a row and drop it on another row to swap the two (mouse or touch). Rows can carry a colored tag
+         (rarity, room kind), swaps slide into place and the scroll position is kept.
+Input: A WindUI tab or section handle and options: title, desc, order, onSwap(from, to) -> newOrder?, optional tags
+       ({ [name]: { text, color } } with a Theme color name or #hex) and visibleRows
 Output: A handle with refresh(order) and the card; without the WindUI paragraph container (other libraries, mocks)
         the card only shows the order as text
-Dependencies: None (Roblox GUI instances inside the WindUI paragraph container)
+Dependencies: ui/Theme (Roblox GUI instances inside the WindUI paragraph container)
 ]]
 
+local Theme = require("./Theme")
 local PriorityList = {}
 
-local ROW_HEIGHT = 30
+local ROW_HEIGHT = 32
 local ROW_GAP = 4
+local NUMBER_WIDTH = 30
+local STRIPE_WIDTH = 3
+local TAG_WIDTH = 74
 local DRAG_THRESHOLD = 4
-local EDGE_SCROLL = 24
+local EDGE_SCROLL = 28
 local SCROLL_STEP = 10
 local SUMMARY_ENTRIES = 6
-local ROW_ALPHA = 0.93
-local TARGET_ALPHA = 0.78
+local DEFAULT_VISIBLE = 7
+local SLIDE_SECONDS = 0.18
 local MESSAGE_SECONDS = 4
+-- Background transparency of a row: resting, hovered, the drop target and the dimmed source while dragging.
+local ALPHA_REST = 0.93
+local ALPHA_HOVER = 0.88
+local ALPHA_TARGET = 0.8
+local ALPHA_SOURCE = 0.97
 
+export type Tag = { text: string, color: string }
+export type Options = {
+    title: string,
+    desc: string,
+    order: { string },
+    onSwap: (string, string) -> { string }?,
+    tags: { [string]: Tag }?,
+    visibleRows: number?,
+}
 export type Handle = { refresh: ({ string }) -> (), card: any }
 
 --- Row labels: the highest number first ("33. Limit Break", ..., "1. Military Training").
@@ -40,6 +60,15 @@ function PriorityList.summary(order: { string }): string
         .. string.format(" > … (+%d)", #order - SUMMARY_ENTRIES)
 end
 
+--- Top offset of each row inside the list (rows are placed by hand so swaps can slide).
+function PriorityList.offsets(count: number): { number }
+    local result = {}
+    for index = 1, count do
+        result[index] = (index - 1) * (ROW_HEIGHT + ROW_GAP)
+    end
+    return result
+end
+
 --- Index of the row under a vertical position, given each row's top and the row height; nil when between rows.
 function PriorityList.rowAt(tops: { number }, height: number, y: number): number?
     for index, top in tops do
@@ -58,26 +87,24 @@ local function containerOf(card: any): any
     return if kind == "Instance" then container else nil
 end
 
---- Mounts the list; onSwap(fromName, toName) applies the swap and returns the new order (or nil to keep it).
-function PriorityList.mount(
-    host: any,
-    title: string,
-    desc: string,
-    order: { string },
-    onSwap: (string, string) -> { string }?
-): Handle
-    local current = table.clone(order)
+--- Mounts the list; onSwap applies a swap and returns the new order (or nil to keep the current one).
+function PriorityList.mount(host: any, options: Options): Handle
+    local current = table.clone(options.order)
+    local tags = options.tags or {}
     local message: string? = nil
-    local card = host:Paragraph({ Title = title, Desc = desc .. "\n" .. PriorityList.summary(current) })
+    local card = host:Paragraph({
+        Title = options.title,
+        Desc = options.desc .. "\n" .. PriorityList.summary(current),
+    })
     local function setDesc()
-        local text = desc .. "\n" .. (message or PriorityList.summary(current))
+        local text = options.desc .. "\n" .. (message or PriorityList.summary(current))
         pcall(card.SetDesc, card, text)
     end
 
     local env: any = getfenv()
     local container = containerOf(card)
-    local Instance: any = env.Instance
-    if not container or not Instance or not env.game then
+    local New: any = env.Instance
+    if not container or not New or not env.game then
         return {
             refresh = function(newOrder: { string })
                 current = table.clone(newOrder)
@@ -91,9 +118,12 @@ function PriorityList.mount(
     local UDim: any = env.UDim
     local Vector2: any = env.Vector2
     local Enum: any = env.Enum
+    local Font: any = env.Font
     local taskApi: any = env.task
     local input: any = env.game:GetService("UserInputService")
     local guiService: any = env.game:GetService("GuiService")
+    local tweens: any = env.game:GetService("TweenService")
+    local slide = env.TweenInfo.new(SLIDE_SECONDS, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
     local titleLabel: any = card.ParagraphFrame.UIElements.Title
     local function textColor(): any
         local ok, color = pcall(function()
@@ -101,27 +131,25 @@ function PriorityList.mount(
         end)
         return if ok and color then color else env.Color3.new(1, 1, 1)
     end
+    local function fontWith(weight: any): any
+        local ok, font = pcall(function()
+            return Font.new(titleLabel.FontFace.Family, weight)
+        end)
+        return if ok then font else titleLabel.FontFace
+    end
 
-    local visible = math.min(#current, 7)
-    local list = Instance.new("ScrollingFrame")
+    local list = New.new("ScrollingFrame")
     list.Name = "PriorityList"
     list.BackgroundTransparency = 1
     list.BorderSizePixel = 0
-    list.Size = UDim2.new(1, 0, 0, visible * (ROW_HEIGHT + ROW_GAP))
-    list.CanvasSize = UDim2.new(0, 0, 0, 0)
-    list.AutomaticCanvasSize = Enum.AutomaticSize.Y
     list.ScrollBarThickness = 4
     list.ScrollingDirection = Enum.ScrollingDirection.Y
     list.LayoutOrder = 100
-    local layout = Instance.new("UIListLayout")
-    layout.Padding = UDim.new(0, ROW_GAP)
-    layout.SortOrder = Enum.SortOrder.LayoutOrder
-    layout.Parent = list
     list.Parent = container
 
-    local rows: { any } = {}
+    local rows: { [string]: any } = {}
     local drag: any = nil
-    local render: () -> ()
+    local hovered: string? = nil
 
     -- The pointer in AbsolutePosition space: GUI AbsolutePositions start below the top bar inset (a ScreenGui that
     -- ignores the inset reports its own AbsolutePosition as minus the inset), so the inset is always removed.
@@ -129,33 +157,77 @@ function PriorityList.mount(
         return input:GetMouseLocation() - guiService:GetGuiInset()
     end
 
-    local function rowUnder(position: any): number?
+    local function rowUnder(position: any): string?
         local tops = {}
-        for index, row in rows do
-            local inside = position.X >= row.AbsolutePosition.X
+        for index, name in current do
+            local row = rows[name]
+            local inside = row
+                and position.X >= row.AbsolutePosition.X
                 and position.X <= row.AbsolutePosition.X + row.AbsoluteSize.X
             tops[index] = if inside then row.AbsolutePosition.Y else -math.huge
         end
-        return PriorityList.rowAt(tops, ROW_HEIGHT, position.Y)
+        local index = PriorityList.rowAt(tops, ROW_HEIGHT, position.Y)
+        return if index then current[index] else nil
     end
 
+    -- Colors and emphasis for every row from the drag/hover state (also re-run when the theme's text color changes).
     local function paint()
         local color = textColor()
-        for index, row in rows do
+        for name, row in rows do
+            local isSource = drag ~= nil and drag.ghost ~= nil and drag.name == name
+            local isTarget = drag ~= nil
+                and drag.ghost ~= nil
+                and drag.target == name
+                and drag.target ~= drag.name
             row.BackgroundColor3 = color
-            row.BackgroundTransparency = if drag
-                    and drag.target == index
-                    and drag.target ~= drag.index
-                then TARGET_ALPHA
-                else ROW_ALPHA
-            local label = row:FindFirstChild("Label")
-            if label then
-                label.TextColor3 = color
+            row.BackgroundTransparency = if isSource
+                then ALPHA_SOURCE
+                elseif isTarget then ALPHA_TARGET
+                elseif hovered == name and not drag then ALPHA_HOVER
+                else ALPHA_REST
+            row.Number.TextColor3 = color
+            row.Label.TextColor3 = color
+            row.Grip.TextColor3 = color
+            row.Number.TextTransparency = if isSource then 0.7 else 0
+            row.Label.TextTransparency = if isSource then 0.7 else 0
+            row.Grip.Text = if isTarget then "⇄" else "≡"
+            row.Grip.TextTransparency = if isTarget then 0 else 0.55
+            row.Stroke.Color = color
+            row.Stroke.Transparency = if isTarget then 0.35 else 1
+        end
+    end
+
+    -- Places every row at its slot and refreshes the numbers; animated after a swap, instant otherwise.
+    local function place(animated: boolean)
+        local tops = PriorityList.offsets(#current)
+        for index, name in current do
+            local row = rows[name]
+            if row then
+                row.Number.Text = tostring(#current - index + 1)
+                local goal = UDim2.new(0, 0, 0, tops[index])
+                if animated then
+                    tweens:Create(row, slide, { Position = goal }):Play()
+                else
+                    row.Position = goal
+                end
             end
-            local grip = row:FindFirstChild("Grip")
-            if grip then
-                grip.TextColor3 = color
-            end
+        end
+        local height = #current * (ROW_HEIGHT + ROW_GAP) - ROW_GAP
+        list.CanvasSize = UDim2.new(0, 0, 0, math.max(height, 0))
+        local visible = math.min(#current, options.visibleRows or DEFAULT_VISIBLE)
+        list.Size = UDim2.new(1, 0, 0, math.max(visible * (ROW_HEIGHT + ROW_GAP) - ROW_GAP, 0))
+    end
+
+    local function showMessage(text: string)
+        message = text
+        setDesc()
+        if taskApi and type(taskApi.delay) == "function" then
+            (taskApi.delay :: any)(MESSAGE_SECONDS, function()
+                if message == text then
+                    message = nil
+                    setDesc()
+                end
+            end)
         end
     end
 
@@ -172,33 +244,23 @@ function PriorityList.mount(
             active.ghost:Destroy()
         end
         local target = if position and active.ghost then rowUnder(position) else nil
-        if target and target ~= active.index then
-            local from, to = current[active.index], current[target]
-            local newOrder = onSwap(from, to)
+        if target and target ~= active.name then
+            local newOrder = options.onSwap(active.name, target)
             if newOrder then
                 current = table.clone(newOrder)
-                message = string.format("Swapped %s ↔ %s", from, to)
-                local shown = message
-                if taskApi and type(taskApi.delay) == "function" then
-                    (taskApi.delay :: any)(MESSAGE_SECONDS, function()
-                        if message == shown then
-                            message = nil
-                            setDesc()
-                        end
-                    end)
-                end
-                render()
+                place(true)
+                showMessage(string.format("Swapped %s ⇄ %s", tostring(active.name), target))
             end
         end
         paint()
     end
 
-    local function startDrag(index: number)
+    local function startDrag(name: string)
         if drag then
             return
         end
         local start = pointer()
-        local state: any = { index = index, target = index, start = start, ghost = nil, connections = {} }
+        local state: any = { name = name, target = nil, ghost = nil, connections = {} }
         drag = state
         local moved: any = input.InputChanged:Connect(function(changed: any)
             local kind = changed.UserInputType
@@ -210,12 +272,13 @@ function PriorityList.mount(
                 if (position - start).Magnitude < DRAG_THRESHOLD then
                     return
                 end
-                local source = rows[index]
+                local source = rows[name]
                 local ghost = source:Clone()
                 ghost.Name = "PriorityListGhost"
                 ghost.Size = UDim2.fromOffset(source.AbsoluteSize.X, source.AbsoluteSize.Y)
                 ghost.AnchorPoint = Vector2.new(0, 0.5)
-                ghost.BackgroundTransparency = TARGET_ALPHA
+                ghost.BackgroundTransparency = ALPHA_TARGET
+                ghost.Stroke.Transparency = 0.3
                 ghost.ZIndex = 50
                 for _, child in ghost:GetDescendants() do
                     if child:IsA("GuiObject") then
@@ -250,60 +313,122 @@ function PriorityList.mount(
         table.insert(state.connections, released)
     end
 
-    render = function()
-        endDrag(nil)
-        for _, row in rows do
-            row:Destroy()
+    local function makeRow(name: string): any
+        local tag = tags[name]
+        local tagColor = if tag then Theme.color(tag.color) else nil
+        local row = New.new("TextButton")
+        row.Name = "Row"
+        row.Text = ""
+        row.AutoButtonColor = false
+        row.BorderSizePixel = 0
+        row.Size = UDim2.new(1, -8, 0, ROW_HEIGHT)
+        local corner = New.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 7)
+        corner.Parent = row
+        local stroke = New.new("UIStroke")
+        stroke.Name = "Stroke"
+        stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        stroke.Thickness = 1.5
+        stroke.Transparency = 1
+        stroke.Parent = row
+        if tagColor then
+            local stripe = New.new("Frame")
+            stripe.Name = "Stripe"
+            stripe.BorderSizePixel = 0
+            stripe.BackgroundColor3 = tagColor
+            stripe.Position = UDim2.fromOffset(4, 7)
+            stripe.Size = UDim2.new(0, STRIPE_WIDTH, 1, -14)
+            local round = New.new("UICorner")
+            round.CornerRadius = UDim.new(1, 0)
+            round.Parent = stripe
+            stripe.Parent = row
         end
-        rows = {}
-        local font = titleLabel.FontFace
-        for index, label in PriorityList.labels(current) do
-            local row = Instance.new("TextButton")
-            row.Name = "Row"
-            row.Text = ""
-            row.AutoButtonColor = false
-            row.BorderSizePixel = 0
-            row.Size = UDim2.new(1, -8, 0, ROW_HEIGHT)
-            row.LayoutOrder = index
-            local corner = Instance.new("UICorner")
-            corner.CornerRadius = UDim.new(0, 6)
-            corner.Parent = row
-            local text = Instance.new("TextLabel")
-            text.Name = "Label"
-            text.BackgroundTransparency = 1
-            text.Position = UDim2.fromOffset(10, 0)
-            text.Size = UDim2.new(1, -40, 1, 0)
-            text.TextXAlignment = Enum.TextXAlignment.Left
-            text.TextTruncate = Enum.TextTruncate.AtEnd
-            text.TextSize = 14
-            text.FontFace = font
-            text.RichText = true
-            local number, name = string.match(label, "^(%d+)%. (.+)$")
-            text.Text = string.format("<b>%s</b>. %s", number or "", name or label)
-            text.Parent = row
-            local grip = Instance.new("TextLabel")
-            grip.Name = "Grip"
-            grip.BackgroundTransparency = 1
-            grip.AnchorPoint = Vector2.new(1, 0)
-            grip.Position = UDim2.new(1, -8, 0, 0)
-            grip.Size = UDim2.new(0, 20, 1, 0)
-            grip.Text = "≡"
-            grip.TextSize = 16
-            grip.TextTransparency = 0.5
-            grip.Parent = row
-            row.InputBegan:Connect(function(began: any)
-                local kind = began.UserInputType
-                if kind == Enum.UserInputType.MouseButton1 or kind == Enum.UserInputType.Touch then
-                    startDrag(index)
-                end
-            end)
-            row.Parent = list
-            rows[index] = row
+        local number = New.new("TextLabel")
+        number.Name = "Number"
+        number.BackgroundTransparency = 1
+        number.Position = UDim2.fromOffset(10, 0)
+        number.Size = UDim2.new(0, NUMBER_WIDTH, 1, 0)
+        number.TextXAlignment = Enum.TextXAlignment.Right
+        number.TextSize = 14
+        number.FontFace = fontWith(Enum.FontWeight.Bold)
+        number.Parent = row
+        local label = New.new("TextLabel")
+        label.Name = "Label"
+        label.BackgroundTransparency = 1
+        label.Position = UDim2.fromOffset(10 + NUMBER_WIDTH + 10, 0)
+        local reserved = if tag and tagColor then TAG_WIDTH + 8 else 0
+        label.Size = UDim2.new(1, -(10 + NUMBER_WIDTH + 10 + reserved + 30), 1, 0)
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.TextTruncate = Enum.TextTruncate.AtEnd
+        label.TextSize = 14
+        label.FontFace = fontWith(Enum.FontWeight.Medium)
+        label.Text = name
+        label.Parent = row
+        if tag and tagColor then
+            local chip = New.new("TextLabel")
+            chip.Name = "Tag"
+            chip.AnchorPoint = Vector2.new(1, 0.5)
+            chip.Position = UDim2.new(1, -30, 0.5, 0)
+            chip.Size = UDim2.fromOffset(TAG_WIDTH, 18)
+            chip.BackgroundColor3 = tagColor
+            chip.BackgroundTransparency = 0.82
+            chip.TextColor3 = tagColor
+            chip.TextSize = 11
+            chip.FontFace = fontWith(Enum.FontWeight.Bold)
+            chip.Text = string.upper(tag.text)
+            local round = New.new("UICorner")
+            round.CornerRadius = UDim.new(1, 0)
+            round.Parent = chip
+            chip.Parent = row
         end
-        paint()
-        setDesc()
+        local grip = New.new("TextLabel")
+        grip.Name = "Grip"
+        grip.BackgroundTransparency = 1
+        grip.AnchorPoint = Vector2.new(1, 0)
+        grip.Position = UDim2.new(1, -6, 0, 0)
+        grip.Size = UDim2.new(0, 20, 1, 0)
+        grip.TextSize = 16
+        grip.Text = "≡"
+        grip.Parent = row
+        row.MouseEnter:Connect(function()
+            hovered = name
+            paint()
+        end)
+        row.MouseLeave:Connect(function()
+            if hovered == name then
+                hovered = nil
+                paint()
+            end
+        end)
+        row.InputBegan:Connect(function(began: any)
+            local kind = began.UserInputType
+            if kind == Enum.UserInputType.MouseButton1 or kind == Enum.UserInputType.Touch then
+                startDrag(name)
+            end
+        end)
+        row.Parent = list
+        return row
     end
-    render()
+
+    -- Builds rows for names that have none and removes rows for names no longer listed.
+    local function sync()
+        endDrag(nil)
+        for name, row in rows do
+            if not table.find(current, name) then
+                row:Destroy()
+                rows[name] = nil
+            end
+        end
+        for _, name in current do
+            if not rows[name] then
+                rows[name] = makeRow(name)
+            end
+        end
+    end
+
+    sync()
+    place(false)
+    paint()
     pcall(function()
         titleLabel:GetPropertyChangedSignal("TextColor3"):Connect(paint)
     end)
@@ -312,7 +437,10 @@ function PriorityList.mount(
         refresh = function(newOrder: { string })
             current = table.clone(newOrder)
             message = nil
-            render()
+            sync()
+            place(true)
+            paint()
+            setDesc()
         end,
         card = card,
     }
