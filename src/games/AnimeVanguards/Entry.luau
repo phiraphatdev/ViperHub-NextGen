@@ -194,6 +194,11 @@ function GameModule.start(context: Types.Context)
         webhook.start(context, { joiner = joiner, autoPlay = autoPlay, macro = macro })
         misc.start(context)
         adventureRun.start()
+        -- Diagnostics: the Adventure runtime (status and bounded history) is readable from the session.
+        local session: any = (getfenv() :: any).shared and (getfenv() :: any).shared.ViperHubNextGen
+        if type(session) == "table" then
+            session.adventure = adventureRun
+        end
         context.log("GAME_STARTED")
     end
 

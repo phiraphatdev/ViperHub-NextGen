@@ -21,6 +21,7 @@ local SHOP_GAP_SECONDS: number = (config :: any).thresholds.adventureShopGapSeco
 local SHOP_WATCH_SECONDS: number = (config :: any).thresholds.adventureShopWatchSeconds
 local SHOP_ASK_SECONDS: number = (config :: any).thresholds.adventureShopAskSeconds
 local SHOP_UI_GRACE_SECONDS: number = (config :: any).thresholds.adventureShopUiGraceSeconds
+local HISTORY_LIMIT = 40
 local TASK_WAIT_SECONDS: number = (config :: any).thresholds.adventureTaskWaitSeconds
 local TASK_WAIT_RETRY_SECONDS: number = (config :: any).thresholds.adventureTaskWaitRetrySeconds
 local VOTE_RETRY_SECONDS: number = (config :: any).thresholds.adventureVoteRetrySeconds
@@ -66,48 +67,53 @@ local function liveDependencies(): any
     return {
         task = env.task,
         clock = os.clock,
-        -- Closes the Route Atlas overlay cleanly via Close button or HUD Map button without breaking root visibility.
+        -- Closes the Route Atlas window when it is open: presses its Close control (signals on the control and on any
+        -- button inside it), then a real click with the GUI inset. It never makes the window visible itself.
         closeMap = function()
             local players: any = env.game:GetService("Players")
             local gui: any = players.LocalPlayer and players.LocalPlayer:FindFirstChild("PlayerGui")
             local hud: any = gui and gui:FindFirstChild("AdventureHUD")
             local root: any = hud and hud:FindFirstChild("AdventureMapRoot")
-            if root then
-                root.Visible = true
-                local closeBtn: any = root:FindFirstChild("Close", true)
-                local firesignal: any = (getfenv() :: any).firesignal
-                if closeBtn and firesignal and closeBtn.Activated then
-                    pcall(firesignal, closeBtn.Activated)
-                    return
-                end
-                local ac: any = hud:FindFirstChild("AdventureControls", true)
-                if ac and firesignal and root:FindFirstChildWhichIsA("Frame") ~= nil then
-                    for _, ch in ipairs(ac:GetChildren()) do
-                        local child: any = ch
-                        if child.Name == "Button" then
-                            local lbl: any = child:FindFirstChild("Label", true)
-                            if lbl and lbl.Text == "Map" then
-                                local btn: any = child:FindFirstChildWhichIsA("GuiButton", true)
-                                if btn and btn.Activated then
-                                    pcall(firesignal, btn.Activated)
-                                    return
-                                end
-                            end
-                        end
+            if not root or not root.Visible then
+                return
+            end
+            local closeControl: any = root:FindFirstChild("Close", true)
+            if not closeControl or closeControl.AbsoluteSize.X <= 0 then
+                return
+            end
+            local firesignal: any = (getfenv() :: any).firesignal
+            if firesignal then
+                local targets: { any } = { closeControl }
+                for _, descendant in closeControl:GetDescendants() do
+                    local item: any = descendant
+                    if item:IsA("GuiButton") then
+                        table.insert(targets, item)
                     end
                 end
-                local vim: any = env.game:GetService("VirtualInputManager")
-                if closeBtn and vim and closeBtn.AbsoluteSize.X > 0 then
-                    local pos = closeBtn.AbsolutePosition + closeBtn.AbsoluteSize / 2
-                    pcall(function()
-                        vim:SendMouseButtonEvent(pos.X, pos.Y, 0, true, env.game, 1)
-                        local tApi: any = env.task
-                        if tApi and type(tApi.wait) == "function" then
-                            (tApi.wait :: any)(0.05)
-                        end
-                        vim:SendMouseButtonEvent(pos.X, pos.Y, 0, false, env.game, 1)
-                    end)
+                for _, target in targets do
+                    local item: any = target
+                    if item:IsA("GuiButton") then
+                        pcall(firesignal, item.Activated)
+                        pcall(firesignal, item.MouseButton1Click)
+                    end
                 end
+            end
+            -- Still open: a real click on the control.
+            local vim: any = env.game:GetService("VirtualInputManager")
+            local inset: any = env.game:GetService("GuiService"):GetGuiInset()
+            local tApi: any = env.task
+            local function stillOpen(): boolean
+                return root.Visible and closeControl.Parent ~= nil and closeControl.AbsoluteSize.X > 0
+            end
+            if tApi and type(tApi.wait) == "function" then
+                (tApi.wait :: any)(0.2)
+            end
+            if stillOpen() then
+                local pos = closeControl.AbsolutePosition + closeControl.AbsoluteSize / 2 + inset
+                pcall(function()
+                    vim:SendMouseButtonEvent(pos.X, pos.Y, 0, true, env.game, 1)
+                    vim:SendMouseButtonEvent(pos.X, pos.Y, 0, false, env.game, 1)
+                end)
             end
         end,
         -- Leaves a Stitches' Shop window that is still on screen: the X only hides it, the floor ends with the
@@ -334,6 +340,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         bought = 0,
         units = 0,
         onStatus = nil,
+        history = {},
     }
     local deps: any = injected
     local disconnects: { () -> () } = {}
@@ -345,6 +352,14 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
     local closeMapLater: () -> ()
     local function setStatus(text: string)
         self.status = text
+        -- A short bounded log of what the runtime did (readable from the session for diagnostics).
+        local history: { string } = self.history
+        local clockFn: any = if deps then deps.clock else nil
+        local stamp: number = if type(clockFn) == "function" then (clockFn :: any)() else 0
+        table.insert(history, string.format("%.0f %s", stamp, text))
+        if #history > HISTORY_LIMIT then
+            table.remove(history, 1)
+        end
         if self.onStatus then
             pcall(self.onStatus, text)
         end

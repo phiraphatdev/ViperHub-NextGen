@@ -8557,6 +8557,7 @@ do
             local SHOP_WATCH_SECONDS = (config).thresholds.adventureShopWatchSeconds
             local SHOP_ASK_SECONDS = (config).thresholds.adventureShopAskSeconds
             local SHOP_UI_GRACE_SECONDS = (config).thresholds.adventureShopUiGraceSeconds
+            local HISTORY_LIMIT = 40
             local TASK_WAIT_SECONDS = (config).thresholds.adventureTaskWaitSeconds
             local TASK_WAIT_RETRY_SECONDS = (config).thresholds.adventureTaskWaitRetrySeconds
             local VOTE_RETRY_SECONDS = (config).thresholds.adventureVoteRetrySeconds
@@ -8615,57 +8616,56 @@ do
                         local hud = gui and gui:FindFirstChild('AdventureHUD')
                         local root = hud and hud:FindFirstChild('AdventureMapRoot')
 
-                        if root then
-                            root.Visible = true
+                        if not root or not root.Visible then
+                            return
+                        end
 
-                            local closeBtn = root:FindFirstChild('Close', true)
-                            local firesignal = ((getfenv())).firesignal
+                        local closeControl = root:FindFirstChild('Close', true)
 
-                            if closeBtn and firesignal and closeBtn.Activated then
-                                pcall(firesignal, closeBtn.Activated)
+                        if not closeControl or closeControl.AbsoluteSize.X <= 0 then
+                            return
+                        end
 
-                                return
-                            end
+                        local firesignal = ((getfenv())).firesignal
 
-                            local ac = hud:FindFirstChild('AdventureControls', true)
+                        if firesignal then
+                            local targets = {closeControl}
 
-                            if ac and firesignal and root:FindFirstChildWhichIsA('Frame') ~= nil then
-                                for _, ch in ipairs(ac:GetChildren())do
-                                    local child = ch
+                            for _, descendant in closeControl:GetDescendants()do
+                                local item = descendant
 
-                                    if child.Name == 'Button' then
-                                        local lbl = child:FindFirstChild('Label', true)
-
-                                        if lbl and lbl.Text == 'Map' then
-                                            local btn = child:FindFirstChildWhichIsA('GuiButton', true)
-
-                                            if btn and btn.Activated then
-                                                pcall(firesignal, btn.Activated)
-
-                                                return
-                                            end
-                                        end
-                                    end
+                                if item:IsA('GuiButton') then
+                                    table.insert(targets, item)
                                 end
                             end
+                            for _, target in targets do
+                                local item = target
 
-                            local vim = env.game:GetService('VirtualInputManager')
-
-                            if closeBtn and vim and closeBtn.AbsoluteSize.X > 0 then
-                                local pos = closeBtn.AbsolutePosition + closeBtn.AbsoluteSize / 2
-
-                                pcall(function()
-                                    vim:SendMouseButtonEvent(pos.X, pos.Y, 0, true, env.game, 1)
-
-                                    local tApi = env.task
-
-                                    if tApi and type(tApi.wait) == 'function' then
-                                        (tApi.wait)(0.05)
-                                    end
-
-                                    vim:SendMouseButtonEvent(pos.X, pos.Y, 0, false, env.game, 1)
-                                end)
+                                if item:IsA('GuiButton') then
+                                    pcall(firesignal, item.Activated)
+                                    pcall(firesignal, item.MouseButton1Click)
+                                end
                             end
+                        end
+
+                        local vim = env.game:GetService('VirtualInputManager')
+                        local inset = env.game:GetService('GuiService'):GetGuiInset()
+                        local tApi = env.task
+
+                        local function stillOpen()
+                            return root.Visible and closeControl.Parent ~= nil and closeControl.AbsoluteSize.X > 0
+                        end
+
+                        if tApi and type(tApi.wait) == 'function' then
+                            (tApi.wait)(0.2)
+                        end
+                        if stillOpen() then
+                            local pos = closeControl.AbsolutePosition + closeControl.AbsoluteSize / 2 + inset
+
+                            pcall(function()
+                                vim:SendMouseButtonEvent(pos.X, pos.Y, 0, true, env.game, 1)
+                                vim:SendMouseButtonEvent(pos.X, pos.Y, 0, false, env.game, 1)
+                            end)
                         end
                     end,
                     closeShopUi = (function()
@@ -8922,6 +8922,7 @@ do
                     bought = 0,
                     units = 0,
                     onStatus = nil,
+                    history = {},
                 }
                 local deps = injected
                 local disconnects = {}
@@ -8935,6 +8936,15 @@ do
                 local function setStatus(text)
                     self.status = text
 
+                    local history = self.history
+                    local clockFn = if deps then deps.clock else nil
+                    local stamp = if type(clockFn) == 'function'then(clockFn)()else 0
+
+                    table.insert(history, string.format('%.0f %s', stamp, text))
+
+                    if #history > HISTORY_LIMIT then
+                        table.remove(history, 1)
+                    end
                     if self.onStatus then
                         pcall(self.onStatus, text)
                     end
@@ -18334,6 +18344,13 @@ function GameModule.start(context)
         })
         misc.start(context)
         adventureRun.start()
+
+        local session = ((getfenv())).shared and ((getfenv())).shared.ViperHubNextGen
+
+        if type(session) == 'table' then
+            session.adventure = adventureRun
+        end
+
         context.log('GAME_STARTED')
     end
 
