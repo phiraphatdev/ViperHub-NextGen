@@ -27,7 +27,7 @@ cls
 echo.
 echo       +----------------------------------------------------------+
 echo       ^|  V I P E R H U B   N E X T G E N                       ^|
-echo       ^|  Developer toolbox                              v0.2.2  ^|
+echo       ^|  Developer toolbox                              v0.3.0  ^|
 echo       +----------------------------------------------------------+
 echo.
 if exist "work\runtime-server.pid" (

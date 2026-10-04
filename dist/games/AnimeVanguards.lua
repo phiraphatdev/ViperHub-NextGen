@@ -22,8 +22,8 @@ do
     do
         local function __modImpl()
             local Types = __DARKLUA_BUNDLE_MODULES.a()
-            local VERSION = '0.2.2'
-            local LAST_UPDATED = '2026-09-24'
+            local VERSION = '0.3.0'
+            local LAST_UPDATED = '2026-10-04'
             local metadata = {
                 id = 'AnimeVanguards',
                 name = 'Anime Vanguards',
@@ -2026,7 +2026,7 @@ do
                 end
             end
             local function addEquipper(tab, runtime)
-                local section = Style.section(tab, 'Auto Join Equipper', 'layout-grid', true, 20)
+                local section = Style.section(tab, 'Auto Join Equipper', 'layout-grid', false, 20)
 
                 local function subsection(title, icon)
                     return Style.sub(section, title, icon, true)
@@ -2422,7 +2422,7 @@ do
                         priorityLabel:SetDesc(orderText())
                     end,
                 })
-                addStageSelector(Style.joiner(tab, 'Stage', true), stageData, 'Story', 'Stage', runtime)
+                addStageSelector(Style.joiner(tab, 'Stage', false), stageData, 'Story', 'Stage', runtime)
                 addStageSelector(Style.joiner(tab, 'Legend Stage', false), stageData, 'LegendStage', 'Legend Stage', runtime)
                 addStageSelector(Style.joiner(tab, 'Raid', false), stageData, 'Raid', 'Raid', runtime)
                 addStageSelector(Style.joiner(tab, 'Dungeon', false), stageData, 'Dungeon', 'Dungeon', runtime)
@@ -3955,6 +3955,35 @@ do
                     end
                 end
 
+                local POSITIVE_REPORT = {
+                    'confirmed',
+                    'waiting for server',
+                    'joining',
+                    'entered',
+                    'start sent',
+                    'teleport',
+                    'available',
+                    'changing stage',
+                    'loading',
+                    'equipping',
+                }
+
+                local function isPositive(text)
+                    local lower = string.lower(text)
+
+                    if string.find(lower, 'unavailable', 1, true) or string.find(lower, 'not available', 1, true) then
+                        return false
+                    end
+
+                    for _, needle in POSITIVE_REPORT do
+                        if string.find(lower, needle, 1, true) then
+                            return true
+                        end
+                    end
+
+                    return false
+                end
+
                 function self.getReport()
                     local lines = {}
                     local clockFn = if self.dependencies then self.dependencies.clock else nil
@@ -3966,11 +3995,11 @@ do
                         local line
 
                         if not self.enabled[name] then
-                            line = '\u{2022} ' .. name .. ' \u{2014} off'
+                            line = '\u{274c} ' .. name .. ' \u{2014} off'
                         elseif entry then
-                            line = string.format('\u{2022} %s \u{2014} %s (%ds ago)', name, entry.text, math.max(0, now - entry.at))
+                            line = string.format('%s %s \u{2014} %s (%ds ago)', if isPositive(entry.text)then'\u{2705}'else'\u{274c}', name, entry.text, math.max(0, now - entry.at))
                         else
-                            line = '\u{2022} ' .. name .. ' \u{2014} no decision yet'
+                            line = '\u{274c} ' .. name .. ' \u{2014} no decision yet'
                         end
 
                         table.insert(lines, line)
@@ -5765,7 +5794,7 @@ do
 
                 runtime.onMode(runtime.mode)
 
-                local config = Style.section(tab, 'Play Macro Config', 'sliders-horizontal', true)
+                local config = Style.section(tab, 'Play Macro Config', 'sliders-horizontal', false)
 
                 config:Toggle({
                     Title = 'Ignore Timing',
@@ -8525,7 +8554,7 @@ do
                     applyLock()
                 end
 
-                local section = Style.section(tab, 'Preset per mode', 'layers', true)
+                local section = Style.section(tab, 'Preset per mode', 'layers', false)
 
                 for _, mode in modes do
                     local row = {
@@ -10251,10 +10280,10 @@ do
                     Desc = 'Probing real-time game state...',
                 })
                 local sections = {
-                    platform = Style.section(tab, 'Platform & Environment', 'cpu', true),
-                    settings = Style.section(tab, 'Game Core & Settings Sync', 'shield', true),
-                    macro = Style.section(tab, 'Macro Subsystems', 'puzzle', true),
-                    joiner = Style.section(tab, 'Matchmaking & Joiner', 'users', true),
+                    platform = Style.section(tab, 'Platform & Environment', 'cpu', false),
+                    settings = Style.section(tab, 'Game Core & Settings Sync', 'shield', false),
+                    macro = Style.section(tab, 'Macro Subsystems', 'puzzle', false),
+                    joiner = Style.section(tab, 'Matchmaking & Joiner', 'users', false),
                     pending = Style.section(tab, 'Pending Features (In Development)', 'hammer', false),
                 }
                 local paragraphs = {}
@@ -10407,7 +10436,7 @@ do
                     ImageSize = 52,
                 })
 
-                local live = Style.section(tab, 'Live Status', 'activity', true)
+                local live = Style.section(tab, 'Live Status', 'activity', false)
                 local cards = {}
                 local rows = {
                     {
@@ -10446,7 +10475,7 @@ do
                     })
                 end
 
-                local wallet = Style.section(tab, 'Balances', 'gem', true)
+                local wallet = Style.section(tab, 'Balances', 'gem', false)
                 local balanceCards = {}
 
                 for _, currency in (config).webhook.currencies do
@@ -11457,7 +11486,7 @@ do
                     end,
                 })
 
-                local events = Style.section(tab, 'Events', 'list-checks', true)
+                local events = Style.section(tab, 'Events', 'list-checks', false)
 
                 for _, kind in Events.kinds do
                     events:Toggle({
@@ -13226,7 +13255,7 @@ do
                 end
 
                 local settings = runtime.getSettings()
-                local session = Style.section(tab, 'Session Keeper', 'shield', true)
+                local session = Style.section(tab, 'Session Keeper', 'shield', false)
 
                 session:Toggle({
                     Title = 'Anti-AFK',
@@ -13247,7 +13276,7 @@ do
                     end,
                 })
 
-                local rerun = Style.section(tab, 'Re-run After Teleport', 'refresh-cw', true)
+                local rerun = Style.section(tab, 'Re-run After Teleport', 'refresh-cw', false)
 
                 rerun:Toggle({
                     Title = 'Re-run ViperHub after teleport',

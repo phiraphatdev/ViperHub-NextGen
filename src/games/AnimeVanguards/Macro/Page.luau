@@ -262,7 +262,7 @@ function Page.mount(tab: any, runtime: any, window: any?, autoPlay: any?)
         end)
     end
     runtime.onMode(runtime.mode)
-    local config = Style.section(tab, "Play Macro Config", "sliders-horizontal", true)
+    local config = Style.section(tab, "Play Macro Config", "sliders-horizontal", false)
     config:Toggle({
         Title = "Ignore Timing",
         Desc = "Use wave and live action price first; ability timing is retained.",

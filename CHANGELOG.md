@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.3.0 — Anime Vanguards features and the shared ViperHub UI
+
+- UI base for every game: 14 ViperHub themes (Viper default) plus WindUI's own, live theme switching, grouped sidebar (Home / game groups / System), title-bar tags, player card, page headers, shared `ui/Style`, animated dropdown menus and collapsible sections; most sections start collapsed.
+- Anime Vanguards Dashboard: player card, live feature status and balances.
+- Joiner: priority joining for Stage, Legend Stage, Raid, Dungeon, Boss Event, Worldline, Boss Bounties, Regular/Daily/Weekly Challenge and Rift; Team and Macro Equipper; Change Stage in Match that respects priority; Joiner Report with ✅/❌ per mode and a persistent action trace.
+- Auto Play: native Auto Play with Stage Preset Rules per mode.
+- Macro recorder/player; Game settings sync with Auto Back to Lobby.
+- Discord Webhook: match result from the game's end summary with Unit Contribution, rewards, balances and session overview; unit drops (Secret+ can ping / @everyone); joiner, bounty, rift and auto play notices.
+- Misc: Anti-AFK, Auto Reconnect after real disconnects, Re-run after teleport.
+- Fixes from a full code audit (Worldline Auto Next, webhook spam, settings overwrite, page isolation, Status re-checks).
+- Runtime verification is partial and recorded per feature in `docs/games/AnimeVanguards/UPDATES.md`; Auto Reconnect after a real disconnect is still unverified.
+
 ## Unreleased 0.2.2 candidate
 
 - Preserve the previous valid toggle key when the picker supplies an unsupported key.

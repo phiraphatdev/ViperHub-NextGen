@@ -253,6 +253,32 @@ function Runtime.new(dependencies: any?): any
         end
     end
 
+    -- Report text that means the mode is being joined or can be joined right now.
+    local POSITIVE_REPORT = {
+        "confirmed",
+        "waiting for server",
+        "joining",
+        "entered",
+        "start sent",
+        "teleport",
+        "available",
+        "changing stage",
+        "loading",
+        "equipping",
+    }
+    local function isPositive(text: string): boolean
+        local lower = string.lower(text)
+        if string.find(lower, "unavailable", 1, true) or string.find(lower, "not available", 1, true) then
+            return false
+        end
+        for _, needle in POSITIVE_REPORT do
+            if string.find(lower, needle, 1, true) then
+                return true
+            end
+        end
+        return false
+    end
+
     --- Returns report lines in priority order: what each mode last decided and how long ago.
     function self.getReport(): { string }
         local lines: { string } = {}
@@ -262,12 +288,19 @@ function Runtime.new(dependencies: any?): any
         for _, name in settings.priority do
             local entry = reportEntries[name]
             local line: string
+            -- ✅ joining or playable now, ❌ off or skipped (the reason follows the name).
             if not self.enabled[name] then
-                line = "• " .. name .. " — off"
+                line = "❌ " .. name .. " — off"
             elseif entry then
-                line = string.format("• %s — %s (%ds ago)", name, entry.text, math.max(0, now - entry.at))
+                line = string.format(
+                    "%s %s — %s (%ds ago)",
+                    if isPositive(entry.text) then "✅" else "❌",
+                    name,
+                    entry.text,
+                    math.max(0, now - entry.at)
+                )
             else
-                line = "• " .. name .. " — no decision yet"
+                line = "❌ " .. name .. " — no decision yet"
             end
             table.insert(lines, line)
         end

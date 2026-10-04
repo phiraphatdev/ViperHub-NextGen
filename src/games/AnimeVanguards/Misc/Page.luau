@@ -21,7 +21,7 @@ function Page.mount(tab: any, runtime: any)
     end
     local settings = runtime.getSettings()
 
-    local session = Style.section(tab, "Session Keeper", "shield", true)
+    local session = Style.section(tab, "Session Keeper", "shield", false)
     session:Toggle({
         Title = "Anti-AFK",
         Desc = "Simulates input when Roblox reports you idle, so the 20-minute idle kick does not happen.",
@@ -39,7 +39,7 @@ function Page.mount(tab: any, runtime: any)
         end,
     })
 
-    local rerun = Style.section(tab, "Re-run After Teleport", "refresh-cw", true)
+    local rerun = Style.section(tab, "Re-run After Teleport", "refresh-cw", false)
     rerun:Toggle({
         Title = "Re-run ViperHub after teleport",
         Desc = if runtime.canRerun()

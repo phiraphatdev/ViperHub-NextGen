@@ -41,7 +41,7 @@ alive=false prevents late HTTP results from mounting UI after cancellation.
 Cleanup runs once in reverse acquisition order; one failing callback cannot skip remaining callbacks.
 The WindUI adapter owns the window and four root GUIs, destroys its owned GUIs and disconnects upstream connections; it does not invoke the asynchronous window destroy method because that can race the immediate cleanup path.
 The ViperHub window uses WindUI's non-NewElements layout and disables the animated element-hover gradient, so moving the pointer across controls does not trigger the newer moving/dimming treatment.
-The vendored WindUI patch also uses zero-duration tweens, tab transitions and progress transitions. This affects ViperHub only; game UI animation is unchanged. Exception: dropdown menus animate open (0.18 s grow and fade in) and closed (0.15 s) through a separate `TweenAnimated` helper added by the patch; every other tween stays at zero duration.
+The vendored WindUI patch also uses zero-duration tweens, tab transitions and progress transitions. This affects ViperHub only; game UI animation is unchanged. Exception: dropdown menus animate open (0.18 s grow and fade in) and closed (0.15 s), and collapsible sections animate expand (0.33 s) and collapse (0.26 s) with the caret rotating, through a separate `TweenAnimated` helper added by the patch; every other tween stays at zero duration.
 Upstream animation/task/connection lifetime still requires real-client verification; mock teardown is not proof of complete WindUI cleanup.
 
 ## Runtime paths

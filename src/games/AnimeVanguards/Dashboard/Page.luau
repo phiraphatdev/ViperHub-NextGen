@@ -56,7 +56,7 @@ function Page.mount(tab: any, runtimes: any)
         ImageSize = 52,
     })
 
-    local live = Style.section(tab, "Live Status", "activity", true)
+    local live = Style.section(tab, "Live Status", "activity", false)
     local cards: { [string]: any } = {}
     local rows = {
         { key = "joiner", title = "Joiner", icon = "users" },
@@ -69,7 +69,7 @@ function Page.mount(tab: any, runtimes: any)
         cards[row.key] = live:Paragraph({ Title = row.title, Desc = "…", Image = row.icon, ImageSize = 20 })
     end
 
-    local wallet = Style.section(tab, "Balances", "gem", true)
+    local wallet = Style.section(tab, "Balances", "gem", false)
     local balanceCards: { [string]: any } = {}
     for _, currency in (config :: any).webhook.currencies do
         balanceCards[currency.key] =

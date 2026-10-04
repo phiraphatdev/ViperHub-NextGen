@@ -480,7 +480,7 @@ end
 -- Auto Join Equipper: Team Equipper rows (one dropdown of owned saved teams per joiner) plus the locked
 -- Macro Equipper (macro file per joiner). Returns an update function the page loop calls to follow team changes.
 local function addEquipper(tab: any, runtime: any?): () -> ()
-    local section = Style.section(tab, "Auto Join Equipper", "layout-grid", true, 20)
+    local section = Style.section(tab, "Auto Join Equipper", "layout-grid", false, 20)
     local function subsection(title: string, icon: string): any
         return Style.sub(section, title, icon, true)
     end
@@ -786,7 +786,7 @@ function Page.mount(tab: any, stageDataOverride: any?, runtime: any?, challengeC
             priorityLabel:SetDesc(orderText())
         end,
     })
-    addStageSelector(Style.joiner(tab, "Stage", true), stageData, "Story", "Stage", runtime)
+    addStageSelector(Style.joiner(tab, "Stage", false), stageData, "Story", "Stage", runtime)
     addStageSelector(
         Style.joiner(tab, "Legend Stage", false),
         stageData,

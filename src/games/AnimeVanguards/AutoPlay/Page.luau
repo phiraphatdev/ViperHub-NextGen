@@ -97,7 +97,7 @@ local function mountRules(tab: any, runtime: any, macro: any?)
         applyLock()
     end
 
-    local section = Style.section(tab, "Preset per mode", "layers", true)
+    local section = Style.section(tab, "Preset per mode", "layers", false)
     for _, mode in modes do
         local row: any = { mode = mode, byLabel = {} }
         row.dropdown = section:Dropdown({

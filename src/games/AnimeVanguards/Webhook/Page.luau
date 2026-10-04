@@ -145,7 +145,7 @@ function Page.mount(tab: any, runtime: any)
         end,
     })
 
-    local events = Style.section(tab, "Events", "list-checks", true)
+    local events = Style.section(tab, "Events", "list-checks", false)
     for _, kind in Events.kinds do
         events:Toggle({
             Title = kind.label,

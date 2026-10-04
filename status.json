@@ -3,7 +3,7 @@
   "games": {
     "AnimeVanguards": {
       "state": "ready",
-      "reason": "Beta foundation only; no gameplay features"
+      "reason": "0.3.0 beta: Joiner, Auto Play, Macro, Webhook, Misc"
     },
     "AnimeExpeditions": {
       "state": "ready",

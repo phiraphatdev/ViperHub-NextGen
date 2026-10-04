@@ -407,10 +407,10 @@ function Page.mount(tab: any)
     })
 
     local sections: { [string]: any } = {
-        platform = Style.section(tab, "Platform & Environment", "cpu", true),
-        settings = Style.section(tab, "Game Core & Settings Sync", "shield", true),
-        macro = Style.section(tab, "Macro Subsystems", "puzzle", true),
-        joiner = Style.section(tab, "Matchmaking & Joiner", "users", true),
+        platform = Style.section(tab, "Platform & Environment", "cpu", false),
+        settings = Style.section(tab, "Game Core & Settings Sync", "shield", false),
+        macro = Style.section(tab, "Macro Subsystems", "puzzle", false),
+        joiner = Style.section(tab, "Matchmaking & Joiner", "users", false),
         pending = Style.section(tab, "Pending Features (In Development)", "hammer", false),
     }
 

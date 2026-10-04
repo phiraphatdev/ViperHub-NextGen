@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "version": "0.2.2",
-  "loaderVersion": "0.2.2",
-  "minLoaderVersion": "0.2.2",
+  "version": "0.3.0",
+  "loaderVersion": "0.3.0",
+  "minLoaderVersion": "0.3.0",
   "sourceCommit": null,
   "mode": "release",
   "repository": "phiraphatdev/ViperHub-NextGen",
@@ -10,29 +10,29 @@
   "artifacts": {
     "loader": {
       "path": "dist/loader.lua",
-      "sha256": "342a5ab9b42892c7837e71f0635f768aebae238d8e57f6e6057333a2d6c6b8dd",
+      "sha256": "57eca52968fb2fd66b830a266b986598fbfb8f37bb0584b60dc6e0651680a5ff",
       "bytes": 78114
     },
     "ui": {
       "path": "dist/ui.lua",
-      "sha256": "86282561e99beba595874d868c489596956ebd8597eb93186cab73781518da14",
-      "bytes": 1349168
+      "sha256": "612e851a65d7bb4983ce2f334edc14f7fb4415a9dfee9204c37bd4300f1641ad",
+      "bytes": 1349224
     },
     "AnimeExpeditions": {
       "path": "dist/games/AnimeExpeditions.lua",
-      "sha256": "6f5e26e2b77d4aac840904dcc2cfd3bed6f4631e1f0b2cb9ea3791fc20eca1f9",
+      "sha256": "3e2f74c4f329f0e04f7620b195bc58088809073fbf3caf3e6ed060afbf5b2c3d",
       "bytes": 2359
     },
     "AnimeVanguards": {
       "path": "dist/games/AnimeVanguards.lua",
-      "sha256": "a7c2f405999eefc82c7271f24ab8d1e351a553d235fea2ec1920ab1756fb8717",
-      "bytes": 563113
+      "sha256": "4ad80794cc1643fe01c6f1fc212bb37af19d6b7345ec0f9d057df3245e25c9e7",
+      "bytes": 564128
     }
   },
   "games": {
     "AnimeExpeditions": {
-      "version": "0.2.2",
-      "lastUpdated": "2026-09-24",
+      "version": "0.3.0",
+      "lastUpdated": "2026-10-04",
       "name": "Anime Expeditions",
       "placeIds": [
         84515722934860
@@ -42,8 +42,8 @@
       ]
     },
     "AnimeVanguards": {
-      "version": "0.2.2",
-      "lastUpdated": "2026-09-24",
+      "version": "0.3.0",
+      "lastUpdated": "2026-10-04",
       "name": "Anime Vanguards",
       "placeIds": [
         16146832113

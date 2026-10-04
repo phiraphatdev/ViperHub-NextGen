@@ -35007,7 +35007,7 @@ at.Outline.Top.AbsoluteSize.Y/am.UIScale
 )
 ap.ImageLabel.Rotation=180
 else
-ai(at,0.33,{
+aa.TweenAnimated(at,0.33,{
 Size=UDim2.new(
 at.Size.X.Scale,
 at.Size.X.Offset,
@@ -35018,7 +35018,7 @@ at.Outline.Top.AbsoluteSize.Y/am.UIScale
 ),
 },Enum.EasingStyle.Quint,Enum.EasingDirection.Out):Play()
 
-ai(
+aa.TweenAnimated(
 ap.ImageLabel,
 0.2,
 {Rotation=180},
@@ -35040,7 +35040,7 @@ at.Size.X.Offset,
 )
 ap.ImageLabel.Rotation=0
 else
-ai(at,0.26,{
+aa.TweenAnimated(at,0.26,{
 Size=UDim2.new(
 at.Size.X.Scale,
 at.Size.X.Offset,
@@ -35048,7 +35048,7 @@ at.Size.X.Offset,
 (at.Outline.Top.AbsoluteSize.Y/am.UIScale)
 ),
 },Enum.EasingStyle.Quint,Enum.EasingDirection.Out):Play()
-ai(
+aa.TweenAnimated(
 ap.ImageLabel,
 0.2,
 {Rotation=0},

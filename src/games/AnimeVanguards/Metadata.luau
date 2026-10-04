@@ -7,8 +7,8 @@ Dependencies: types/GameModule
 ]]
 
 local Types = require("../../types/GameModule")
-local VERSION = "0.2.2"
-local LAST_UPDATED = "2026-09-24"
+local VERSION = "0.3.0"
+local LAST_UPDATED = "2026-10-04"
 local metadata: Types.Metadata = {
     id = "AnimeVanguards",
     name = "Anime Vanguards",

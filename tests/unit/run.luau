@@ -406,8 +406,8 @@ test("module compiler errors and export mismatch", function()
     assert(not ModuleLoader.isGame({}, "AnimeVanguards", "0.1.0"))
 end)
 test("game-owned pages are optional and validated", function()
-    assert(ModuleLoader.isGame(ExpeditionsEntry, "AnimeExpeditions", "0.2.2"))
-    assert(ModuleLoader.isGame(VanguardsEntry, "AnimeVanguards", "0.2.2"))
+    assert(ModuleLoader.isGame(ExpeditionsEntry, "AnimeExpeditions", "0.3.0"))
+    assert(ModuleLoader.isGame(VanguardsEntry, "AnimeVanguards", "0.3.0"))
     assert(
         #VanguardsEntry.pages == 8
             and VanguardsEntry.pages[1].title == "Dashboard"
@@ -419,7 +419,7 @@ test("game-owned pages are optional and validated", function()
         stop = VanguardsEntry.stop,
         pages = { { title = "Bad", description = 42 } },
     }
-    assert(not ModuleLoader.isGame(invalid, "AnimeVanguards", "0.2.2"))
+    assert(not ModuleLoader.isGame(invalid, "AnimeVanguards", "0.3.0"))
 end)
 test("Joiner settings pause cooldown priority and reset", function()
     JoinerSettings.resetPriority()

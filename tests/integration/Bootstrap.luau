@@ -113,7 +113,7 @@ return function(source: string)
         return {CreateWindow=function(_,options)shared.windowOptions=options return window end,Notify=function()end,Creator={DisconnectAll=function()shared.disconnected=(shared.disconnected or 0)+1 end},ScreenGui={Destroy=function()shared.destroyed=(shared.destroyed or 0)+1 end}}
     ]=]
     local gameSource =
-        [=[return {metadata={id="AnimeVanguards",name="Anime Vanguards",version="0.2.2",lastUpdated="2026-09-24"},start=function(context)context.log("PLACEHOLDER_STARTED") shared.started=(shared.started or 0)+1 end,stop=function()shared.stopped=(shared.stopped or 0)+1 end}]=]
+        [=[return {metadata={id="AnimeVanguards",name="Anime Vanguards",version="0.3.0",lastUpdated="2026-10-04"},start=function(context)context.log("PLACEHOLDER_STARTED") shared.started=(shared.started or 0)+1 end,stop=function()shared.stopped=(shared.stopped or 0)+1 end}]=]
     env = environment(16146832113)
     env.VIPER_DEV_ARTIFACTS =
         { manifest = { mode = "development" }, ui = uiSource, AnimeVanguards = gameSource }
@@ -328,20 +328,20 @@ return function(source: string)
             repository = "owner/repo",
             sourceCommit = string.rep("a", 40),
             artifactRevision = if mutable then nil else revision,
-            version = "0.2.2",
-            loaderVersion = "0.2.2",
-            minLoaderVersion = "0.2.2",
+            version = "0.3.0",
+            loaderVersion = "0.3.0",
+            minLoaderVersion = "0.3.0",
             artifacts = artifacts,
             games = {
                 AnimeVanguards = {
-                    version = "0.2.2",
+                    version = "0.3.0",
                     lastUpdated = "2026-09-24",
                     name = "Anime Vanguards",
                     placeIds = { 16146832113 },
                     gameIds = { 5578556129 },
                 },
                 AnimeExpeditions = {
-                    version = "0.2.2",
+                    version = "0.3.0",
                     lastUpdated = "2026-09-24",
                     name = "Anime Expeditions",
                     placeIds = { 84515722934860 },

@@ -22,8 +22,8 @@ do
     do
         local function __modImpl()
             local Types = __DARKLUA_BUNDLE_MODULES.a()
-            local VERSION = '0.2.2'
-            local LAST_UPDATED = '2026-09-24'
+            local VERSION = '0.3.0'
+            local LAST_UPDATED = '2026-10-04'
             local metadata = {
                 id = 'AnimeVanguards',
                 name = 'Anime Vanguards',
@@ -55,8 +55,8 @@ do
     do
         local function __modImpl()
             local Types = __DARKLUA_BUNDLE_MODULES.a()
-            local VERSION = '0.2.2'
-            local LAST_UPDATED = '2026-09-24'
+            local VERSION = '0.3.0'
+            local LAST_UPDATED = '2026-10-04'
             local metadata = {
                 id = 'AnimeExpeditions',
                 name = 'Anime Expeditions',
@@ -2043,7 +2043,7 @@ local Version = __DARKLUA_BUNDLE_MODULES.r()
 local Validation = __DARKLUA_BUNDLE_MODULES.e()
 local App = __DARKLUA_BUNDLE_MODULES.A()
 local UIAdapter = __DARKLUA_BUNDLE_MODULES.w()
-local LOADER_VERSION = '0.2.2'
+local LOADER_VERSION = '0.3.0'
 local TIMEOUT_SECONDS = 15
 local NOTIFY_RETRY_SECONDS = 0.2
 local NOTIFY_MAX_ATTEMPTS = 5
