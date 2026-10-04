@@ -30,6 +30,8 @@ local UNLOCKED: { [string]: boolean } = {
     autoUnitReward = true,
     autoBossReward = true,
     autoStartNewRun = true,
+    autoCashOut = true,
+    cashOutFloor = true,
     failsafe = true,
     failsafeMinutes = true,
     buyBasicCards = true,
@@ -330,10 +332,16 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?, joi
         completion,
         settings,
         "autoCashOut",
-        "Auto Cash Out",
-        "Cash out between floors once the floor below is cleared."
+        "Auto End Run",
+        "End the run (claim its rewards) once this many floors are cleared."
     )
-    slider(completion, settings, "cashOutFloor", "Cash out at floor", "Cleared floors before cashing out.")
+    slider(
+        completion,
+        settings,
+        "cashOutFloor",
+        "End run at floor",
+        "Cleared floors before the run is ended."
+    )
     toggle(
         completion,
         settings,

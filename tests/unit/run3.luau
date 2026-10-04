@@ -253,10 +253,8 @@ test("Adventure page mounts the requested layout and binds every control", funct
     end
     for _, title in
         {
-            "Auto Cash Out",
             "Memoria",
             "Refresh Inventory",
-            "Cash out at floor",
         }
     do
         assert(controls[title].options.Locked == true, title .. " stays locked")
@@ -286,8 +284,8 @@ test("Adventure page mounts the requested layout and binds every control", funct
         ["Buy Starter Card"] = "Auto Stitches Shop/",
         ["Buy Unit Trait"] = "Auto Stitches Shop/",
         ["Buy Unit Memoria"] = "Auto Stitches Shop/",
-        ["Auto Cash Out"] = "Run Completion/",
-        ["Cash out at floor"] = "Run Completion/",
+        ["Auto End Run"] = "Run Completion/",
+        ["End run at floor"] = "Run Completion/",
         ["Auto Start New Run"] = "Run Completion/",
         ["Auto Ascension"] = "Run Completion/",
         ["Auto Select Memorized Memoria"] = "Memorized Modifier/",
@@ -301,14 +299,14 @@ test("Adventure page mounts the requested layout and binds every control", funct
     end
     local slider = controls["Use Second Prioritize after Floor"].options.Value
     assert(slider.Min == 1 and slider.Max == 200)
-    assert(controls["Cash out at floor"].options.Value.Max == 100)
+    assert(controls["End run at floor"].options.Value.Max == 100)
     assert(controls["Failsafe Time (minute)"].options.Value.Max == 30)
     assert(controls["Buy Unit Trait"].options.Multi == true)
     assert(controls["Slot 1"].options.Values[1] == "None")
 
     controls["Auto Join Odyssey Adventure"].options.Callback(true)
     controls["Select Character"].options.Callback("Luce (Hacker)")
-    controls["Cash out at floor"].options.Callback(45)
+    controls["End run at floor"].options.Callback(45)
     controls["Buy Unit Memoria"].options.Callback({ "Scrap Metal Master", "Range Boost I" })
     assert(settings.get("autoJoin") and settings.get("character") == "Luce (Hacker)")
     assert(settings.get("cashOutFloor") == 45 and #settings.get("buyMemoria") == 2)

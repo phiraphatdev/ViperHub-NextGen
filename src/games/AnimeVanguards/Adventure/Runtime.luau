@@ -220,6 +220,15 @@ local function liveDependencies(): any
             local adventure = odyssey and odyssey:FindFirstChild("Adventure")
             return adventure and adventure:FindFirstChild("UnitRewardEvent")
         end)(),
+        -- Ends the run like the End Run button (observed in the Adventure client): FireServer("RequestPreview"),
+        -- the server answers "Preview" {Token, FloorsCleared}, then FireServer("Confirm", Token) -> "Completed";
+        -- FireServer("Replay") then starts a new run.
+        endRun = (function(): any
+            local networking = replicated:FindFirstChild("Networking")
+            local odyssey = networking and networking:FindFirstChild("Odyssey")
+            local adventure = odyssey and odyssey:FindFirstChild("Adventure")
+            return adventure and adventure:FindFirstChild("EndRunEvent")
+        end)(),
         placedUnitGuid = function(name: any): string?
             local handler = optionalModule(env.game:GetService("StarterPlayer"), paths.clientUnitHandler)
             if type(handler) ~= "table" or type(handler.GetAllPlacedUnits) ~= "function" then
@@ -1076,6 +1085,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
     local endSince: number? = nil
     local lastLobbyAt = -math.huge
     local lastNewRunAt = -math.huge
+    local lastEndRunAt = -math.huge
     local function watchShop()
         local taskApi: any = deps.task
         if not self.active or type(taskApi) ~= "table" or type(taskApi.delay) ~= "function" then
@@ -1123,6 +1133,29 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             and now0 - failsafeSince >= (tonumber(saved0.get("failsafeMinutes")) or 30) * 60
         then
             reason = "floor " .. tostring(floorNow) .. " ran too long"
+        end
+        -- Auto End Run: once the cleared floors reach the target, ask for the end-run preview (confirmed on reply).
+        local endRemote: any = deps.endRun
+        local target = tonumber(saved0.get("cashOutFloor"))
+        if
+            endRemote ~= nil
+            and saved0.get("autoCashOut") == true
+            and target ~= nil
+            and type(floorNow) == "number"
+            and floorNow - 1 >= target
+            and not isEnd
+            and now0 - lastEndRunAt >= LOBBY_RETRY_SECONDS
+        then
+            lastEndRunAt = now0
+            if
+                pcall(function()
+                    endRemote:FireServer("RequestPreview", nil)
+                end)
+            then
+                setStatus(
+                    "Auto End Run: floor " .. tostring(floorNow - 1) .. " cleared, asking to end the run"
+                )
+            end
         end
         -- A finished run starts again in place with New Run; the lobby is the fallback when that does not move on.
         if
@@ -1297,6 +1330,52 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         end
         self.active = true
         setStatus("Listening for card and room offers")
+        local endRemote: any = deps.endRun
+        if endRemote ~= nil then
+            local okEnd, endConnection = pcall(function()
+                return endRemote.OnClientEvent:Connect(function(kind: any, data: any)
+                    local saved = getSettings()
+                    if not self.active or saved.get("autoCashOut") ~= true then
+                        return
+                    end
+                    local target = tonumber(saved.get("cashOutFloor")) or math.huge
+                    if kind == "Preview" and type(data) == "table" and data.Token ~= nil then
+                        local cleared = tonumber(data.FloorsCleared) or 0
+                        if cleared >= target then
+                            pcall(function()
+                                endRemote:FireServer("Confirm", data.Token)
+                            end)
+                            setStatus("Auto End Run: ending the run at " .. tostring(cleared) .. " floors")
+                        end
+                    elseif kind == "Completed" then
+                        setStatus("Auto End Run: run ended")
+                        if saved.get("autoStartNewRun") == true then
+                            local replayTask: any = deps.task
+                            local function replay()
+                                if self.active then
+                                    pcall(function()
+                                        endRemote:FireServer("Replay", nil)
+                                    end)
+                                    setStatus("Auto End Run: started a new run")
+                                end
+                            end
+                            if type(replayTask) == "table" and type(replayTask.delay) == "function" then
+                                (replayTask.delay :: any)(END_SCREEN_SECONDS, replay)
+                            else
+                                replay()
+                            end
+                        end
+                    elseif kind == "Rejected" then
+                        setStatus("Auto End Run: the game refused to end the run now")
+                    end
+                end)
+            end)
+            if okEnd and endConnection then
+                table.insert(disconnects, function()
+                    endConnection:Disconnect()
+                end)
+            end
+        end
         local rewardRemote: any = deps.unitReward
         if rewardRemote ~= nil then
             local okReward, connection = pcall(function()

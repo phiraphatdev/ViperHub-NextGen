@@ -7686,6 +7686,8 @@ do
                 autoUnitReward = true,
                 autoBossReward = true,
                 autoStartNewRun = true,
+                autoCashOut = true,
+                cashOutFloor = true,
                 failsafe = true,
                 failsafeMinutes = true,
                 buyBasicCards = true,
@@ -7896,8 +7898,9 @@ do
 
                 local completion = Style.section(tab, 'Run Completion', 'flag', false)
 
-                toggle(completion, settings, 'autoCashOut', 'Auto Cash Out', 'Cash out between floors once the floor below is cleared.')
-                slider(completion, settings, 'cashOutFloor', 'Cash out at floor', 'Cleared floors before cashing out.')
+                toggle(completion, settings, 'autoCashOut', 'Auto End Run',
+[[End the run (claim its rewards) once this many floors are cleared.]])
+                slider(completion, settings, 'cashOutFloor', 'End run at floor', 'Cleared floors before the run is ended.')
                 toggle(completion, settings, 'autoStartNewRun', 'Auto Start New Run',
 [[When a run ends, press New Run on the end screen; if that does not start a run, go back to the lobby (Auto Join starts the next run).]])
                 toggle(completion, settings, 'autoAscension', 'Auto Ascension',
@@ -8810,6 +8813,13 @@ do
                         local adventure = odyssey and odyssey:FindFirstChild('Adventure')
 
                         return adventure and adventure:FindFirstChild('UnitRewardEvent')
+                    end)(),
+                    endRun = (function()
+                        local networking = replicated:FindFirstChild('Networking')
+                        local odyssey = networking and networking:FindFirstChild('Odyssey')
+                        local adventure = odyssey and odyssey:FindFirstChild('Adventure')
+
+                        return adventure and adventure:FindFirstChild('EndRunEvent')
                     end)(),
                     placedUnitGuid = function(name)
                         local handler = optionalModule(env.game:GetService('StarterPlayer'), paths.clientUnitHandler)
@@ -9744,6 +9754,7 @@ do
                 local endSince = nil
                 local lastLobbyAt = -math.huge
                 local lastNewRunAt = -math.huge
+                local lastEndRunAt = -math.huge
 
                 local function watchShop()
                     local taskApi = deps.task
@@ -9795,6 +9806,19 @@ do
                         reason = 'the run ended'
                     elseif saved0.get('failsafe') == true and now0 - failsafeSince >= (tonumber(saved0.get('failsafeMinutes')) or 30) * 60 then
                         reason = 'floor ' .. tostring(floorNow) .. ' ran too long'
+                    end
+
+                    local endRemote = deps.endRun
+                    local target = tonumber(saved0.get('cashOutFloor'))
+
+                    if endRemote ~= nil and saved0.get('autoCashOut') == true and target ~= nil and type(floorNow) == 'number' and floorNow - 1 >= target and not isEnd and now0 - lastEndRunAt >= LOBBY_RETRY_SECONDS then
+                        lastEndRunAt = now0
+
+                        if pcall(function()
+                            endRemote:FireServer('RequestPreview', nil)
+                        end) then
+                            setStatus('Auto End Run: floor ' .. tostring(floorNow - 1) .. ' cleared, asking to end the run')
+                        end
                     end
                     if isEnd and saved0.get('autoStartNewRun') == true and now0 - (endSince) >= END_SCREEN_SECONDS and now0 - (endSince) < END_SCREEN_SECONDS + NEW_RUN_FALLBACK_SECONDS then
                         reason = nil
@@ -9996,6 +10020,65 @@ do
                     self.active = true
 
                     setStatus('Listening for card and room offers')
+
+                    local endRemote = deps.endRun
+
+                    if endRemote ~= nil then
+                        local okEnd, endConnection = pcall(function()
+                            return endRemote.OnClientEvent:Connect(function(
+                                kind,
+                                data
+                            )
+                                local saved = getSettings()
+
+                                if not self.active or saved.get('autoCashOut') ~= true then
+                                    return
+                                end
+
+                                local target = tonumber(saved.get('cashOutFloor')) or math.huge
+
+                                if kind == 'Preview' and type(data) == 'table' and data.Token ~= nil then
+                                    local cleared = tonumber(data.FloorsCleared) or 0
+
+                                    if cleared >= target then
+                                        pcall(function()
+                                            endRemote:FireServer('Confirm', data.Token)
+                                        end)
+                                        setStatus('Auto End Run: ending the run at ' .. tostring(cleared) .. ' floors')
+                                    end
+                                elseif kind == 'Completed' then
+                                    setStatus('Auto End Run: run ended')
+
+                                    if saved.get('autoStartNewRun') == true then
+                                        local replayTask = deps.task
+
+                                        local function replay()
+                                            if self.active then
+                                                pcall(function()
+                                                    endRemote:FireServer('Replay', nil)
+                                                end)
+                                                setStatus('Auto End Run: started a new run')
+                                            end
+                                        end
+
+                                        if type(replayTask) == 'table' and type(replayTask.delay) == 'function' then
+                                            (replayTask.delay)(END_SCREEN_SECONDS, replay)
+                                        else
+                                            replay()
+                                        end
+                                    end
+                                elseif kind == 'Rejected' then
+                                    setStatus('Auto End Run: the game refused to end the run now')
+                                end
+                            end)
+                        end)
+
+                        if okEnd and endConnection then
+                            table.insert(disconnects, function()
+                                endConnection:Disconnect()
+                            end)
+                        end
+                    end
 
                     local rewardRemote = deps.unitReward
 
