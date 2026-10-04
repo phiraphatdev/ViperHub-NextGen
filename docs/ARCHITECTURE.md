@@ -95,6 +95,7 @@ Every game uses the same shared UI; games describe pages and never call WindUI d
 | Window | `src/ui/WindUIAdapter.luau` | Icon, 680x460 size, sidebar player card, gradient open button, layer tags. |
 | Layout | `src/ui/App.luau` | Title-bar tags (game name, module version); sidebar sections: `Home` (Overview or the game's home page), the game's groups, and `System` (Settings, Diagnostics). Each page shows its title and description. A failing page shows a placeholder instead of aborting startup. |
 | Page style | `src/ui/Style.luau` | `section` (boxed, iconed heading), `sub` (dim sub-heading), `card` (icon paragraph). Game style modules may extend it (Anime Vanguards adds Joiner row icons). |
+| Priority list | `src/ui/PriorityList.luau` | A card with numbered rows (highest number on top); drag a row onto another to swap them (mouse or touch). Built from Roblox GUI instances inside the WindUI paragraph container, no vendor change; without that container it shows the order as text. |
 
 `GameModule.pages` entries (all optional beyond title/description, validated by `network/ModuleLoader`):
 

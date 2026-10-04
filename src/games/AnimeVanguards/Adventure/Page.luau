@@ -4,26 +4,17 @@ Purpose: Render the Odyssey Adventure tab: auto join, character and powers, Rout
          choices, run completion, Memorized memoria and the stage failsafe (settings only; automation is pending)
 Input: WindUI tab handle, an optional catalog and an optional settings object (built from live game data when absent)
 Output: Mounted controls bound to saved Adventure settings
-Dependencies: Style; Adventure/Catalog; Adventure/Settings
+Dependencies: Style; ui/PriorityList; Adventure/Catalog; Adventure/Settings
 ]]
 
 local Style = require("../Style")
 local Catalog = require("./Catalog")
 local Settings = require("./Settings")
+local PriorityList = require("../../../ui/PriorityList")
 local Page = {}
 
-local SUMMARY_ENTRIES = 10
 local PENDING =
     "Settings only for now: the Adventure automation is not built yet, so these choices are saved but nothing runs."
-
--- The order summary lists the first SUMMARY_ENTRIES names, then how many follow.
-local function orderText(order: { string }): string
-    if #order <= SUMMARY_ENTRIES then
-        return table.concat(order, " > ")
-    end
-    return table.concat(order, " > ", 1, SUMMARY_ENTRIES)
-        .. string.format(" > … (+%d)", #order - SUMMARY_ENTRIES)
-end
 
 local function setDesc(control: any, text: string)
     if type(control) == "table" and type(control.SetDesc) == "function" then
@@ -31,76 +22,25 @@ local function setDesc(control: any, text: string)
     end
 end
 
-local function numbered(order: { string }): { string }
-    local labels = {}
-    for index, name in order do
-        table.insert(labels, index .. ". " .. name)
-    end
-    return labels
-end
-
--- "3. Golden Age" -> "Golden Age"
-local function unnumbered(label: any): string?
-    if type(label) ~= "string" then
-        return nil
-    end
-    return string.match(label, "^%d+%. (.+)$") or label
-end
-
--- A priority list moved with the mouse: a numbered dropdown to pick an entry, then Up / Down / Top / Reset buttons
--- on one row. The picked entry stays selected, so repeated clicks keep moving it.
+-- A priority list like the reference hub: drag a row onto another to swap them; Reset restores the default order.
 local function priorityEditor(host: any, settings: any, key: string, title: string, desc: string)
-    local order = settings.order(key)
-    local selected: string = order[1]
-    local dropdown: any
-    local function refresh()
-        local current = settings.order(key)
-        setDesc(dropdown, desc .. "\n" .. orderText(current))
-        local position = table.find(current, selected) or 1
-        if type(dropdown) == "table" and type(dropdown.Refresh) == "function" then
-            pcall(dropdown.Refresh, dropdown, numbered(current))
-            if type(dropdown.Select) == "function" then
-                pcall(dropdown.Select, dropdown, position .. ". " .. selected)
-            end
+    local list = PriorityList.mount(
+        host,
+        title,
+        desc,
+        settings.order(key),
+        function(first: string, second: string)
+            return if settings.swap(key, first, second) then settings.order(key) else nil
         end
-    end
-    dropdown = host:Dropdown({
-        Title = title,
-        Desc = desc .. "\n" .. orderText(order),
-        Values = numbered(order),
-        Value = "1. " .. selected,
-        Callback = function(value: any)
-            local name = unnumbered(value)
-            if name and table.find(settings.order(key), name) then
-                selected = name
-            end
+    )
+    host:Button({
+        Title = title .. ": reset",
+        Desc = "Restore the default order.",
+        Icon = "rotate-ccw",
+        Callback = function()
+            list.refresh(settings.resetOrder(key))
         end,
     })
-    local row: any = if type(host.Group) == "function" then (host.Group :: any)(host, {}) else host
-    local function button(label: string, icon: string, action: () -> boolean)
-        row:Button({
-            Title = label,
-            Icon = icon,
-            Callback = function()
-                if action() then
-                    refresh()
-                end
-            end,
-        })
-    end
-    button("Up", "arrow-up", function(): boolean
-        return settings.move(key, selected, -1)
-    end)
-    button("Down", "arrow-down", function(): boolean
-        return settings.move(key, selected, 1)
-    end)
-    button("Top", "arrow-up-to-line", function(): boolean
-        return settings.move(key, selected, -#settings.order(key))
-    end)
-    button("Reset", "rotate-ccw", function(): boolean
-        settings.resetOrder(key)
-        return true
-    end)
 end
 
 local function toggle(host: any, settings: any, key: string, title: string, desc: string)
@@ -219,14 +159,14 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?): an
         settings,
         "floorPriority",
         "Floor Prioritize",
-        "Next room to pick on the Route Atlas; the highest number is preferred."
+        "Next room to pick on the Route Atlas; the highest number is preferred. Drag a row onto another to swap them."
     )
     priorityEditor(
         route,
         settings,
         "secondFloorPriority",
         "Second Floor Prioritize",
-        "Used instead after the floor above."
+        "Used instead after the floor above. Drag a row onto another to swap them."
     )
     toggle(
         misc,
@@ -265,7 +205,7 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?): an
         settings,
         "cardPriority",
         "Card Priority",
-        "Basic card (Odyssey modifier) to pick; the highest number is preferred."
+        "Basic card (Odyssey modifier) to pick; the highest number is preferred. Drag a row onto another to swap them."
     )
 
     local shop = Style.section(tab, "Auto Stitches Shop", "store", false)

@@ -2,7 +2,7 @@
 --[[
 Purpose: Validate and persist the Odyssey: Adventure tab choices (no automation reads them yet)
 Input: A catalog of valid option names and optional storage/codec dependencies
-Output: A settings object: get, set, move, order, resetOrder and whether changes are saved to file
+Output: A settings object: get, set, swap, order, resetOrder and whether changes are saved to file
 Dependencies: Config; FileStorage
 ]]
 
@@ -264,24 +264,19 @@ function Settings.new(catalog: any, injected: any?): any
         return true
     end
 
-    --- Moves a name by steps in a ranks field's order (negative = up; a large value moves to the top or bottom) and
-    --- renumbers the list (first = highest number); returns true when the order changed.
-    function self.move(key: string, name: any, steps: any): boolean
+    --- Swaps two names in a ranks field's order and renumbers the list (first = highest number); returns true when
+    --- both names exist and differ.
+    function self.swap(key: string, first: any, second: any): boolean
         local spec = FIELDS[key]
-        if not spec or spec.kind ~= "ranks" or type(name) ~= "string" or not finite(steps) then
+        if not spec or spec.kind ~= "ranks" or type(first) ~= "string" or type(second) ~= "string" then
             return false
         end
         local order = rankedOrder(spec, catalog[spec.list], values[key])
-        local index = table.find(order, name)
-        if not index then
+        local a, b = table.find(order, first), table.find(order, second)
+        if not a or not b or a == b then
             return false
         end
-        local target = math.clamp(index + math.floor(steps), 1, #order)
-        if target == index then
-            return false
-        end
-        table.remove(order, index)
-        table.insert(order, target, name)
+        order[a], order[b] = order[b], order[a]
         local ranks: { [string]: number } = {}
         for position, entry in order do
             ranks[entry] = #order - position + 1

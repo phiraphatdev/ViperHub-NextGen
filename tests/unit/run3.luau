@@ -4,6 +4,7 @@ local AdventureCatalog = require("../../src/games/AnimeVanguards/Adventure/Catal
 local AdventureSettings = require("../../src/games/AnimeVanguards/Adventure/Settings")
 local AdventurePage = require("../../src/games/AnimeVanguards/Adventure/Page")
 local VanguardsConfig = require("../../src/games/AnimeVanguards/Config")
+local PriorityList = require("../../src/ui/PriorityList")
 local passed = 0
 local function test(name: string, callback: () -> ())
     local ok, message = pcall(callback)
@@ -126,25 +127,36 @@ test("Adventure settings validate every field kind", function()
     assert(s.get("floorPriority").Boss == 0)
 end)
 
-test("Adventure settings move priority entries up, down and to the top", function()
+test("Adventure settings swap priority entries and renumber them", function()
     local s = AdventureSettings.new(AdventureCatalog.fromModules(nil), {})
-    assert(not s.move("floorPriority", "Nope", -1) and not s.move("autoJoin", "Elite", -1))
-    assert(not s.move("floorPriority", "Elite", "up") and not s.move("floorPriority", "Elite", 0 / 0))
-    assert(not s.move("floorPriority", "Treasure", -1), "the first entry cannot go up")
-    assert(not s.move("floorPriority", "Boss", 1), "the last entry cannot go down")
-    assert(s.move("floorPriority", "Shop", -1))
-    assert(table.concat(s.order("floorPriority"), ",") == "Treasure,Shop,Elite,Battle,Boss")
-    assert(s.get("floorPriority").Shop == 4 and s.get("floorPriority").Elite == 3, "renumbered from the top")
-    assert(s.move("floorPriority", "Treasure", 2) and s.order("floorPriority")[3] == "Treasure")
+    assert(not s.swap("floorPriority", "Nope", "Elite") and not s.swap("autoJoin", "Elite", "Shop"))
+    assert(not s.swap("floorPriority", "Elite", "Elite") and not s.swap("floorPriority", "Elite", 3))
+    assert(s.swap("floorPriority", "Treasure", "Boss"))
+    assert(table.concat(s.order("floorPriority"), ",") == "Boss,Elite,Shop,Battle,Treasure")
     assert(
-        s.move("cardPriority", "Military Training", -1000)
-            and s.order("cardPriority")[1] == "Military Training"
+        s.get("floorPriority").Boss == 5 and s.get("floorPriority").Treasure == 1,
+        "renumbered from the top"
     )
-    assert(s.get("cardPriority")["Military Training"] == 33)
-    -- Equal saved numbers keep the default order and still move one place at a time.
+    assert(s.swap("cardPriority", "Limit Break", "Military Training"))
+    assert(s.order("cardPriority")[1] == "Military Training" and s.order("cardPriority")[33] == "Limit Break")
+    -- Equal saved numbers keep the default order, then swap like any other order.
     assert(s.set("secondFloorPriority", { Treasure = 1, Battle = 1, Shop = 1, Elite = 1, Boss = 1 }))
-    assert(s.move("secondFloorPriority", "Shop", -1) and s.order("secondFloorPriority")[2] == "Shop")
+    assert(s.swap("secondFloorPriority", "Shop", "Treasure") and s.order("secondFloorPriority")[1] == "Shop")
     assert(s.resetOrder("floorPriority")[1] == "Treasure" and s.get("floorPriority").Boss == 1)
+end)
+
+test("Priority list labels, summary and row hit test", function()
+    local labels = PriorityList.labels({ "Treasure", "Elite", "Boss" })
+    assert(table.concat(labels, "|") == "3. Treasure|2. Elite|1. Boss")
+    assert(PriorityList.summary({ "A", "B" }) == "A > B")
+    assert(
+        PriorityList.summary({ "A", "B", "C", "D", "E", "F", "G", "H" }) == "A > B > C > D > E > F > … (+2)"
+    )
+    local tops = { 100, 134, 168 }
+    assert(PriorityList.rowAt(tops, 30, 100) == 1 and PriorityList.rowAt(tops, 30, 150) == 2)
+    assert(PriorityList.rowAt(tops, 30, 131) == nil, "the gap between rows is not a row")
+    assert(PriorityList.rowAt(tops, 30, 197) == 3 and PriorityList.rowAt(tops, 30, 198) == nil)
+    assert(PriorityList.rowAt({ -math.huge, 134 }, 30, 140) == 2, "rows outside horizontally are skipped")
 end)
 
 test("Adventure settings persist, reload and never overwrite an unreadable file", function()
@@ -154,7 +166,7 @@ test("Adventure settings persist, reload and never overwrite an unreadable file"
     assert(first.persistent())
     first.set("autoCashOut", true)
     first.set("character", "Tuji (Sorcerer Killer)")
-    first.move("secondFloorPriority", "Boss", -10)
+    first.swap("secondFloorPriority", "Boss", "Treasure")
     assert(store.writes == 3 and store.document.schemaVersion == 1)
     local second = AdventureSettings.new(catalog, store.deps)
     assert(second.get("autoCashOut") and second.get("character") == "Tuji (Sorcerer Killer)")
@@ -184,7 +196,6 @@ test("Adventure page mounts the requested layout and binds every control", funct
     local sections: { string } = {}
     local statusText = ""
     local buttons: { [string]: any } = {}
-    local groups = 0
     local function host(path: string): any
         local node: any = {}
         for _, kind in { "Toggle", "Dropdown", "Slider", "Button", "Paragraph" } do
@@ -216,10 +227,6 @@ test("Adventure page mounts the requested layout and binds every control", funct
         node.Section = function(_self: any, options: any): any
             table.insert(sections, path .. options.Title)
             return host(path .. options.Title .. "/")
-        end
-        node.Group = function(_self: any): any
-            groups += 1
-            return host(path .. "row" .. groups .. "/")
         end
         return node
     end
@@ -275,47 +282,24 @@ test("Adventure page mounts the requested layout and binds every control", funct
     assert(settings.get("autoJoin") and settings.get("character") == "Luce (Hacker)")
     assert(settings.get("cashOutFloor") == 45 and #settings.get("buyMemoria") == 2)
 
-    -- Priority lists: a numbered dropdown, then Up / Down / Top / Reset on one row.
+    -- Priority lists: a drag-to-swap card (text-only here: the mock has no WindUI paragraph container) and Reset.
     local floor = controls["Floor Prioritize"]
-    local floorRow = "Miscellaneous/Auto Route Atlas/row1/"
-    assert(floor.options.Values[1] == "1. Treasure" and floor.options.Value == "1. Treasure")
-    for _, title in { "Up", "Down", "Top", "Reset" } do
-        assert(buttons[floorRow .. title], title)
-        assert(
-            buttons["Miscellaneous/Auto Route Atlas/row2/" .. title]
-                and buttons["Auto Basic Card/row3/" .. title]
-        )
-    end
+    assert(floor.kind == "Paragraph" and string.find(floor.desc, "Treasure > Elite > Shop", 1, true) ~= nil)
     local card = controls["Card Priority"]
-    assert(#card.options.Values == 33 and card.options.Values[33] == "33. Military Training")
+    assert(string.find(card.desc, "Limit Break > Golden Age", 1, true) ~= nil)
+    assert(string.find(card.desc, "(+27)", 1, true) ~= nil, card.desc)
+    assert(buttons["Miscellaneous/Auto Route Atlas/Floor Prioritize: reset"])
+    assert(buttons["Miscellaneous/Auto Route Atlas/Second Floor Prioritize: reset"])
+    assert(settings.swap("floorPriority", "Treasure", "Boss"))
+    buttons["Miscellaneous/Auto Route Atlas/Floor Prioritize: reset"].options.Callback()
+    assert(settings.order("floorPriority")[1] == "Treasure")
+    assert(string.find(floor.desc, "Treasure > Elite", 1, true) ~= nil)
+    assert(settings.swap("cardPriority", "Limit Break", "Ambush"))
+    buttons["Auto Basic Card/Card Priority: reset"].options.Callback()
     assert(
-        string.find(card.desc, "Limit Break > Golden Age", 1, true) ~= nil
-            and string.find(card.desc, "(+23)", 1, true) ~= nil
+        settings.order("cardPriority")[1] == "Limit Break"
+            and string.find(card.desc, "Limit Break >", 1, true) ~= nil
     )
-
-    floor.options.Callback("3. Shop")
-    buttons[floorRow .. "Up"].options.Callback()
-    assert(table.concat(settings.order("floorPriority"), ",") == "Treasure,Shop,Elite,Battle,Boss")
-    assert(floor.values[2] == "2. Shop" and floor.value == "2. Shop", "the moved entry stays selected")
-    assert(string.find(floor.desc, "Treasure > Shop > Elite", 1, true) ~= nil, floor.desc)
-    buttons[floorRow .. "Up"].options.Callback()
-    buttons[floorRow .. "Up"].options.Callback()
-    assert(settings.order("floorPriority")[1] == "Shop" and floor.value == "1. Shop")
-    buttons[floorRow .. "Down"].options.Callback()
-    assert(settings.order("floorPriority")[2] == "Shop")
-    floor.options.Callback("5. Boss")
-    buttons[floorRow .. "Top"].options.Callback()
-    assert(settings.order("floorPriority")[1] == "Boss" and floor.value == "1. Boss")
-    floor.options.Callback("not an entry")
-    buttons[floorRow .. "Down"].options.Callback()
-    assert(settings.order("floorPriority")[2] == "Boss", "an unknown pick keeps the last valid selection")
-    assert(settings.order("secondFloorPriority")[1] == "Treasure", "lists are independent")
-    buttons[floorRow .. "Reset"].options.Callback()
-    assert(settings.order("floorPriority")[1] == "Treasure" and floor.values[1] == "1. Treasure")
-
-    card.options.Callback("33. Military Training")
-    buttons["Auto Basic Card/row3/Top"].options.Callback()
-    assert(settings.order("cardPriority")[1] == "Military Training" and card.value == "1. Military Training")
 
     controls["Refresh Inventory"].options.Callback()
     assert(string.find(statusText, "runtime pending", 1, true), statusText)
