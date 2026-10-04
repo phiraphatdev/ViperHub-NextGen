@@ -1271,6 +1271,63 @@ test(
     end
 )
 
+test("A new Adventure run in the same server gets its events subscribed again", function()
+    local settings = AdventureSettings.new(AdventureCatalog.fromModules(nil), {})
+    local box: any = { seed = "run-a", now = 0, subscribed = 0, undone = 0 }
+    local pending: { any } = {}
+    local runtime = AdventureRuntime.new(function()
+        return settings
+    end, {
+        clock = function()
+            return box.now
+        end,
+        task = {
+            delay = function(_seconds: number, callback: any)
+                table.insert(pending, callback)
+            end,
+        },
+        isAdventure = function()
+            return true
+        end,
+        runSeed = function()
+            return box.seed
+        end,
+        roomKind = function()
+            return "Battle"
+        end,
+        events = {
+            CardPickBasicOffer = {
+                On = function()
+                    box.subscribed += 1
+                    return function()
+                        box.undone += 1
+                    end
+                end,
+            },
+        },
+    })
+    local function tick(seconds: number)
+        box.now += seconds
+        local batch = pending
+        pending = {}
+        for _, callback in batch do
+            local run: any = callback
+            run()
+        end
+    end
+    assert(runtime.start())
+    tick(2)
+    tick(2)
+    assert(box.subscribed == 1 and box.undone == 0, "the same run keeps its subscriptions")
+    box.seed = "run-b"
+    tick(2)
+    assert(box.undone == 1 and box.subscribed == 2, "a new run: old subscriptions dropped, new ones made")
+    tick(2)
+    tick(2)
+    assert(box.subscribed == 2, "and only once")
+    runtime.stop()
+end)
+
 test("Adventure picks a reward unit after an Elite floor", function()
     assert(AdventureChoice.pickUnitReward({
         Options = { { Rarity = "Rare" }, { Rarity = "Exclusive" }, { Rarity = "Mythic" } },

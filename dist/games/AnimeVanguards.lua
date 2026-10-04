@@ -8686,6 +8686,11 @@ do
 
                         return if type(data) == 'table' and type(data.AdventureRoomKind) == 'string'then data.AdventureRoomKind else nil
                     end,
+                    runSeed = function()
+                        local data = if handler then handler.GameData else nil
+
+                        return if type(data) == 'table' and type(data.AdventureRunSeed) == 'string'then data.AdventureRunSeed else nil
+                    end,
                     floor = function()
                         local data = if handler then handler.GameData else nil
 
@@ -9507,12 +9512,31 @@ do
 
                 local lastFloorSeen = nil
                 local lastShopAsk = -math.huge
+                local lastSeed = nil
 
                 local function watchShop()
                     local taskApi = deps.task
 
                     if not self.active or type(taskApi) ~= 'table' or type(taskApi.delay) ~= 'function' then
                         return
+                    end
+
+                    local seedOf = deps.runSeed
+                    local seed = if type(seedOf) == 'function'then(seedOf)()else nil
+
+                    if seed ~= nil and lastSeed ~= nil and seed ~= lastSeed then
+                        lastSeed = seed
+
+                        self.stop()
+
+                        if self.start() then
+                            setStatus('New Adventure run: subscribed to its events again')
+                        end
+
+                        return
+                    end
+                    if seed ~= nil then
+                        lastSeed = seed
                     end
 
                     local ok = pcall(function()

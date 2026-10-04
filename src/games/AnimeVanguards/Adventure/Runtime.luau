@@ -159,6 +159,14 @@ local function liveDependencies(): any
                 then data.AdventureRoomKind
                 else nil
         end,
+        -- Identifies the current run: a new run in the same server gets new game events, so the subscriptions of the
+        -- previous run go silent (observed live: no card pick and no vote after a run ended and another began).
+        runSeed = function(): string?
+            local data = if handler then handler.GameData else nil
+            return if type(data) == "table" and type(data.AdventureRunSeed) == "string"
+                then data.AdventureRunSeed
+                else nil
+        end,
         floor = function(): number?
             local data = if handler then handler.GameData else nil
             return if type(data) == "table" and type(data.AdventureFloor) == "number"
@@ -931,10 +939,25 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
     -- this shop was not handled, ask the game for its state (its reply is handled like an opening).
     local lastFloorSeen: number? = nil
     local lastShopAsk = -math.huge
+    local lastSeed: string? = nil
     local function watchShop()
         local taskApi: any = deps.task
         if not self.active or type(taskApi) ~= "table" or type(taskApi.delay) ~= "function" then
             return
+        end
+        -- A new run: subscribe to its events again (stop and start restart this watcher).
+        local seedOf: any = deps.runSeed
+        local seed: string? = if type(seedOf) == "function" then (seedOf :: any)() else nil
+        if seed ~= nil and lastSeed ~= nil and seed ~= lastSeed then
+            lastSeed = seed
+            self.stop()
+            if self.start() then
+                setStatus("New Adventure run: subscribed to its events again")
+            end
+            return
+        end
+        if seed ~= nil then
+            lastSeed = seed
         end
         local ok = pcall(function()
             local floorOf: any = deps.floor

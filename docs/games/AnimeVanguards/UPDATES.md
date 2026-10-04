@@ -1,5 +1,10 @@
 # Updates
 
+## Local: re-subscribe when a new Adventure run begins
+
+- Found live: after a run ended and a new one began in the same server (`AdventureRunSeed` changed, floor back to 1), the hub's card offer and room vote subscriptions went silent: the card offer repeated (same options four times) and the vote stayed open until answered by hand (`CardPickPick({Choice=1})` then the next vote came; `VoteCast` by hand did not move this vote on). The watcher now compares `GameData.AdventureRunSeed` every 2 s and, on a change, drops and re-creates all subscriptions.
+- Mock-tested; live verification pending until the next run change on a connected client.
+
 ## Local: hide a Stitches' Shop window the game leaves open
 
 - Reported by the user: after the shop is closed (even by the hub's ShopClose) the Stitches' Shop window can stay on screen, and the next room cannot be chosen until it is closed. The hub now presses the window's "Leave Shop" button (`BottomFrame` > `Clickable`; the X only hides the window, the floor ends with Leave Shop): signals first, then a real click on the next tick, `Visible = false` only as the last resort from the shop watcher: at once when the current room is not a Shop, or 2 s after the shop closed. Only while Leave Shop Rooms or Auto Stitches Shop is on.
