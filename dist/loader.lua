@@ -1601,7 +1601,14 @@ do
 
                 local connections = {}
                 local glows = {}
-                local wired = {}
+                local wired = (setmetatable({}, {
+                    __mode = 'k',
+                }))
+                local inputService = nil
+
+                pcall(function()
+                    inputService = (ENV.game):GetService('UserInputService')
+                end)
 
                 local function fade(glow, transparency)
                     if tweenService then
@@ -1652,7 +1659,12 @@ do
                         end
 
                         local owner = glow.Parent
-                        local mouse = (ENV.game):GetService('UserInputService'):GetMouseLocation()
+
+                        if not inputService then
+                            return
+                        end
+
+                        local mouse = inputService:GetMouseLocation()
                         local width = math.max(owner.AbsoluteSize.X, 1)
                         local fraction = math.clamp((mouse.X - owner.AbsolutePosition.X) / width, 0, 1)
                         local gradient = glow:FindFirstChildOfClass('UIGradient')

@@ -90,7 +90,12 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
     end)
     local connections: { any } = {}
     local glows: { any } = {}
-    local wired: { [any]: boolean } = {}
+    -- Weak keys: a destroyed button must not be kept alive just because it was wired.
+    local wired: { [any]: boolean } = setmetatable({}, { __mode = "k" }) :: any
+    local inputService: any = nil
+    pcall(function()
+        inputService = (ENV.game :: any):GetService("UserInputService")
+    end)
 
     local function fade(glow: any, transparency: number)
         if tweenService then
@@ -141,7 +146,10 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
                 return
             end
             local owner: any = glow.Parent
-            local mouse = (ENV.game :: any):GetService("UserInputService"):GetMouseLocation()
+            if not inputService then
+                return
+            end
+            local mouse = inputService:GetMouseLocation()
             local width = math.max(owner.AbsoluteSize.X, 1)
             local fraction = math.clamp((mouse.X - owner.AbsolutePosition.X) / width, 0, 1)
             local gradient: any = glow:FindFirstChildOfClass("UIGradient")
