@@ -28,6 +28,7 @@ local FIELDS: { [string]: any } = {
     slot2 = { kind = "choice", list = "powers", none = true },
     autoRoute = { kind = "bool", default = false },
     leaveShop = { kind = "bool", default = true },
+    openTreasure = { kind = "bool", default = true },
     secondPriorityFloor = { kind = "number", range = ADVENTURE.secondPriorityFloor },
     floorPriority = { kind = "ranks", list = "roomKinds", default = ADVENTURE.floorPriority },
     secondFloorPriority = { kind = "ranks", list = "roomKinds", default = ADVENTURE.secondFloorPriority },

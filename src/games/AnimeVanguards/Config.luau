@@ -348,6 +348,8 @@ return table.freeze({
         -- In-match Adventure picks: wait before answering an offer, and ignore an identical offer for this long.
         adventurePickDelaySeconds = 0.8,
         adventureRepeatSeconds = 4,
+        -- Between two treasure chest openings.
+        adventureChestGapSeconds = 1,
     }),
     remoteNames = table.freeze({
         worldlineProgress = "GetWorldlineProgress",

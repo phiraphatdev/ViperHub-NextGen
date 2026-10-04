@@ -1,5 +1,11 @@
 # Updates
 
+## Local Odyssey Adventure: unattended run features
+
+- Live-verified this session (floors 14-37 of a real run): Auto Join into the hosted room and Start; Auto Basic Card; Auto Route Atlas (votes only rooms the map connects to the current room); the game's own Auto Skip Start starts each floor; closing a Shop floor with `ShopClose` ends it; `TreasureOpenChest({ChestIndex})` on 3 chests ends a Treasure floor (`TreasureComplete`).
+- Added, tests only so far: Auto Character Card (highest rarity, a full hand is skipped), Leave Shop Rooms (default on, never buys), Open Treasure Chests (default on). A first live Treasure floor did not trigger the chest handler; diagnostic statuses were added to find out why. Boss reward offers (`BossRewardOffer`: Options {Rarity, Id, Kind = Memoria/Familiar}; pick needs `TargetUnitGUID`) are not automated.
+- Still open: Auto Choose Unit Reward (`UnitRewardEvent`), Cash Out, Stage Failsafe, Stitches Shop, Itches, Memorized, Ascension.
+
 ## Local Auto Route Atlas — verified live
 
 - The next room is voted with `VoteCast({OptionIndex = lane})` (SelectRoomChoose is ignored in Adventure). Room offers (`SelectRoomSelectionStarted`) list every lane of the next floor, including rooms the Route Atlas does not connect to the current room; the lane is the option's `Index`.

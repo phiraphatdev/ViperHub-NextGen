@@ -647,4 +647,63 @@ test("Adventure picks the highest rarity character card; a full hand is skipped;
     runtime.stop()
 end)
 
+test("Adventure opens the allowed treasure chests one by one", function()
+    local settings = AdventureSettings.new(AdventureCatalog.fromModules(nil), {})
+    local box: any = {}
+    local opened: { number } = {}
+    local pending: { any } = {}
+    local runtime = AdventureRuntime.new(function()
+        return settings
+    end, {
+        clock = function()
+            return 5
+        end,
+        task = {
+            delay = function(_seconds: number, callback: any)
+                table.insert(pending, callback)
+            end,
+        },
+        isAdventure = function()
+            return true
+        end,
+        events = {
+            CardPickBasicOffer = { On = function() end },
+            TreasureBegin = {
+                On = function(callback: any)
+                    box.begin = callback
+                    return function() end
+                end,
+            },
+            TreasureOpenChest = {
+                Fire = function(payload: any)
+                    table.insert(opened, payload.ChestIndex)
+                end,
+            },
+        },
+    })
+    local function flush()
+        for _, callback in pending do
+            local run: any = callback
+            run()
+        end
+        pending = {}
+    end
+    assert(runtime.start())
+    local begin: any = box.begin
+    begin({ TotalChests = 6, PicksRemaining = 3, OpenedChests = {} })
+    assert(#opened == 0, "chests open after a short wait")
+    flush()
+    assert(table.concat(opened, ",") == "1,2,3" and runtime.chests == 3)
+    opened = {}
+    begin({ TotalChests = 6, PicksRemaining = 2, OpenedChests = { 1, 2, 3 } })
+    flush()
+    assert(table.concat(opened, ",") == "4,5", "already opened chests are skipped")
+    opened = {}
+    settings.set("openTreasure", false)
+    begin({ TotalChests = 6, PicksRemaining = 3, OpenedChests = {} })
+    flush()
+    assert(#opened == 0, "switch off: the player opens them")
+    runtime.stop()
+end)
+
 print(string.format("PASS: %d unit scenarios (part 4)", passed))

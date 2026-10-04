@@ -497,6 +497,7 @@ do
                     adventureStateMaxAgeSeconds = 600,
                     adventurePickDelaySeconds = 0.8,
                     adventureRepeatSeconds = 4,
+                    adventureChestGapSeconds = 1,
                 }),
                 remoteNames = table.freeze({
                     worldlineProgress = 'GetWorldlineProgress',
@@ -7072,6 +7073,10 @@ do
                     kind = 'bool',
                     default = true,
                 },
+                openTreasure = {
+                    kind = 'bool',
+                    default = true,
+                },
                 secondPriorityFloor = {
                     kind = 'number',
                     range = ADVENTURE.secondPriorityFloor,
@@ -7486,6 +7491,7 @@ do
                 autoRoute = true,
                 autoCharacterCard = true,
                 leaveShop = true,
+                openTreasure = true,
                 secondPriorityFloor = true,
                 floorPriority = true,
                 secondFloorPriority = true,
@@ -7655,6 +7661,8 @@ do
 [[Next room to pick on the Route Atlas; the highest number is preferred. Drag a row onto another to swap them.]], ADVENTURE.roomTags)
                 priorityEditor(route, settings, 'secondFloorPriority', 'Second Floor Prioritize',
 [[Used instead after the floor above. Drag a row onto another to swap them.]], ADVENTURE.roomTags)
+                toggle(misc, settings, 'openTreasure', 'Open Treasure Chests',
+[[On a Treasure floor, open the allowed chests so the floor ends (it ends only after the picks are used).]])
                 toggle(misc, settings, 'autoUnitReward', 'Auto Choose Unit Reward',
 [[After an Elite floor, take the highest-rarity unit offered; skipped when off.]])
                 toggle(misc, settings, 'autoBuyItches', 'Auto Buy Itches',
@@ -8194,6 +8202,7 @@ do
             local Runtime = {}
             local PICK_DELAY_SECONDS = (config).thresholds.adventurePickDelaySeconds
             local REPEAT_SECONDS = (config).thresholds.adventureRepeatSeconds
+            local CHEST_GAP_SECONDS = (config).thresholds.adventureChestGapSeconds
 
             local function resolve(root, path)
                 local value = root
@@ -8256,6 +8265,7 @@ do
                     picked = 0,
                     routed = 0,
                     cards = 0,
+                    chests = 0,
                     onStatus = nil,
                 }
                 local deps = injected
@@ -8509,6 +8519,73 @@ do
                         leave()
                     end
                 end
+                local function onTreasureBegin(info)
+                    if not self.active or type(info) ~= 'table' then
+                        return
+                    end
+                    if getSettings().get('openTreasure') ~= true then
+                        setStatus('Treasure floor: Open Treasure Chests is off')
+
+                        return
+                    end
+                    if not deps.isAdventure() then
+                        setStatus('Treasure floor: not recognized as an Adventure match')
+
+                        return
+                    end
+
+                    setStatus('Treasure floor: opening chests')
+
+                    local total = if type(info.TotalChests) == 'number'then info.TotalChests else 6
+                    local picks = if type(info.PicksRemaining) == 'number'then info.PicksRemaining else 3
+                    local opened = {}
+
+                    if type(info.OpenedChests) == 'table' then
+                        for key, value in info.OpenedChests do
+                            if type(key) == 'number' and value then
+                                opened[key] = true
+                            end
+                            if type(value) == 'number' then
+                                opened[value] = true
+                            end
+                        end
+                    end
+
+                    local order = {}
+
+                    for index = 1, total do
+                        if not opened[index] and #order < picks then
+                            table.insert(order, index)
+                        end
+                    end
+
+                    local taskApi = deps.task
+
+                    for position, chest in order do
+                        local function open()
+                            local events = deps.events
+                            local entry = if events then events.TreasureOpenChest else nil
+
+                            if not self.active or type(entry) ~= 'table' or type(entry.Fire) ~= 'function' then
+                                return
+                            end
+
+                            local fireFn = entry.Fire
+
+                            if pcall(fireFn, {ChestIndex = chest}) then
+                                self.chests += 1
+
+                                setStatus('Opened treasure chest ' .. tostring(chest))
+                            end
+                        end
+
+                        if type(taskApi) == 'table' and type(taskApi.delay) == 'function' then
+                            (taskApi.delay)(PICK_DELAY_SECONDS * position + CHEST_GAP_SECONDS * (position - 1), open)
+                        else
+                            open()
+                        end
+                    end
+                end
 
                 function self.start()
                     if self.active then
@@ -8541,6 +8618,7 @@ do
                     local extras = {
                         CardPickCharacterOffer = onCharacterOffer,
                         ShopOpened = onShopOpened,
+                        TreasureBegin = onTreasureBegin,
                     }
 
                     for eventName, handler in extras do

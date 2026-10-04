@@ -25,6 +25,7 @@ local UNLOCKED: { [string]: boolean } = {
     autoRoute = true,
     autoCharacterCard = true,
     leaveShop = true,
+    openTreasure = true,
     secondPriorityFloor = true,
     floorPriority = true,
     secondFloorPriority = true,
@@ -224,6 +225,13 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?, joi
         "Second Floor Prioritize",
         "Used instead after the floor above. Drag a row onto another to swap them.",
         ADVENTURE.roomTags
+    )
+    toggle(
+        misc,
+        settings,
+        "openTreasure",
+        "Open Treasure Chests",
+        "On a Treasure floor, open the allowed chests so the floor ends (it ends only after the picks are used)."
     )
     toggle(
         misc,

@@ -275,6 +275,7 @@ test("Adventure page mounts the requested layout and binds every control", funct
         ["Use Second Prioritize after Floor"] = "Miscellaneous/Auto Route Atlas/",
         ["Floor Prioritize"] = "Miscellaneous/Auto Route Atlas/Floor Prioritize/",
         ["Second Floor Prioritize"] = "Miscellaneous/Auto Route Atlas/Second Floor Prioritize/",
+        ["Open Treasure Chests"] = "Miscellaneous/",
         ["Auto Choose Unit Reward"] = "Miscellaneous/",
         ["Auto Buy Itches"] = "Miscellaneous/",
         ["Auto Character Card"] = "Auto Character Card/",

@@ -14,6 +14,7 @@ local Runtime = {}
 
 local PICK_DELAY_SECONDS: number = (config :: any).thresholds.adventurePickDelaySeconds
 local REPEAT_SECONDS: number = (config :: any).thresholds.adventureRepeatSeconds
+local CHEST_GAP_SECONDS: number = (config :: any).thresholds.adventureChestGapSeconds
 
 local function resolve(root: any, path: string): any
     local value = root
@@ -65,7 +66,7 @@ end
 
 --- Creates a stopped controller; getSettings returns the shared Adventure settings (read lazily); deps are injectable.
 function Runtime.new(getSettings: () -> any, injected: any?): any
-    local self: any = { status = "Idle", picked = 0, routed = 0, cards = 0, onStatus = nil }
+    local self: any = { status = "Idle", picked = 0, routed = 0, cards = 0, chests = 0, onStatus = nil }
     local deps: any = injected
     local disconnects: { () -> () } = {}
     local lastKey = ""
@@ -315,6 +316,65 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         end
     end
 
+    -- A Treasure floor ends once the allowed picks are used: open the first unopened chests one by one
+    -- (observed: TreasureBegin {TotalChests = 6, PicksRemaining = 3, OpenedChests}; TreasureOpenChest({ChestIndex})).
+    local function onTreasureBegin(info: any)
+        if not self.active or type(info) ~= "table" then
+            return
+        end
+        if getSettings().get("openTreasure") ~= true then
+            setStatus("Treasure floor: Open Treasure Chests is off")
+            return
+        end
+        if not deps.isAdventure() then
+            setStatus("Treasure floor: not recognized as an Adventure match")
+            return
+        end
+        setStatus("Treasure floor: opening chests")
+        local total = if type(info.TotalChests) == "number" then info.TotalChests else 6
+        local picks = if type(info.PicksRemaining) == "number" then info.PicksRemaining else 3
+        local opened: { [number]: boolean } = {}
+        if type(info.OpenedChests) == "table" then
+            for key, value in info.OpenedChests do
+                if type(key) == "number" and value then
+                    opened[key] = true
+                end
+                if type(value) == "number" then
+                    opened[value] = true
+                end
+            end
+        end
+        local order: { number } = {}
+        for index = 1, total do
+            if not opened[index] and #order < picks then
+                table.insert(order, index)
+            end
+        end
+        local taskApi: any = deps.task
+        for position, chest in order do
+            local function open()
+                local events: any = deps.events
+                local entry = if events then events.TreasureOpenChest else nil
+                if not self.active or type(entry) ~= "table" or type(entry.Fire) ~= "function" then
+                    return
+                end
+                local fireFn: any = entry.Fire
+                if pcall(fireFn, { ChestIndex = chest }) then
+                    self.chests += 1
+                    setStatus("Opened treasure chest " .. tostring(chest))
+                end
+            end
+            if type(taskApi) == "table" and type(taskApi.delay) == "function" then
+                (taskApi.delay :: any)(
+                    PICK_DELAY_SECONDS * position + CHEST_GAP_SECONDS * (position - 1),
+                    open
+                )
+            else
+                open()
+            end
+        end
+    end
+
     --- Starts listening for offers; returns whether the match events exist (false in the lobby). Safe to repeat.
     function self.start(): boolean
         if self.active then
@@ -336,8 +396,11 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         if type(undo) == "function" then
             table.insert(disconnects, undo)
         end
-        local extras: { [string]: any } =
-            { CardPickCharacterOffer = onCharacterOffer, ShopOpened = onShopOpened }
+        local extras: { [string]: any } = {
+            CardPickCharacterOffer = onCharacterOffer,
+            ShopOpened = onShopOpened,
+            TreasureBegin = onTreasureBegin,
+        }
         for eventName, handler in extras do
             local extra = events[eventName]
             if type(extra) == "table" and type(extra.On) == "function" then
