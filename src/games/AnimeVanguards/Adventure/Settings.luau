@@ -43,7 +43,7 @@ local FIELDS: { [string]: any } = {
     buyBasicCards = { kind = "set", list = "basicCards" },
     buyStarterCards = { kind = "set", list = "powers" },
     buyTraits = { kind = "set", list = "traits" },
-    buyMemoria = { kind = "set", list = "memoriaRarities" },
+    buyMemoria = { kind = "set", list = "memoriaNames" },
     autoCashOut = { kind = "bool", default = false },
     cashOutFloor = { kind = "number", range = ADVENTURE.cashOutFloor },
     autoStartNewRun = { kind = "bool", default = false },

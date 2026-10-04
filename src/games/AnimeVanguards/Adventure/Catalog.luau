@@ -1,7 +1,7 @@
 --!strict
 --[[
 Purpose: Build the Odyssey: Adventure option lists (characters, powers, basic cards, room kinds, traits, memoria
-         rarities) from the game's replicated data, falling back to the observed lists in Config
+         names) from the game's replicated data, falling back to the observed lists in Config
 Input: Untrusted exports of CharactersData, PowersData, BasicCardPool and OdysseyTraitPool (any may be nil)
 Output: A catalog of string lists; every list is non-empty
 Dependencies: Config
@@ -23,7 +23,7 @@ export type Data = {
     basicCardRarity: { [string]: string },
     roomKinds: { string },
     traits: { string },
-    memoriaRarities: { string },
+    memoriaNames: { string },
 }
 
 local function validName(value: any): boolean
@@ -140,6 +140,40 @@ local function readTraits(module: any): { string }
     return result
 end
 
+-- Memoria names from MemoriasData.GetMemoriaNames, highest rarity first (GetMemoriaRarity), then alphabetical.
+local MEMORIA_ORDER =
+    { Vanguard = 1, Exclusive = 2, Secret = 3, Mythic = 4, Legendary = 5, Epic = 6, Rare = 7 }
+local function readMemoria(module: any): { string }
+    local result: { string } = {}
+    if type(module) ~= "table" or type(module.GetMemoriaNames) ~= "function" then
+        return result
+    end
+    local ok, names = pcall(module.GetMemoriaNames)
+    if not ok or type(names) ~= "table" then
+        return result
+    end
+    local order: { [string]: number } = {}
+    for _, entry in ipairs(names) do
+        local name: any = entry
+        if validName(name) and not table.find(result, name) then
+            table.insert(result, name)
+            local rank = 99
+            if type(module.GetMemoriaRarity) == "function" then
+                local okRarity, rarity = pcall(module.GetMemoriaRarity, name)
+                rank = if okRarity and type(rarity) == "string" then MEMORIA_ORDER[rarity] or 98 else 99
+            end
+            order[name] = rank
+        end
+    end
+    table.sort(result, function(a: string, b: string): boolean
+        if order[a] ~= order[b] then
+            return order[a] < order[b]
+        end
+        return a < b
+    end)
+    return result
+end
+
 local function pick(live: { string }, fallback: any): { string }
     return if #live > 0 then live else copy(fallback)
 end
@@ -191,7 +225,7 @@ function Catalog.fromModules(modules: any): Data
         basicCardRarity = rarityOf,
         roomKinds = copy(ADVENTURE.roomKinds),
         traits = pick(readTraits(m.traits), ADVENTURE.traits),
-        memoriaRarities = copy(ADVENTURE.memoriaRarities),
+        memoriaNames = pick(readMemoria(m.memorias), ADVENTURE.memoriaNames),
     }
     return data
 end
@@ -223,6 +257,7 @@ function Catalog.read(): Data
             powers = paths.adventurePowers,
             basicCards = paths.adventureBasicCards,
             traits = paths.odysseyTraitPool,
+            memorias = paths.memoriasData,
         }
         for key, path in wanted do
             local object = resolve(rep, path)

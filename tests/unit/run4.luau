@@ -904,7 +904,7 @@ test("Stitches Shop buys only what is selected, by kind and priority, within the
         basic = set({ "Ambush", "Double Tap", "Serrated Tips" }),
         starters = {},
         traits = set({ "Swift III", "Deadeye" }),
-        memoria = set({ "Mythic" }),
+        memoria = set({ "Scrap Metal Master" }),
         character = "Iscanur (Pride)",
         rank = { Ambush = 5, ["Double Tap"] = 9, ["Serrated Tips"] = 1 },
     }
@@ -1032,7 +1032,7 @@ test("Adventure runtime buys the selected shop items, then leaves the shop", fun
     settings.set("autoStitchesShop", true)
     settings.set("buyBasicCards", { "Ambush", "Double Tap" })
     settings.set("buyTraits", { "Deadeye" })
-    settings.set("buyMemoria", { "Mythic" })
+    settings.set("buyMemoria", { "Scrap Metal Master" })
     runtime.status = "x"
     box.opened = box.opened
     opened({ Stock = liveStock(), Budget = 4979, Spent = 0 })

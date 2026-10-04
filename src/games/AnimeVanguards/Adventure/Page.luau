@@ -326,8 +326,8 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?, joi
         settings,
         "buyMemoria",
         "Buy Unit Memoria",
-        "Memoria rarities to buy for your first-slot unit.",
-        catalog.memoriaRarities
+        "Memoria to buy for your first-slot unit, by name (highest rarity first).",
+        catalog.memoriaNames
     )
 
     local completion = Style.section(tab, "Run Completion", "flag", false)

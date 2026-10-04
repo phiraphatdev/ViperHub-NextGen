@@ -52,7 +52,7 @@ test("Adventure catalog falls back to the observed config lists", function()
     )
     assert(catalog.basicCards[33] == "Military Training")
     assert(table.concat(catalog.roomKinds, ",") == "Battle,Elite,Shop,Treasure,Boss")
-    assert(catalog.traits[1] == "Vigor I" and #catalog.memoriaRarities == 6)
+    assert(catalog.traits[1] == "Vigor I" and #catalog.memoriaNames >= 60)
 end)
 
 test("Adventure catalog reads live-shaped game modules and ignores malformed entries", function()
@@ -311,7 +311,7 @@ test("Adventure page mounts the requested layout and binds every control", funct
     controls["Auto Join Odyssey Adventure"].options.Callback(true)
     controls["Select Character"].options.Callback("Luce (Hacker)")
     controls["Cash out at floor"].options.Callback(45)
-    controls["Buy Unit Memoria"].options.Callback({ "Secret", "Vanguard" })
+    controls["Buy Unit Memoria"].options.Callback({ "Scrap Metal Master", "Range Boost I" })
     assert(settings.get("autoJoin") and settings.get("character") == "Luce (Hacker)")
     assert(settings.get("cashOutFloor") == 45 and #settings.get("buyMemoria") == 2)
 

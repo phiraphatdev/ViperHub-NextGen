@@ -104,7 +104,7 @@ end
 
 --- Chooses what to buy from a Stitches Shop stock ({Index, Cost, Purchased, Kind, ...}, observed live). Wants:
 --- basic (set of basic card names), starters (set of power names), traits (set of trait labels), memoria (set of
---- rarities), character (the run's character; a Memoria needs that unit's GUID, found on a trait offered for it, else
+--- names), character (the run's character; a Memoria needs that unit's GUID, found on a trait offered for it, else
 --- fallbackGuid, a placed unit of that character) and
 --- rank (basic card name -> priority number). Items are bought by kind (powers, basic cards by rank, traits, Memoria
 --- by rarity) while the budget lasts. Returns { {index, cost, name, guid?} } in buying order.
@@ -141,10 +141,11 @@ function Choice.shopPurchases(stock: any, budget: number, wants: any): { any }
                 end
             elseif item.Kind == "Memoria" and type(item.MemoriaOption) == "table" then
                 local rarity = item.MemoriaOption.Rarity
-                if type(rarity) == "string" and wants.memoria[rarity] and mainGuid then
+                local memoriaName = item.MemoriaOption.Name
+                if type(memoriaName) == "string" and wants.memoria[memoriaName] and mainGuid then
                     entry = {
                         name = tostring(item.MemoriaOption.Name),
-                        rank = MEMORIA_RARITY[rarity] or 0,
+                        rank = if type(rarity) == "string" then MEMORIA_RARITY[rarity] or 0 else 0,
                         guid = mainGuid,
                     }
                 end

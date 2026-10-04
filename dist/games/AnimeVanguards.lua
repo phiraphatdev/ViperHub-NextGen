@@ -110,6 +110,7 @@ do
                     adventurePowers = 'Modules.Data.Odyssey.Adventure.PowersData',
                     adventureBasicCards = 'Modules.Data.Odyssey.Adventure.BasicCardPool',
                     odysseyTraitPool = 'Modules.Data.OdysseyTraitPool',
+                    memoriasData = 'Modules.Data.MemoriasData',
                 }),
                 modeLabels = table.freeze({
                     Story = 'Story',
@@ -417,13 +418,67 @@ do
                         'Solar',
                         'Prodigy',
                     }),
-                    memoriaRarities = table.freeze({
-                        'Rare',
-                        'Epic',
-                        'Legendary',
-                        'Mythic',
-                        'Secret',
-                        'Vanguard',
+                    memoriaNames = table.freeze({
+                        'Trust of Others',
+                        'Enthusiastic Walks',
+                        'Sword Priestess',
+                        'Unlikely Doctor',
+                        'Messenger of Destruction',
+                        'Tough Bunny',
+                        'Death, Resurrected',
+                        'Power Surge',
+                        "Artist's Blessing",
+                        'Peak of Shinobi',
+                        "Journey's End",
+                        "It's Going Down Now",
+                        'King of the Trash',
+                        'Gaze of the Strongest',
+                        'The True Savior',
+                        "A Father's Sacrifice",
+                        'Sinful Priest',
+                        'By the Book',
+                        'Princess Rosa',
+                        'Along Came a Spider',
+                        'Restricted By the Heavens',
+                        'Bow to Your God',
+                        'Battle of the Strongest',
+                        'Life Will Change',
+                        'Revenge of the Cursed One',
+                        "Ice Queen's Rest",
+                        'Ultimate Deceiver',
+                        'Purveyor of Peace',
+                        "All I've Got",
+                        'Scrap Metal Master',
+                        'Goddess of Spring',
+                        'The Beast King',
+                        "Water Goddess's Cheer",
+                        "Armored Mage's Day Off",
+                        'A Beast Plays',
+                        'Range Boost I',
+                        'Empty Reflections',
+                        'Golden Obsessions',
+                        'Reach Out to the Truth',
+                        'Trauma Turned Strength',
+                        'Frozen Admiral',
+                        'Snip Snip',
+                        'Endless Buffet',
+                        'Anger vs Discipline',
+                        'Late Night Shift',
+                        "Company Captain's Presence",
+                        'Regretful Past',
+                        'Royal Flush',
+                        'POWAHH!!!',
+                        'Shall Know Pain',
+                        'Master of Toads',
+                        'Destroyer of Worlds',
+                        'Lifeforce Absorption',
+                        'Lord of the Fairies',
+                        'Speed Boost I',
+                        'Special Grade',
+                        'Immortal Divine General',
+                        'Damage Boost I',
+                        'Gambling Fanatic',
+                        'Young Entrepreneur',
                     }),
                     rarityColors = table.freeze({
                         Mythic = 'rose',
@@ -6908,6 +6963,60 @@ do
 
                 return result
             end
+
+            local MEMORIA_ORDER = {
+                Vanguard = 1,
+                Exclusive = 2,
+                Secret = 3,
+                Mythic = 4,
+                Legendary = 5,
+                Epic = 6,
+                Rare = 7,
+            }
+
+            local function readMemoria(module)
+                local result = {}
+
+                if type(module) ~= 'table' or type(module.GetMemoriaNames) ~= 'function' then
+                    return result
+                end
+
+                local ok, names = pcall(module.GetMemoriaNames)
+
+                if not ok or type(names) ~= 'table' then
+                    return result
+                end
+
+                local order = {}
+
+                for _, entry in ipairs(names)do
+                    local name = entry
+
+                    if validName(name) and not table.find(result, name) then
+                        table.insert(result, name)
+
+                        local rank = 99
+
+                        if type(module.GetMemoriaRarity) == 'function' then
+                            local okRarity, rarity = pcall(module.GetMemoriaRarity, name)
+
+                            rank = if okRarity and type(rarity) == 'string'then MEMORIA_ORDER[rarity] or 98 else 99
+                        end
+
+                        order[name] = rank
+                    end
+                end
+
+                table.sort(result, function(a, b)
+                    if order[a] ~= order[b] then
+                        return order[a] < order[b]
+                    end
+
+                    return a < b
+                end)
+
+                return result
+            end
             local function pick(live, fallback)
                 return if#live > 0 then live else copy(fallback)
             end
@@ -6966,7 +7075,7 @@ do
                     basicCardRarity = rarityOf,
                     roomKinds = copy(ADVENTURE.roomKinds),
                     traits = pick(readTraits(m.traits), ADVENTURE.traits),
-                    memoriaRarities = copy(ADVENTURE.memoriaRarities),
+                    memoriaNames = pick(readMemoria(m.memorias), ADVENTURE.memoriaNames),
                 }
 
                 return data
@@ -7003,6 +7112,7 @@ do
                         powers = paths.adventurePowers,
                         basicCards = paths.adventureBasicCards,
                         traits = paths.odysseyTraitPool,
+                        memorias = paths.memoriasData,
                     }
 
                     for key, path in wanted do
@@ -7142,7 +7252,7 @@ do
                 },
                 buyMemoria = {
                     kind = 'set',
-                    list = 'memoriaRarities',
+                    list = 'memoriaNames',
                 },
                 autoCashOut = {
                     kind = 'bool',
@@ -7714,7 +7824,8 @@ do
                 multi(shop, settings, 'buyBasicCards', 'Buy Basic Card', 'Basic cards to buy.', catalog.basicCards)
                 multi(shop, settings, 'buyStarterCards', 'Buy Starter Card', 'Power cards to unlock.', catalog.powers)
                 multi(shop, settings, 'buyTraits', 'Buy Unit Trait', 'Traits to buy for a unit without one.', catalog.traits)
-                multi(shop, settings, 'buyMemoria', 'Buy Unit Memoria', 'Memoria rarities to buy for your first-slot unit.', catalog.memoriaRarities)
+                multi(shop, settings, 'buyMemoria', 'Buy Unit Memoria',
+[[Memoria to buy for your first-slot unit, by name (highest rarity first).]], catalog.memoriaNames)
 
                 local completion = Style.section(tab, 'Run Completion', 'flag', false)
 
@@ -8279,11 +8390,12 @@ do
                             end
                         elseif item.Kind == 'Memoria' and type(item.MemoriaOption) == 'table' then
                             local rarity = item.MemoriaOption.Rarity
+                            local memoriaName = item.MemoriaOption.Name
 
-                            if type(rarity) == 'string' and wants.memoria[rarity] and mainGuid then
+                            if type(memoriaName) == 'string' and wants.memoria[memoriaName] and mainGuid then
                                 entry = {
                                     name = tostring(item.MemoriaOption.Name),
-                                    rank = MEMORIA_RARITY[rarity] or 0,
+                                    rank = if type(rarity) == 'string'then MEMORIA_RARITY[rarity] or 0 else 0,
                                     guid = mainGuid,
                                 }
                             end
