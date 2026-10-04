@@ -57,7 +57,7 @@ function Schema.decode(value: unknown): (Config, boolean)
         output.notifications = data.notifications
     end
     output.uiScale = Validation.number(data.uiScale, 0.8, 1.3, Defaults.uiScale)
-    if data.theme == "Dark" then
+    if data.theme == "Dark" or data.theme == "Viper" then
         output.theme = data.theme
     end
     if type(data.toggleKey) == "string" and (KEYS :: { [string]: boolean })[data.toggleKey] then

@@ -18,6 +18,7 @@ local GameAdapter = require("./Game/Adapter")
 local AutoPlayPage = require("./AutoPlay/Page")
 local AutoPlayRuntime = require("./AutoPlay/Runtime")
 local StatusPage = require("./Status/Page")
+local DashboardPage = require("./Dashboard/Page")
 local WebhookPage = require("./Webhook/Page")
 local WebhookRuntime = require("./Webhook/Runtime")
 local MiscPage = require("./Misc/Page")
@@ -31,34 +32,35 @@ local webhook = WebhookRuntime.new()
 local misc = MiscRuntime.new()
 local pages: { Types.PageDefinition } = {
     {
-        title = "Status",
-        icon = "shield-check",
-        description = "Feature health indicators and verification status.",
+        title = "Dashboard",
+        icon = "layout-dashboard",
+        description = "Your player card, live status of every feature and your balances.",
+        group = "Home",
+        iconColor = "primary",
+        home = true,
         render = function(tab: any)
-            StatusPage.mount(tab)
+            DashboardPage.mount(
+                tab,
+                { joiner = joiner, autoPlay = autoPlay, macro = macro, webhook = webhook, misc = misc }
+            )
         end,
     },
-    { title = "Lobby", icon = "house", description = "Navigation only; no lobby actions yet." },
     {
         title = "Joiner",
         icon = "users",
-        description = "Stage and challenge joining with confirmed-lobby Auto Start.",
+        description = "Auto join stages, challenges, Rift, bounties and Worldline by priority.",
+        group = "Farming",
+        iconColor = "primary",
         render = function(tab: any)
             JoinerPage.mount(tab, nil, joiner)
         end,
     },
     {
-        title = "Game",
-        icon = "gamepad-2",
-        description = "In-game settings and gameplay automation.",
-        render = function(tab: any)
-            GamePage.mount(tab, gameSettings)
-        end,
-    },
-    {
         title = "Auto Play",
         icon = "play",
-        description = "Native in-game Auto Play and automatic vote start.",
+        description = "Native in-game Auto Play, vote start and stage preset rules.",
+        group = "Farming",
+        iconColor = "blue",
         render = function(tab: any)
             AutoPlayPage.mount(tab, autoPlay, macro)
         end,
@@ -67,24 +69,50 @@ local pages: { Types.PageDefinition } = {
         title = "Macro",
         icon = "list",
         description = "Record and replay match actions.",
+        group = "Farming",
+        iconColor = "violet",
         render = function(tab: any, window: any?)
             MacroPage.mount(tab, macro, window, autoPlay)
         end,
     },
     {
+        title = "Game",
+        icon = "gamepad-2",
+        description = "Auto Replay, Auto Next, wave skip and Auto Back to Lobby.",
+        group = "Farming",
+        iconColor = "orange",
+        render = function(tab: any)
+            GamePage.mount(tab, gameSettings)
+        end,
+    },
+    {
         title = "Webhook",
         icon = "bell",
-        description = "Discord notifications for units, matches, joiner and bounty events.",
+        description = "Discord notifications for matches, units, joiner and bounty events.",
+        group = "Tools",
+        iconColor = "gold",
         render = function(tab: any)
             WebhookPage.mount(tab, webhook)
         end,
     },
     {
         title = "Misc",
-        icon = "ellipsis",
+        icon = "shield-check",
         description = "Anti-AFK, Auto Reconnect and re-running the hub after a teleport.",
+        group = "Tools",
+        iconColor = "rose",
         render = function(tab: any)
             MiscPage.mount(tab, misc)
+        end,
+    },
+    {
+        title = "Status",
+        icon = "activity",
+        description = "Live checks of the game modules the hub depends on.",
+        group = "System",
+        iconColor = "slate",
+        render = function(tab: any)
+            StatusPage.mount(tab)
         end,
     },
 }

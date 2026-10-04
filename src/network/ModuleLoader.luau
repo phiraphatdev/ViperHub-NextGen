@@ -41,6 +41,9 @@ function ModuleLoader.isGame(value: any, id: string, version: string): boolean
                 or #page.description > 200
                 or (page.icon ~= nil and (type(page.icon) ~= "string" or #page.icon > 40))
                 or (page.render ~= nil and type(page.render) ~= "function")
+                or (page.group ~= nil and (type(page.group) ~= "string" or #page.group == 0 or #page.group > 24))
+                or (page.iconColor ~= nil and (type(page.iconColor) ~= "string" or #page.iconColor > 16))
+                or (page.home ~= nil and type(page.home) ~= "boolean")
             then
                 return false
             end

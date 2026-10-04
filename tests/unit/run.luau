@@ -146,7 +146,7 @@ test("config rejects future schema and sanitizes fields", function()
     local _, valid = Schema.decode({ schemaVersion = 2 })
     assert(not valid)
     local c = Schema.decode({ schemaVersion = 1, uiScale = 99, toggleKey = "../file", theme = false })
-    assert(c.uiScale == 1.3 and c.toggleKey == "RightShift" and c.theme == "Dark")
+    assert(c.uiScale == 1.3 and c.toggleKey == "RightShift" and c.theme == "Viper")
     assert(Schema.decode(nil).uiScale == 1)
     for _, key in
         { "RightShift", "RightControl", "LeftControl", "Insert", "Delete", "Home", "End", "F1", "F4", "F12" }
@@ -395,7 +395,11 @@ end)
 test("game-owned pages are optional and validated", function()
     assert(ModuleLoader.isGame(ExpeditionsEntry, "AnimeExpeditions", "0.2.2"))
     assert(ModuleLoader.isGame(VanguardsEntry, "AnimeVanguards", "0.2.2"))
-    assert(#VanguardsEntry.pages == 8 and VanguardsEntry.pages[1].title == "Status")
+    assert(
+        #VanguardsEntry.pages == 8
+            and VanguardsEntry.pages[1].title == "Dashboard"
+            and VanguardsEntry.pages[1].home == true
+    )
     local invalid: any = {
         metadata = VanguardsEntry.metadata,
         start = VanguardsEntry.start,

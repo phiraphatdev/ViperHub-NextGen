@@ -18,9 +18,10 @@ local function applyToggleKey(window: any, store: any, keyCodes: any, value: any
     window:SetToggleKey(keyCodes[selected])
 end
 --- Mounts controls; valid changes autosave when the storage backend is available.
-function Settings.mount(window: any, store: any, library: any, keyCodes: any, context: any?)
+--- tabHost (optional) is the sidebar section that receives the tab; window still owns the toggle key.
+function Settings.mount(window: any, store: any, library: any, keyCodes: any, context: any?, tabHost: any?)
     local config = store.get()
-    local tab = window:Tab({ Title = "Settings", Icon = "settings" })
+    local tab = (tabHost or window):Tab({ Title = "Settings", Icon = "settings", ShowTabTitle = true })
     local controls: { [string]: any } = {}
     window.ViperControls = controls
     tab:Paragraph({
@@ -49,10 +50,14 @@ function Settings.mount(window: any, store: any, library: any, keyCodes: any, co
     })
     controls.theme = tab:Dropdown({
         Title = "Theme",
-        Values = { "Dark" },
+        Desc = "Viper is the ViperHub emerald theme; Dark is the plain library theme.",
+        Values = { "Viper", "Dark" },
         Value = config.theme,
         Callback = function(value: string)
             store.update("theme", value)
+            if type(library) == "table" and type(library.SetTheme) == "function" then
+                pcall(library.SetTheme, library, store.get().theme)
+            end
         end,
     })
     window:SetToggleKey(keyCodes[config.toggleKey])

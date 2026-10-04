@@ -556,7 +556,7 @@ do
                 schemaVersion = 1,
                 notifications = true,
                 uiScale = 1,
-                theme = 'Dark',
+                theme = 'Viper',
                 toggleKey = 'RightShift',
             })
         end
@@ -625,7 +625,7 @@ do
 
                 output.uiScale = Validation.number(data.uiScale, 0.8, 1.3, Defaults.uiScale)
 
-                if data.theme == 'Dark' then
+                if data.theme == 'Dark' or data.theme == 'Viper' then
                     output.theme = data.theme
                 end
                 if type(data.toggleKey) == 'string' and (KEYS)[data.toggleKey] then
@@ -1041,7 +1041,7 @@ do
                     end
 
                     for _, page in value.pages do
-                        if type(page) ~= 'table' or type(page.title) ~= 'string' or #page.title == 0 or #page.title > 40 or type(page.description) ~= 'string' or #page.description > 200 or (page.icon ~= nil and (type(page.icon) ~= 'string' or #page.icon > 40)) or (page.render ~= nil and type(page.render) ~= 'function') then
+                        if type(page) ~= 'table' or type(page.title) ~= 'string' or #page.title == 0 or #page.title > 40 or type(page.description) ~= 'string' or #page.description > 200 or (page.icon ~= nil and (type(page.icon) ~= 'string' or #page.icon > 40)) or (page.render ~= nil and type(page.render) ~= 'function') or (page.group ~= nil and (type(page.group) ~= 'string' or #page.group == 0 or #page.group > 24)) or (page.iconColor ~= nil and (type(page.iconColor) ~= 'string' or #page.iconColor > 16)) or (page.home ~= nil and type(page.home) ~= 'boolean') then
                             return false
                         end
                     end
@@ -1068,10 +1068,120 @@ do
     end
     do
         local function __modImpl()
+            local Theme = {}
+
+            Theme.DEFAULT = 'Viper'
+            Theme.NAMES = table.freeze({
+                'Viper',
+                'Dark',
+            })
+            Theme.colors = table.freeze({
+                primary = '#10b981',
+                secondary = '#2dd4bf',
+                gold = '#fbbf24',
+                blue = '#38bdf8',
+                violet = '#a78bfa',
+                rose = '#fb7185',
+                orange = '#fb923c',
+                slate = '#94a3b8',
+            })
+
+            function Theme.register(library, preferred)
+                local wanted = if preferred and table.find(Theme.NAMES, preferred)then preferred else Theme.DEFAULT
+
+                if wanted ~= 'Viper' then
+                    return wanted
+                end
+
+                local env = getfenv()
+                local color3 = env.Color3
+
+                if type(library) ~= 'table' or type(library.AddTheme) ~= 'function' or type(library.Gradient) ~= 'function' or color3 == nil then
+                    return 'Dark'
+                end
+
+                local lib = library
+                local ok = pcall(function()
+                    local function hex(value)
+                        return color3.fromHex(value)
+                    end
+                    local function gradient(from, to, rotation)
+                        return (lib.Gradient)(lib, {
+                            ['0'] = {
+                                Color = from,
+                                Transparency = 0,
+                            },
+                            ['100'] = {
+                                Color = to,
+                                Transparency = 0,
+                            },
+                        }, {Rotation = rotation})
+                    end
+
+                    (lib.AddTheme)(lib, {
+                        Name = 'Viper',
+                        Accent = hex('#0b3b2e'),
+                        Dialog = hex('#071a15'),
+                        Outline = hex('#34d399'),
+                        Text = hex('#ecfdf5'),
+                        Placeholder = hex('#6ee7b7'),
+                        Background = gradient('#030d0b', '#0a231d', 90),
+                        Button = gradient('#059669', '#14b8a6', 45),
+                        Icon = hex('#34d399'),
+                        Toggle = gradient('#10b981', '#2dd4bf', 45),
+                        Slider = hex('#10b981'),
+                        Checkbox = gradient('#10b981', '#2dd4bf', 45),
+                        Primary = hex('#10b981'),
+                        SliderIcon = hex('#6ee7b7'),
+                        PanelBackground = hex('#FFFFFF'),
+                        PanelBackgroundTransparency = 0.96,
+                        LabelBackground = hex('#000000'),
+                        LabelBackgroundTransparency = 0.78,
+                        ElementBackground = hex('#0f2a23'),
+                        ElementBackgroundTransparency = 0,
+                    })
+                end)
+
+                return if ok then'Viper'else'Dark'
+            end
+            function Theme.color(value)
+                local env = getfenv()
+                local color3 = env.Color3
+
+                if color3 == nil then
+                    return nil
+                end
+
+                local text = (Theme.colors)[value] or value
+                local ok, result = pcall(color3.fromHex, text)
+
+                return if ok then result else nil
+            end
+
+            return Theme
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.v()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.v
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.v = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
             local Types = __DARKLUA_BUNDLE_MODULES.i()
+            local Theme = __DARKLUA_BUNDLE_MODULES.v()
             local ENV = getfenv()
-            local WINDOW_WIDTH = 600
-            local WINDOW_HEIGHT = 400
+            local WINDOW_WIDTH = 680
+            local WINDOW_HEIGHT = 460
+            local SIDEBAR_WIDTH = 210
             local WindUIAdapter = {}
 
             function WindUIAdapter.own(library, context)
@@ -1154,19 +1264,30 @@ do
             )
                 tagLayers(library, windowTags)
 
+                local theme = Theme.register(library, config.theme)
                 local window = (library.CreateWindow)(library, {
                     Title = 'ViperHub NextGen',
                     Author = author or 'ViperHub NextGen',
                     Folder = 'ViperHubNextGen',
-                    Theme = 'Dark',
+                    Icon = 'zap',
+                    IconThemed = true,
+                    Theme = theme,
                     NewElements = false,
                     Acrylic = false,
                     Size = if ENV.UDim2 then(ENV.UDim2).fromOffset(WINDOW_WIDTH, WINDOW_HEIGHT)else nil,
+                    SideBarWidth = SIDEBAR_WIDTH,
+                    ShadowTransparency = 0.45,
+                    User = {
+                        Enabled = true,
+                        Anonymous = false,
+                    },
                     AutoScale = false,
                     OpenButton = {
                         Title = 'ViperHub',
+                        Icon = 'zap',
                         Enabled = true,
                         OnlyMobile = false,
+                        Color = if ENV.ColorSequence and Theme.color('primary')then(ENV.ColorSequence).new(Theme.color('primary'), Theme.color('secondary'))else nil,
                     },
                 })
                 local BASE_DISPLAY_ORDER = 100
@@ -1210,14 +1331,14 @@ do
             return WindUIAdapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.v()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.v
+        function __DARKLUA_BUNDLE_MODULES.w()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.w
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.v = v
+                __DARKLUA_BUNDLE_MODULES.cache.w = v
             end
 
             return v.c
@@ -1230,31 +1351,35 @@ do
             function Overview.mount(window, metadata)
                 local tab = window:Tab({
                     Title = 'Overview',
-                    Icon = 'info',
+                    Icon = 'house',
+                    ShowTabTitle = true,
                 })
 
                 tab:Paragraph({
                     Title = metadata.name,
-                    Desc =
-[[Game detected. Features are in the tabs on the left (Joiner, Game, Auto Play, Macro, Webhook).]],
+                    Desc = 'Game detected. Features are in the tabs on the left.',
+                    Image = 'gamepad-2',
+                    ImageSize = 26,
                 })
                 tab:Paragraph({
                     Title = 'Module ' .. metadata.version,
                     Desc = 'Last updated: ' .. metadata.lastUpdated,
+                    Image = 'zap',
+                    ImageSize = 22,
                 })
             end
 
             return Overview
         end
 
-        function __DARKLUA_BUNDLE_MODULES.w()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.w
+        function __DARKLUA_BUNDLE_MODULES.x()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.x
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.w = v
+                __DARKLUA_BUNDLE_MODULES.cache.x = v
             end
 
             return v.c
@@ -1285,11 +1410,19 @@ do
                 window:SetToggleKey(keyCodes[selected])
             end
 
-            function Settings.mount(window, store, library, keyCodes, context)
+            function Settings.mount(
+                window,
+                store,
+                library,
+                keyCodes,
+                context,
+                tabHost
+            )
                 local config = store.get()
-                local tab = window:Tab({
+                local tab = (tabHost or window):Tab({
                     Title = 'Settings',
                     Icon = 'settings',
+                    ShowTabTitle = true,
                 })
                 local controls = {}
 
@@ -1326,12 +1459,19 @@ do
                 })
                 controls.theme = tab:Dropdown({
                     Title = 'Theme',
+                    Desc =
+[[Viper is the ViperHub emerald theme; Dark is the plain library theme.]],
                     Values = {
+                        'Viper',
                         'Dark',
                     },
                     Value = config.theme,
                     Callback = function(value)
                         store.update('theme', value)
+
+                        if type(library) == 'table' and type(library.SetTheme) == 'function' then
+                            pcall(library.SetTheme, library, store.get().theme)
+                        end
                     end,
                 })
 
@@ -1390,14 +1530,14 @@ do
             return Settings
         end
 
-        function __DARKLUA_BUNDLE_MODULES.x()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.x
+        function __DARKLUA_BUNDLE_MODULES.y()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.y
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.x = v
+                __DARKLUA_BUNDLE_MODULES.cache.y = v
             end
 
             return v.c
@@ -1411,6 +1551,7 @@ do
                 local tab = window:Tab({
                     Title = 'Diagnostics',
                     Icon = 'activity',
+                    ShowTabTitle = true,
                 })
                 local paragraph = tab:Paragraph({
                     Title = 'Status codes',
@@ -1432,14 +1573,14 @@ do
             return Diagnostics
         end
 
-        function __DARKLUA_BUNDLE_MODULES.y()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.y
+        function __DARKLUA_BUNDLE_MODULES.z()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.z
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.y = v
+                __DARKLUA_BUNDLE_MODULES.cache.z = v
             end
 
             return v.c
@@ -1447,11 +1588,49 @@ do
     end
     do
         local function __modImpl()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.v()
-            local Overview = __DARKLUA_BUNDLE_MODULES.w()
-            local Settings = __DARKLUA_BUNDLE_MODULES.x()
-            local Diagnostics = __DARKLUA_BUNDLE_MODULES.y()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.w()
+            local Theme = __DARKLUA_BUNDLE_MODULES.v()
+            local Overview = __DARKLUA_BUNDLE_MODULES.x()
+            local Settings = __DARKLUA_BUNDLE_MODULES.y()
+            local Diagnostics = __DARKLUA_BUNDLE_MODULES.z()
             local App = {}
+            local HOME_GROUP = 'Home'
+            local SYSTEM_GROUP = 'System'
+
+            local function mountPage(host, window, context, page)
+                local tab = host:Tab({
+                    Title = page.title,
+                    Icon = page.icon or 'layout-grid',
+                    IconColor = if page.iconColor then Theme.color(page.iconColor)else nil,
+                    Desc = page.description,
+                    ShowTabTitle = true,
+                })
+
+                if page.render then
+                    local render = page.render
+                    local ok = pcall(render, tab, window)
+
+                    if not ok then
+                        local log = context.log
+
+                        if type(log) == 'function' then
+                            (log)('PAGE_RENDER_FAILED')
+                        end
+
+                        pcall(function()
+                            tab:Paragraph({
+                                Title = page.title,
+                                Desc = 'This page could not be shown.',
+                            })
+                        end)
+                    end
+                else
+                    tab:Paragraph({
+                        Title = page.title,
+                        Desc = page.description,
+                    })
+                end
+            end
 
             function App.mount(
                 library,
@@ -1465,45 +1644,56 @@ do
             )
                 local window = Adapter.create(library, context, store.get(), windowTags, tostring(metadata.name) .. ' \u{2022} v' .. tostring(metadata.version))
 
-                Overview.mount(window, metadata)
+                if type(window.Tag) == 'function' then
+                    pcall(window.Tag, window, {
+                        Title = tostring(metadata.name),
+                        Icon = 'gamepad-2',
+                        Color = Theme.color('primary'),
+                    })
+                    pcall(window.Tag, window, {
+                        Title = 'v' .. tostring(metadata.version),
+                        Icon = 'zap',
+                        Color = Theme.color('gold'),
+                    })
+                end
 
-                if pages then
-                    for _, page in pages do
-                        local tab = window:Tab({
-                            Title = page.title,
-                            Icon = page.icon or 'layout-grid',
+                local sections = {}
+
+                local function host(group)
+                    if not group or type(window.Section) ~= 'function' then
+                        return window
+                    end
+                    if not sections[group] then
+                        local ok, section = pcall(window.Section, window, {
+                            Title = group,
+                            Opened = true,
                         })
 
-                        if page.render then
-                            local render = page.render
-                            local ok = pcall(render, tab, window)
+                        sections[group] = if ok and section then section else window
+                    end
 
-                            if not ok then
-                                local log = context.log
+                    return sections[group]
+                end
 
-                                if type(log) == 'function' then
-                                    (log)('PAGE_RENDER_FAILED')
-                                end
+                local hasHome = false
 
-                                pcall(function()
-                                    tab:Paragraph({
-                                        Title = page.title,
-                                        Desc = 'This page could not be shown.',
-                                    })
-                                end)
-                            end
-                        else
-                            tab:Paragraph({
-                                Title = page.title,
-                                Desc = page.description,
-                            })
-                        end
+                for _, page in pages or {}do
+                    if page.home == true then
+                        hasHome = true
                     end
                 end
 
-                Settings.mount(window, store, library, keyCodes, context)
+                if not hasHome then
+                    Overview.mount(host(HOME_GROUP), metadata)
+                end
 
-                local refreshDiagnostics = Diagnostics.mount(window, buffer)
+                for _, page in pages or {}do
+                    mountPage(host(page.group or (if page.home then HOME_GROUP else nil)), window, context, page)
+                end
+
+                Settings.mount(window, store, library, keyCodes, context, host(SYSTEM_GROUP))
+
+                local refreshDiagnostics = Diagnostics.mount(host(SYSTEM_GROUP), buffer)
 
                 window:SelectTab(1)
 
@@ -1513,14 +1703,14 @@ do
             return App
         end
 
-        function __DARKLUA_BUNDLE_MODULES.z()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.z
+        function __DARKLUA_BUNDLE_MODULES.A()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.A
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.z = v
+                __DARKLUA_BUNDLE_MODULES.cache.A = v
             end
 
             return v.c
@@ -1539,8 +1729,8 @@ local ManifestClient = __DARKLUA_BUNDLE_MODULES.t()
 local ModuleLoader = __DARKLUA_BUNDLE_MODULES.u()
 local Version = __DARKLUA_BUNDLE_MODULES.r()
 local Validation = __DARKLUA_BUNDLE_MODULES.e()
-local App = __DARKLUA_BUNDLE_MODULES.z()
-local UIAdapter = __DARKLUA_BUNDLE_MODULES.v()
+local App = __DARKLUA_BUNDLE_MODULES.A()
+local UIAdapter = __DARKLUA_BUNDLE_MODULES.w()
 local LOADER_VERSION = '0.2.2'
 local TIMEOUT_SECONDS = 15
 local NOTIFY_RETRY_SECONDS = 0.2

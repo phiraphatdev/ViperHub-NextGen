@@ -10287,6 +10287,183 @@ do
     end
     do
         local function __modImpl()
+            local Style = __DARKLUA_BUNDLE_MODULES.d()
+            local config = __DARKLUA_BUNDLE_MODULES.c()
+            local metadata = __DARKLUA_BUNDLE_MODULES.b()
+            local Page = {}
+            local REFRESH_SECONDS = 2
+            local STARTUP_WAIT_TICKS = 60
+
+            local function setDesc(card, text)
+                if card and type(card.SetDesc) == 'function' then
+                    pcall(card.SetDesc, card, text)
+                end
+            end
+            local function commas(value)
+                local text = tostring(math.floor(value + 0.5))
+                local out = text
+
+                while true do
+                    local replaced, count = string.gsub(out, '^(-?%d+)(%d%d%d)', '%1,%2')
+
+                    out = replaced
+
+                    if count == 0 then
+                        break
+                    end
+                end
+
+                return out
+            end
+
+            function Page.mount(tab, runtimes)
+                local env = getfenv()
+                local gameObject = env.game
+                local player = gameObject and gameObject:GetService('Players').LocalPlayer
+                local isLobby = gameObject ~= nil and gameObject.PlaceId == metadata.placeIds[1]
+                local level = if player then player:GetAttribute((config).webhook.levelAttribute)else nil
+
+                tab:Paragraph({
+                    Title = if player then'Welcome, ' .. player.DisplayName else'Welcome',
+                    Desc = string.format('@%s%s \u{2022} %s', if player then tostring(player.Name)else'player', if type(level) == 'number'then' \u{2022} Lv. ' .. tostring(math.floor(level))else'', if isLobby then'In the lobby'else'In a match'),
+                    Image = if player then string.format('rbxthumb://type=AvatarHeadShot&id=%d&w=150&h=150', player.UserId)else'user',
+                    ImageSize = 52,
+                })
+
+                local live = Style.section(tab, 'Live Status', 'activity', true)
+                local cards = {}
+                local rows = {
+                    {
+                        key = 'joiner',
+                        title = 'Joiner',
+                        icon = 'users',
+                    },
+                    {
+                        key = 'autoPlay',
+                        title = 'Auto Play',
+                        icon = 'play',
+                    },
+                    {
+                        key = 'macro',
+                        title = 'Macro',
+                        icon = 'list',
+                    },
+                    {
+                        key = 'webhook',
+                        title = 'Webhook',
+                        icon = 'bell',
+                    },
+                    {
+                        key = 'misc',
+                        title = 'Session',
+                        icon = 'shield-check',
+                    },
+                }
+
+                for _, row in rows do
+                    cards[row.key] = live:Paragraph({
+                        Title = row.title,
+                        Desc = '\u{2026}',
+                        Image = row.icon,
+                        ImageSize = 20,
+                    })
+                end
+
+                local wallet = Style.section(tab, 'Balances', 'gem', true)
+                local balanceCards = {}
+
+                for _, currency in (config).webhook.currencies do
+                    balanceCards[currency.key] = wallet:Paragraph({
+                        Title = currency.emoji .. ' ' .. currency.label,
+                        Desc = '\u{2026}',
+                    })
+                end
+
+                local function statusOf(key)
+                    local runtime = runtimes and runtimes[key]
+
+                    if type(runtime) ~= 'table' then
+                        return 'Unavailable'
+                    end
+                    if key == 'webhook' and type(runtime.getStatus) == 'function' then
+                        local ok, text = pcall(runtime.getStatus)
+
+                        return if ok and type(text) == 'string'then text else'Unavailable'
+                    end
+
+                    return if type(runtime.status) == 'string'then runtime.status else'Idle'
+                end
+                local function refresh()
+                    for _, row in rows do
+                        setDesc(cards[row.key], statusOf(row.key))
+                    end
+
+                    if player then
+                        for _, currency in (config).webhook.currencies do
+                            local value = player:GetAttribute(currency.key)
+
+                            setDesc(balanceCards[currency.key], if type(value) == 'number'then commas(value)else'\u{2014}')
+                        end
+                    end
+                end
+
+                pcall(refresh)
+
+                local taskApi = env.task
+
+                if type(taskApi) ~= 'table' or type(taskApi.spawn) ~= 'function' or type(taskApi.wait) ~= 'function' then
+                    return
+                end
+
+                local spawnTask = taskApi.spawn
+                local waitTask = taskApi.wait
+
+                spawnTask(function()
+                    local joiner = runtimes and runtimes.joiner
+                    local mounted = nil
+                    local idle = 0
+
+                    while true do
+                        local current = if type(joiner) == 'table'then joiner.context else nil
+
+                        if mounted == nil then
+                            if current ~= nil and current.alive == true then
+                                mounted = current
+                            else
+                                idle += 1
+
+                                if idle > STARTUP_WAIT_TICKS then
+                                    return
+                                end
+                            end
+                        elseif mounted.alive ~= true or joiner.context ~= mounted then
+                            return
+                        end
+
+                        pcall(refresh)
+                        waitTask(REFRESH_SECONDS)
+                    end
+                end)
+            end
+
+            return Page
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.C()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.C
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.C = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
             local Embed = {}
             local MAX_TITLE = 256
             local MAX_DESCRIPTION = 4000
@@ -10572,14 +10749,14 @@ do
             return Embed
         end
 
-        function __DARKLUA_BUNDLE_MODULES.C()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.C
+        function __DARKLUA_BUNDLE_MODULES.D()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.D
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.C = v
+                __DARKLUA_BUNDLE_MODULES.cache.D = v
             end
 
             return v.c
@@ -10587,7 +10764,7 @@ do
     end
     do
         local function __modImpl()
-            local Embed = __DARKLUA_BUNDLE_MODULES.C()
+            local Embed = __DARKLUA_BUNDLE_MODULES.D()
             local Events = {}
             local GREEN = 0x2ecc71
             local RED = 0xe74c3c
@@ -11014,14 +11191,14 @@ do
             return Events
         end
 
-        function __DARKLUA_BUNDLE_MODULES.D()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.D
+        function __DARKLUA_BUNDLE_MODULES.E()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.E
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.D = v
+                __DARKLUA_BUNDLE_MODULES.cache.E = v
             end
 
             return v.c
@@ -11030,7 +11207,7 @@ do
     do
         local function __modImpl()
             local Style = __DARKLUA_BUNDLE_MODULES.d()
-            local Events = __DARKLUA_BUNDLE_MODULES.D()
+            local Events = __DARKLUA_BUNDLE_MODULES.E()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Page = {}
             local WEBHOOK = (config).webhook
@@ -11198,14 +11375,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.E()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.E
+        function __DARKLUA_BUNDLE_MODULES.F()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.F
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.E = v
+                __DARKLUA_BUNDLE_MODULES.cache.F = v
             end
 
             return v.c
@@ -11421,14 +11598,14 @@ do
             return Sender
         end
 
-        function __DARKLUA_BUNDLE_MODULES.F()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.F
+        function __DARKLUA_BUNDLE_MODULES.G()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.G
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.F = v
+                __DARKLUA_BUNDLE_MODULES.cache.G = v
             end
 
             return v.c
@@ -11532,14 +11709,14 @@ do
             return Session
         end
 
-        function __DARKLUA_BUNDLE_MODULES.G()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.G
+        function __DARKLUA_BUNDLE_MODULES.H()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.H
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.G = v
+                __DARKLUA_BUNDLE_MODULES.cache.H = v
             end
 
             return v.c
@@ -11550,10 +11727,10 @@ do
             local FileStorage = __DARKLUA_BUNDLE_MODULES.k()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local metadata = __DARKLUA_BUNDLE_MODULES.b()
-            local Embed = __DARKLUA_BUNDLE_MODULES.C()
-            local Events = __DARKLUA_BUNDLE_MODULES.D()
-            local Sender = __DARKLUA_BUNDLE_MODULES.F()
-            local Session = __DARKLUA_BUNDLE_MODULES.G()
+            local Embed = __DARKLUA_BUNDLE_MODULES.D()
+            local Events = __DARKLUA_BUNDLE_MODULES.E()
+            local Sender = __DARKLUA_BUNDLE_MODULES.G()
+            local Session = __DARKLUA_BUNDLE_MODULES.H()
             local Runtime = {}
             local STORAGE_KEY = 'AnimeVanguardsWebhook'
             local SCHEMA_VERSION = 1
@@ -12854,14 +13031,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.H()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.H
+        function __DARKLUA_BUNDLE_MODULES.I()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.I
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.H = v
+                __DARKLUA_BUNDLE_MODULES.cache.I = v
             end
 
             return v.c
@@ -12938,14 +13115,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.I()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.I
+        function __DARKLUA_BUNDLE_MODULES.J()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.J
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.I = v
+                __DARKLUA_BUNDLE_MODULES.cache.J = v
             end
 
             return v.c
@@ -13289,14 +13466,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.J()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.J
+        function __DARKLUA_BUNDLE_MODULES.K()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.K
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.J = v
+                __DARKLUA_BUNDLE_MODULES.cache.K = v
             end
 
             return v.c
@@ -13316,10 +13493,11 @@ local GameAdapter = __DARKLUA_BUNDLE_MODULES.w()
 local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.x()
 local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.A()
 local StatusPage = __DARKLUA_BUNDLE_MODULES.B()
-local WebhookPage = __DARKLUA_BUNDLE_MODULES.E()
-local WebhookRuntime = __DARKLUA_BUNDLE_MODULES.H()
-local MiscPage = __DARKLUA_BUNDLE_MODULES.I()
-local MiscRuntime = __DARKLUA_BUNDLE_MODULES.J()
+local DashboardPage = __DARKLUA_BUNDLE_MODULES.C()
+local WebhookPage = __DARKLUA_BUNDLE_MODULES.F()
+local WebhookRuntime = __DARKLUA_BUNDLE_MODULES.I()
+local MiscPage = __DARKLUA_BUNDLE_MODULES.J()
+local MiscRuntime = __DARKLUA_BUNDLE_MODULES.K()
 local active = false
 local joiner = JoinerRuntime.new()
 local macro = MacroRuntime.new()
@@ -13329,39 +13507,41 @@ local webhook = WebhookRuntime.new()
 local misc = MiscRuntime.new()
 local pages = {
     {
-        title = 'Status',
-        icon = 'shield-check',
-        description = 'Feature health indicators and verification status.',
+        title = 'Dashboard',
+        icon = 'layout-dashboard',
+        description =
+[[Your player card, live status of every feature and your balances.]],
+        group = 'Home',
+        iconColor = 'primary',
+        home = true,
         render = function(tab)
-            StatusPage.mount(tab)
+            DashboardPage.mount(tab, {
+                joiner = joiner,
+                autoPlay = autoPlay,
+                macro = macro,
+                webhook = webhook,
+                misc = misc,
+            })
         end,
-    },
-    {
-        title = 'Lobby',
-        icon = 'house',
-        description = 'Navigation only; no lobby actions yet.',
     },
     {
         title = 'Joiner',
         icon = 'users',
         description =
-[[Stage and challenge joining with confirmed-lobby Auto Start.]],
+[[Auto join stages, challenges, Rift, bounties and Worldline by priority.]],
+        group = 'Farming',
+        iconColor = 'primary',
         render = function(tab)
             JoinerPage.mount(tab, nil, joiner)
         end,
     },
     {
-        title = 'Game',
-        icon = 'gamepad-2',
-        description = 'In-game settings and gameplay automation.',
-        render = function(tab)
-            GamePage.mount(tab, gameSettings)
-        end,
-    },
-    {
         title = 'Auto Play',
         icon = 'play',
-        description = 'Native in-game Auto Play and automatic vote start.',
+        description =
+[[Native in-game Auto Play, vote start and stage preset rules.]],
+        group = 'Farming',
+        iconColor = 'blue',
         render = function(tab)
             AutoPlayPage.mount(tab, autoPlay, macro)
         end,
@@ -13370,26 +13550,52 @@ local pages = {
         title = 'Macro',
         icon = 'list',
         description = 'Record and replay match actions.',
+        group = 'Farming',
+        iconColor = 'violet',
         render = function(tab, window)
             MacroPage.mount(tab, macro, window, autoPlay)
+        end,
+    },
+    {
+        title = 'Game',
+        icon = 'gamepad-2',
+        description = 'Auto Replay, Auto Next, wave skip and Auto Back to Lobby.',
+        group = 'Farming',
+        iconColor = 'orange',
+        render = function(tab)
+            GamePage.mount(tab, gameSettings)
         end,
     },
     {
         title = 'Webhook',
         icon = 'bell',
         description =
-[[Discord notifications for units, matches, joiner and bounty events.]],
+[[Discord notifications for matches, units, joiner and bounty events.]],
+        group = 'Tools',
+        iconColor = 'gold',
         render = function(tab)
             WebhookPage.mount(tab, webhook)
         end,
     },
     {
         title = 'Misc',
-        icon = 'ellipsis',
+        icon = 'shield-check',
         description =
 [[Anti-AFK, Auto Reconnect and re-running the hub after a teleport.]],
+        group = 'Tools',
+        iconColor = 'rose',
         render = function(tab)
             MiscPage.mount(tab, misc)
+        end,
+    },
+    {
+        title = 'Status',
+        icon = 'activity',
+        description = 'Live checks of the game modules the hub depends on.',
+        group = 'System',
+        iconColor = 'slate',
+        render = function(tab)
+            StatusPage.mount(tab)
         end,
     },
 }

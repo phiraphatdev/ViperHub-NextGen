@@ -10,6 +10,6 @@ return table.freeze({
     schemaVersion = 1,
     notifications = true,
     uiScale = 1,
-    theme = "Dark",
+    theme = "Viper",
     toggleKey = "RightShift",
 })

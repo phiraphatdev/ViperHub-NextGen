@@ -7,9 +7,11 @@ Dependencies: types/Context
 ]]
 
 local Types = require("../types/Context")
+local Theme = require("./Theme")
 local ENV: { [string]: any } = getfenv()
-local WINDOW_WIDTH = 600
-local WINDOW_HEIGHT = 400
+local WINDOW_WIDTH = 680
+local WINDOW_HEIGHT = 460
+local SIDEBAR_WIDTH = 210
 local WindUIAdapter = {}
 --- Owns library resources for context; registers teardown and returns nothing.
 function WindUIAdapter.own(library: any, context: Types.Context)
@@ -75,16 +77,31 @@ function WindUIAdapter.create(
     author: string?
 ): any
     tagLayers(library, windowTags)
+    local theme = Theme.register(library, config.theme)
     local window = (library.CreateWindow :: any)(library, {
         Title = "ViperHub NextGen",
         Author = author or "ViperHub NextGen",
         Folder = "ViperHubNextGen",
-        Theme = "Dark",
+        Icon = "zap",
+        IconThemed = true,
+        Theme = theme,
         NewElements = false,
         Acrylic = false,
         Size = if ENV.UDim2 then (ENV.UDim2 :: any).fromOffset(WINDOW_WIDTH, WINDOW_HEIGHT) else nil,
+        SideBarWidth = SIDEBAR_WIDTH,
+        ShadowTransparency = 0.45,
+        -- Player card (avatar, display name) at the bottom of the sidebar.
+        User = { Enabled = true, Anonymous = false },
         AutoScale = false,
-        OpenButton = { Title = "ViperHub", Enabled = true, OnlyMobile = false },
+        OpenButton = {
+            Title = "ViperHub",
+            Icon = "zap",
+            Enabled = true,
+            OnlyMobile = false,
+            Color = if ENV.ColorSequence and Theme.color("primary")
+                then (ENV.ColorSequence :: any).new(Theme.color("primary"), Theme.color("secondary"))
+                else nil,
+        },
     })
     local BASE_DISPLAY_ORDER = 100
     if library.ScreenGui then
