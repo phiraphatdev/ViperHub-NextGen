@@ -34,3 +34,24 @@ Observed in a live lobby and an Adventure match; inferences are marked.
 - Basic card offer payload (observed live): `{RerollsRemaining, RerollsUsed, RerollCost, AllowReroll, Options = {[i] = {CardName, Rarity, CurrentLevel, OfferedLevel, Destination = "Active", FocusCost}}}`. `CardName` equals the names in the basic card pool; the pick is the 1-based option index.
 - Still to read from a run: the exact shape of an option (name/rarity fields) for the priority matching, the `UnitRewardEvent` offer payload and the room option fields.
 
+## Odyssey: Adventure: wiki and video notes (read 2026-10-04)
+
+Sources: the Anime Vanguards wiki page "Odyssey: Adventure" (wiki.vanguards.gg/Adventure) and three YouTube guides. Videos are player opinions and some are about older builds (the first and second are about 4 months old); treat them as hints, not facts. Observed in this repo's live tests is marked separately above.
+
+**Wiki (current at reading time)**
+- Floors: Basic 5 waves (50 Odyssey Coins, 250 Gems, an Odyssey Modifier), Elite 15 waves (250 Coins, 1,000 Gems, a Unit Card and a unit offer), Shop (20% chance, UI only, coins; reroll costs 10 and doubles; closing ends the floor), Treasure (5% replaces a Basic floor; no enemies; 6 chests; the floor ends only when all are collected), Boss every 30 floors (5 waves; a Secret/Vanguard Memoria or Secret Familiar pick).
+- Cash out: roughly 250 Gems per Basic and 1,000 per Elite floor, Elemental Shards about 1 per 2 floors, Corruption and Phoenix Shards about 1 per floor; losing forces a cash out with 6 reward pulls fewer. Leaving a run saves it at the highest floor reached.
+- Level Tree: 100 levels over 1,440 floors in total (2,090 Trait Rerolls and 2,100 Memoria Shards at the cap); Ascension 0-10 after level 100.
+- Stitches shop odds and prices, the 14 powers ("Cards") and the 33 basic cards with their caps are listed on the page; the repo's Config lists mirror them.
+
+**Videos**
+- Guide 1 (Thai, Zeroz Kingner, 4 months old): the Taka/Stitches NPC in a floor sells a random basic card for the run's Yen (not Odyssey Coins); skip it once the basic card set is complete. When every basic card is owned the card window no longer appears and the floor pays 50 Coins. After an Elite boss the game offers 3 random units taken from the lobby team: equip only the units you want to be offered. A Treasure floor is not a freeze: collect the chests. Recommended start: buy the starter powers (Slot 2 costs 5,000) before long runs.
+- Guide 2 (Thai, Ragna cards): Adrenaline Shot is cheap and very good; Numbing Agent is good; Limit Break matters for every character; Delicate Flower only suits Song Jinwu (stuns on your units last longer); prefer attack-speed, damage, status and range cards. Teleporting to the lobby keeps the run; losing forces a cash out.
+- Guide 3 (English, Cheff, 2026-05-13, "Reach Floor 1440"): about reaching Floor 1440 with Regnaw (Rage); the transcript could not be read, only the title and description.
+
+**What this means for the automation (proposals, not built)**
+- Auto Choose Unit Reward: highest rarity from `UnitRewardEvent` offers; the offers come from the lobby team, which the user controls.
+- Auto Buy Itches/Taka: only while basic cards are incomplete, with Yen reserved for units.
+- Treasure floors must collect all chests or the run stalls (the wiki says the floor ends only then); this makes chest collection part of any "unattended" run.
+- Cash Out: `SubmitOdysseyProgressionChoice("CashOut")`; rewards depend on cleared floors, so the Cash out at floor setting maps to `AdventureFloorsAdvanced`-style counters (to be confirmed live).
+
