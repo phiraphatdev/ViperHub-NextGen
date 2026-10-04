@@ -472,22 +472,18 @@ function Settings.setCooldown(value: unknown): boolean
     return true
 end
 
---- Moves a known Joiner one place toward the front; returns whether it moved.
-function Settings.moveUp(name: unknown): boolean
-    if type(name) ~= "string" then
+--- Swaps two known Joiners in the priority order; returns whether both exist and differ.
+function Settings.swap(first: unknown, second: unknown): boolean
+    if type(first) ~= "string" or type(second) ~= "string" or first == second then
         return false
     end
-    for index, value in priority do
-        if value == name then
-            if index == 1 then
-                return false
-            end
-            priority[index], priority[index - 1] = priority[index - 1], priority[index]
-            save()
-            return true
-        end
+    local a, b = table.find(priority, first), table.find(priority, second)
+    if not a or not b then
+        return false
     end
-    return false
+    priority[a], priority[b] = priority[b], priority[a]
+    save()
+    return true
 end
 
 --- Restores the default priority only; returns the resulting order.

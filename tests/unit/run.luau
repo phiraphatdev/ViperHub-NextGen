@@ -431,9 +431,9 @@ test("Joiner settings pause cooldown priority and reset", function()
     assert(JoinerSettings.setCooldown(999) and JoinerSettings.get().cooldown == 300)
     assert(JoinerSettings.setCooldown(-5) and JoinerSettings.get().cooldown == 0)
     local before = JoinerSettings.get().priority
-    assert(not JoinerSettings.moveUp("Unknown"))
-    assert(JoinerSettings.moveUp(before[2]))
-    assert(JoinerSettings.get().priority[1] == before[2])
+    assert(not JoinerSettings.swap("Unknown", before[1]) and not JoinerSettings.swap(before[1], before[1]))
+    assert(JoinerSettings.swap(before[1], before[13]))
+    assert(JoinerSettings.get().priority[1] == before[13] and JoinerSettings.get().priority[13] == before[1])
     before[1] = "tampered"
     assert(JoinerSettings.get().priority[1] ~= "tampered")
     local reset = JoinerSettings.resetPriority()
@@ -574,7 +574,12 @@ test("Joiner page exposes settings but no action button", function()
         end
     end
     JoinerPage.mount(tab)
-    assert(table.find(titles, "Reset Auto Join Priority") ~= nil)
+    assert(
+        table.find(titles, "Reset Auto Join Priority") ~= nil
+            and table.find(titles, "Auto Join Priority") ~= nil
+    )
+    assert(table.find(sections, "Auto Join Priority") ~= nil)
+    assert(table.find(titles, "Move selected up") == nil, "the old move-up controls are gone")
     assert(table.find(titles, "Disable Auto Joiners") ~= nil)
     assert(table.find(sections, "Rift Joiner") ~= nil)
     assert(table.find(titles, "Join now") == nil)

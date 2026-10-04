@@ -3,20 +3,18 @@
 Purpose: Render Joiner controls and verified stage join actions
 Input: WindUI tab handle; optional test stage/challenge data and game-owned runtime
 Output: UI controls and validated selection callbacks
-Dependencies: Catalog; Definitions; Settings; replicated StagesData
+Dependencies: Catalog; Definitions; Settings; ui/PriorityList; replicated StagesData
 ]]
 
 local Style = require("../Style")
 local Catalog = require("./Catalog")
 local definitions = require("./Definitions")
 local Settings = require("./Settings")
+local PriorityList = require("../../../ui/PriorityList")
 local config = require("../Config")
 local Page = {}
 
 local STARTUP_WAIT_TICKS = 60
-local function orderText(): string
-    return table.concat(Settings.get().priority, " > ")
-end
 
 local function resolve(root: any, path: string): any
     local value = root
@@ -761,29 +759,23 @@ function Page.mount(tab: any, stageDataOverride: any?, runtime: any?, challengeC
         Value = { Min = 0, Max = 300, Default = state.cooldown },
         Callback = Settings.setCooldown,
     })
-    local priorityLabel = settings:Paragraph({ Title = "Auto Join Priority", Desc = orderText() })
-    local selected = state.priority[1]
-    settings:Dropdown({
-        Title = "Join Priority: select item to move up",
-        Values = definitions,
-        Value = selected,
-        Callback = function(value: string)
-            selected = value
+    -- Join order as a drag-to-swap list (shared UI base) in its own collapsible sub-section.
+    local prioritySection = Style.sub(settings, "Auto Join Priority", "list-ordered", false)
+    local priorityList = PriorityList.mount(prioritySection, {
+        title = "Auto Join Priority",
+        desc = "The joiner tries the highest number first. Drag a row onto another to swap them.",
+        order = state.priority,
+        tags = Style.joinerTags(),
+        onSwap = function(first: string, second: string): { string }?
+            return if Settings.swap(first, second) then Settings.get().priority else nil
         end,
     })
-    settings:Button({
-        Title = "Move selected up",
-        Callback = function()
-            if Settings.moveUp(selected) then
-                priorityLabel:SetDesc(orderText())
-            end
-        end,
-    })
-    settings:Button({
+    prioritySection:Button({
         Title = "Reset Auto Join Priority",
+        Desc = "Restore the default order (Rift, challenges, then stages).",
+        Icon = "rotate-ccw",
         Callback = function()
-            Settings.resetPriority()
-            priorityLabel:SetDesc(orderText())
+            priorityList.refresh(Settings.resetPriority())
         end,
     })
     addStageSelector(Style.joiner(tab, "Stage", false), stageData, "Story", "Stage", runtime)
