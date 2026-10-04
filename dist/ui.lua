@@ -25384,6 +25384,11 @@ function p.Tween(r,u,v,...)
 return f:Create(r,TweenInfo.new(0,...),v)
 end
 
+-- ViperHub patch: real-duration tween, used only where an animation is wanted (dropdown menu open/close).
+function p.TweenAnimated(r,u,v,...)
+return f:Create(r,TweenInfo.new(u,...),v)
+end
+
 
 
 
@@ -33035,7 +33040,8 @@ ap.UIElements.Menu.Visible=true
 ap.UIElements.MenuCanvas.Visible=true
 ap.UIElements.MenuCanvas.Active=true
 ap.UIElements.Menu.Size=UDim2.new(1,0,0,0)
-am(ap.UIElements.Menu,0.1,{
+ap.UIElements.Menu.ImageTransparency=1
+ak.TweenAnimated(ap.UIElements.Menu,0.18,{
 Size=UDim2.new(1,0,1,0),
 ImageTransparency=0,
 },Enum.EasingStyle.Quart,Enum.EasingDirection.Out):Play()
@@ -33055,14 +33061,16 @@ end
 function as.Close(au)
 ap.Opened=false
 
-am(ap.UIElements.Menu,0.25,{
+ak.TweenAnimated(ap.UIElements.Menu,0.15,{
 Size=UDim2.new(1,0,0,0),
 ImageTransparency=1,
-},Enum.EasingStyle.Quart,Enum.EasingDirection.Out):Play()
+},Enum.EasingStyle.Quart,Enum.EasingDirection.In):Play()
 
 task.spawn(function()
-task.wait(0.1)
+task.wait(0.15)
+if not ap.Opened then
 ap.UIElements.Menu.Visible=false
+end
 end)
 
 task.spawn(function()

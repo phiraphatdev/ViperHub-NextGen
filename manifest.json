@@ -15,8 +15,8 @@
     },
     "ui": {
       "path": "dist/ui.lua",
-      "sha256": "4357b21187c47f8e9aee5cda4f152a439eedeae82b3a0c0b4b5415f9ab2afd8c",
-      "bytes": 1348884
+      "sha256": "86282561e99beba595874d868c489596956ebd8597eb93186cab73781518da14",
+      "bytes": 1349168
     },
     "AnimeExpeditions": {
       "path": "dist/games/AnimeExpeditions.lua",

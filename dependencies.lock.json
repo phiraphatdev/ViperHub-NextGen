@@ -5,7 +5,7 @@
     "commit": "7dd8a34a6bb59635c7b5f18ce9d46558a8cde138",
     "version": "1.6.66",
     "upstreamSha256": "06f880e8e086ab2e77d06ac754e4857c8851fc177eb29c43adf53e9e478e4ea0",
-    "vendoredSha256": "4357b21187c47f8e9aee5cda4f152a439eedeae82b3a0c0b4b5415f9ab2afd8c",
+    "vendoredSha256": "86282561e99beba595874d868c489596956ebd8597eb93186cab73781518da14",
     "patches": [
       "Remove Synapse request fallback",
       "Disable GUI protection hooks",
@@ -15,7 +15,8 @@
       "Contain FontFace update errors when a runtime lacks Instance capability",
       "Disable animated element hover gradient for the ViperHub window",
       "Use zero-duration WindUI tweens and progress transitions for reduced motion",
-      "Keep tab and element hover colors at their resting values"
+      "Keep tab and element hover colors at their resting values",
+      "Add TweenAnimated (real duration) and use it only for the dropdown menu open/close animation"
     ],
     "licenseSha256": "44d844d76e61f8a2ce40cba22d1962d65153c8f140d94d52eb2cbad3c25f6020"
   },
