@@ -31,49 +31,76 @@ local function setDesc(control: any, text: string)
     end
 end
 
--- A priority list like the reference UI: the current order on top, then a collapsible group with one number box per
--- entry (the highest number is preferred) and a reset button.
+local function numbered(order: { string }): { string }
+    local labels = {}
+    for index, name in order do
+        table.insert(labels, index .. ". " .. name)
+    end
+    return labels
+end
+
+-- "3. Golden Age" -> "Golden Age"
+local function unnumbered(label: any): string?
+    if type(label) ~= "string" then
+        return nil
+    end
+    return string.match(label, "^%d+%. (.+)$") or label
+end
+
+-- A priority list moved with the mouse: a numbered dropdown to pick an entry, then Up / Down / Top / Reset buttons
+-- on one row. The picked entry stays selected, so repeated clicks keep moving it.
 local function priorityEditor(host: any, settings: any, key: string, title: string, desc: string)
-    local function text(): string
-        return desc .. "\n" .. orderText(settings.order(key))
-    end
-    local summary = host:Paragraph({ Title = title, Desc = text() })
+    local order = settings.order(key)
+    local selected: string = order[1]
+    local dropdown: any
     local function refresh()
-        setDesc(summary, text())
+        local current = settings.order(key)
+        setDesc(dropdown, desc .. "\n" .. orderText(current))
+        local position = table.find(current, selected) or 1
+        if type(dropdown) == "table" and type(dropdown.Refresh) == "function" then
+            pcall(dropdown.Refresh, dropdown, numbered(current))
+            if type(dropdown.Select) == "function" then
+                pcall(dropdown.Select, dropdown, position .. ". " .. selected)
+            end
+        end
     end
-    local rows = Style.sub(host, title .. " numbers", "list-ordered", false)
-    local inputs: { [string]: any } = {}
-    local ranks = settings.get(key)
-    for _, name in settings.order(key) do
-        inputs[name] = rows:Input({
-            Title = name,
-            Value = tostring(ranks[name] or 0),
-            Placeholder = "0-" .. Settings.MAX_RANK,
-            Callback = function(text: any)
-                local number = tonumber(text)
-                if number == nil or settings.get(key)[name] == math.floor(number) then
-                    return
-                end
-                if settings.setRank(key, name, number) then
+    dropdown = host:Dropdown({
+        Title = title,
+        Desc = desc .. "\n" .. orderText(order),
+        Values = numbered(order),
+        Value = "1. " .. selected,
+        Callback = function(value: any)
+            local name = unnumbered(value)
+            if name and table.find(settings.order(key), name) then
+                selected = name
+            end
+        end,
+    })
+    local row: any = if type(host.Group) == "function" then (host.Group :: any)(host, {}) else host
+    local function button(label: string, icon: string, action: () -> boolean)
+        row:Button({
+            Title = label,
+            Icon = icon,
+            Callback = function()
+                if action() then
                     refresh()
                 end
             end,
         })
     end
-    rows:Button({
-        Title = title .. ": reset",
-        Desc = "Restore the default numbers.",
-        Callback = function()
-            settings.resetOrder(key)
-            local reset = settings.get(key)
-            for name, input in inputs do
-                if type(input) == "table" and type(input.Set) == "function" then
-                    pcall(input.Set, input, tostring(reset[name] or 0))
-                end
-            end
-            refresh()
-        end,
-    })
+    button("Up", "arrow-up", function(): boolean
+        return settings.move(key, selected, -1)
+    end)
+    button("Down", "arrow-down", function(): boolean
+        return settings.move(key, selected, 1)
+    end)
+    button("Top", "arrow-up-to-line", function(): boolean
+        return settings.move(key, selected, -#settings.order(key))
+    end)
+    button("Reset", "rotate-ccw", function(): boolean
+        settings.resetOrder(key)
+        return true
+    end)
 end
 
 local function toggle(host: any, settings: any, key: string, title: string, desc: string)
