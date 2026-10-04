@@ -55,3 +55,11 @@ Sources: the Anime Vanguards wiki page "Odyssey: Adventure" (wiki.vanguards.gg/A
 - Treasure floors must collect all chests or the run stalls (the wiki says the floor ends only then); this makes chest collection part of any "unattended" run.
 - Cash Out: `SubmitOdysseyProgressionChoice("CashOut")`; rewards depend on cleared floors, so the Cash out at floor setting maps to `AdventureFloorsAdvanced`-style counters (to be confirmed live).
 
+
+## Adventure rules read from the wiki (2026-10-05, https://wiki.vanguards.gg/Adventure; not game source)
+
+- Elite: awards a Unit Card and offers one unit of the originally equipped team "so long as the slots aren't full"; that offer "can be skipped" (so Auto Choose Unit Reward picks a unit when offered and skips otherwise).
+- Shop: "Closing the UI immediately ends the floor"; observed live (user report): the X only hides the window, the Leave Shop button ends the floor.
+- Treasure: waveless, 6 Odyssey Modifier chests, ends only when the chests are collected (3 picks observed); a chest after all modifiers are owned pays 30-200 Odyssey Coins.
+- Boss (every 30 floors; Ascension 2+ every 15): equip a Secret/Vanguard Memoria or a Secret Familiar on a unit for the match.
+- Cards: Flight lets any room be picked next floor (lane adjacency ignored); Abundance gives 3 random basic cards instead of a pick; Hoarder gives 5 basic cards instead of a unit card after an Elite; Not Basic disables basic card pickups. Auto Route/Basic Card must not assume a pick always exists.
