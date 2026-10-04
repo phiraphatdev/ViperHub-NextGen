@@ -579,6 +579,7 @@ do
             local Defaults = __DARKLUA_BUNDLE_MODULES.n()
             local Validation = __DARKLUA_BUNDLE_MODULES.e()
             local Schema = {}
+            local THEME_VERSION = 2
             local KEYS = {
                 RightShift = true,
                 RightControl = true,
@@ -607,6 +608,7 @@ do
                     notifications = Defaults.notifications,
                     uiScale = Defaults.uiScale,
                     theme = Defaults.theme,
+                    themeVersion = THEME_VERSION,
                     toggleKey = Defaults.toggleKey,
                 }
 
@@ -625,7 +627,7 @@ do
 
                 output.uiScale = Validation.number(data.uiScale, 0.8, 1.3, Defaults.uiScale)
 
-                if data.theme == 'Dark' or data.theme == 'Viper' then
+                if data.theme == 'Viper' or (data.theme == 'Dark' and data.themeVersion == THEME_VERSION) then
                     output.theme = data.theme
                 end
                 if type(data.toggleKey) == 'string' and (KEYS)[data.toggleKey] then

@@ -147,6 +147,14 @@ test("config rejects future schema and sanitizes fields", function()
     assert(not valid)
     local c = Schema.decode({ schemaVersion = 1, uiScale = 99, toggleKey = "../file", theme = false })
     assert(c.uiScale == 1.3 and c.toggleKey == "RightShift" and c.theme == "Viper")
+    assert(
+        Schema.decode({ schemaVersion = 1, theme = "Dark" }).theme == "Viper",
+        "old saved default migrates"
+    )
+    assert(
+        Schema.decode({ schemaVersion = 1, theme = "Dark", themeVersion = 2 }).theme == "Dark",
+        "chosen Dark kept"
+    )
     assert(Schema.decode(nil).uiScale == 1)
     for _, key in
         { "RightShift", "RightControl", "LeftControl", "Insert", "Delete", "Home", "End", "F1", "F4", "F12" }

@@ -9864,6 +9864,14 @@ do
         local function __modImpl()
             local Style = __DARKLUA_BUNDLE_MODULES.d()
             local Page = {}
+            local RECHECK_DELAYS = {
+                3,
+                5,
+                10,
+                20,
+                30,
+                60,
+            }
 
             local function safeCheck(fn)
                 local ok, res = pcall(fn)
@@ -10261,6 +10269,38 @@ do
                 end
 
                 runLiveAudit()
+
+                local env = getfenv()
+                local taskApi = env.task
+
+                if type(taskApi) == 'table' and type(taskApi.spawn) == 'function' and type(taskApi.wait) == 'function' then
+                    local spawnTask = taskApi.spawn
+                    local waitTask = taskApi.wait
+
+                    spawnTask(function()
+                        for _, delay in RECHECK_DELAYS do
+                            waitTask(delay)
+                            pcall(runLiveAudit)
+                        end
+                    end)
+                    pcall(function()
+                        local starter = env.game:GetService('StarterPlayer')
+                        local state = (require)(starter.Modules.Gameplay.SettingsHandler.SettingsState)
+
+                        if state and state.SettingsLoaded ~= true and state.OnSettingsLoaded then
+                            local signal = state.OnSettingsLoaded
+                            local connection
+
+                            connection = signal:Connect(function()
+                                pcall(runLiveAudit)
+                                pcall(function()
+                                    connection:Disconnect()
+                                end)
+                            end)
+                        end
+                    end)
+                end
+
                 tab:Button({
                     Title = 'Re-probe Live Systems',
                     Callback = function()

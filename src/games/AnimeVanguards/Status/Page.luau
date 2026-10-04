@@ -9,6 +9,9 @@ local Style = require("../Style")
 
 local Page = {}
 
+-- Seconds between automatic re-checks after the page is built (about two minutes in total).
+local RECHECK_DELAYS = { 3, 5, 10, 20, 30, 60 }
+
 type StatusItem = {
     name: string,
     passed: boolean,
@@ -459,6 +462,40 @@ function Page.mount(tab: any)
     end
 
     runLiveAudit()
+
+    -- The page is built right after loading, before the game has loaded settings and match modules; a single
+    -- probe then reported them as missing for the whole session. Re-check on a short schedule and once the
+    -- game signals that settings are loaded.
+    local env: any = getfenv()
+    local taskApi: any = env.task
+    if
+        type(taskApi) == "table"
+        and type(taskApi.spawn) == "function"
+        and type(taskApi.wait) == "function"
+    then
+        local spawnTask: any = taskApi.spawn
+        local waitTask: any = taskApi.wait
+        spawnTask(function()
+            for _, delay in RECHECK_DELAYS do
+                waitTask(delay)
+                pcall(runLiveAudit)
+            end
+        end)
+        pcall(function()
+            local starter = env.game:GetService("StarterPlayer")
+            local state = (require :: any)(starter.Modules.Gameplay.SettingsHandler.SettingsState)
+            if state and state.SettingsLoaded ~= true and state.OnSettingsLoaded then
+                local signal: any = state.OnSettingsLoaded
+                local connection: any
+                connection = signal:Connect(function()
+                    pcall(runLiveAudit)
+                    pcall(function()
+                        connection:Disconnect()
+                    end)
+                end)
+            end
+        end)
+    end
 
     tab:Button({
         Title = "Re-probe Live Systems",

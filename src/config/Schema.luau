@@ -9,11 +9,14 @@ Dependencies: Defaults; Validation
 local Defaults = require("./Defaults")
 local Validation = require("../utils/Validation")
 local Schema = {}
+-- Bumped when the theme list changed, so an old stored default does not hide the new default theme.
+local THEME_VERSION = 2
 export type Config = {
     schemaVersion: number,
     notifications: boolean,
     uiScale: number,
     theme: string,
+    themeVersion: number,
     toggleKey: string,
 }
 local KEYS = {
@@ -44,6 +47,7 @@ function Schema.decode(value: unknown): (Config, boolean)
         notifications = Defaults.notifications,
         uiScale = Defaults.uiScale,
         theme = Defaults.theme,
+        themeVersion = THEME_VERSION,
         toggleKey = Defaults.toggleKey,
     }
     if type(value) ~= "table" then
@@ -57,7 +61,8 @@ function Schema.decode(value: unknown): (Config, boolean)
         output.notifications = data.notifications
     end
     output.uiScale = Validation.number(data.uiScale, 0.8, 1.3, Defaults.uiScale)
-    if data.theme == "Dark" or data.theme == "Viper" then
+    -- Before themeVersion 2 "Dark" was the only option and was saved without being chosen; those files get Viper.
+    if data.theme == "Viper" or (data.theme == "Dark" and data.themeVersion == THEME_VERSION) then
         output.theme = data.theme
     end
     if type(data.toggleKey) == "string" and (KEYS :: { [string]: boolean })[data.toggleKey] then
