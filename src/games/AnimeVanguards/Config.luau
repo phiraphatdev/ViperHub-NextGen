@@ -421,6 +421,8 @@ return table.freeze({
         adventureShopWatchSeconds = 2,
         adventureShopAskSeconds = 6,
         adventureShopUiGraceSeconds = 2,
+        adventureShopWaitSeconds = 90,
+        adventureShopWaitRetrySeconds = 1.5,
         -- A room vote still open after this long is cast again, at most this many times.
         adventureVoteRetrySeconds = 20,
         adventureVoteAttempts = 3,

@@ -1,5 +1,10 @@
 # Updates
 
+## Local: shops always end with Leave Shop; Auto Route Atlas waits for it
+
+- Requested by the user: Auto Stitches Shop looks for the wanted items and buys them; if none are wanted or none are selected it leaves at once. The shop is left by pressing the window's Leave Shop button (the X only hides it), with the ShopClose request as a backup; both Auto Stitches Shop and Leave Shop Rooms cause this (both off: the shop is left for the player). Auto Route Atlas does not vote while a shop is being handled (up to 90 s) and votes right after the shop was left.
+- Mock-tested only (21 scenarios in part 4); live verification pending until a Shop floor is chosen on a connected client.
+
 ## Local: re-subscribe when a new Adventure run begins
 
 - Found live: after a run ended and a new one began in the same server (`AdventureRunSeed` changed, floor back to 1), the hub's card offer and room vote subscriptions went silent: the card offer repeated (same options four times) and the vote stayed open until answered by hand (`CardPickPick({Choice=1})` then the next vote came; `VoteCast` by hand did not move this vote on). The watcher now compares `GameData.AdventureRunSeed` every 2 s and, on a change, drops and re-creates all subscriptions.

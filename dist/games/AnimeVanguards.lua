@@ -559,6 +559,8 @@ do
                     adventureShopWatchSeconds = 2,
                     adventureShopAskSeconds = 6,
                     adventureShopUiGraceSeconds = 2,
+                    adventureShopWaitSeconds = 90,
+                    adventureShopWaitRetrySeconds = 1.5,
                     adventureVoteRetrySeconds = 20,
                     adventureVoteAttempts = 3,
                 }),
@@ -8525,6 +8527,8 @@ do
             local SHOP_WATCH_SECONDS = (config).thresholds.adventureShopWatchSeconds
             local SHOP_ASK_SECONDS = (config).thresholds.adventureShopAskSeconds
             local SHOP_UI_GRACE_SECONDS = (config).thresholds.adventureShopUiGraceSeconds
+            local SHOP_WAIT_SECONDS = (config).thresholds.adventureShopWaitSeconds
+            local SHOP_WAIT_RETRY_SECONDS = (config).thresholds.adventureShopWaitRetrySeconds
             local VOTE_RETRY_SECONDS = (config).thresholds.adventureVoteRetrySeconds
             local VOTE_ATTEMPTS = (config).thresholds.adventureVoteAttempts
 
@@ -8912,6 +8916,8 @@ do
                 local guardedRetry
                 local shopHandled = false
                 local shopClosedAt = -math.huge
+                local shopPending = false
+                local shopPendingAt = -math.huge
                 local lastShopKey = ''
                 local lastShopAt = -math.huge
                 local lastRoomKey = ''
@@ -9011,6 +9017,21 @@ do
                         setStatus('Auto Route Atlas: room offer received')
                     end
                     if not self.active or saved.get('autoRoute') ~= true or not deps.isAdventure() then
+                        return
+                    end
+                    if shopPending and deps.clock() - shopPendingAt < SHOP_WAIT_SECONDS then
+                        setStatus('Auto Route Atlas: waiting for the shop to be left')
+
+                        local waitTask = deps.task
+
+                        if type(waitTask) == 'table' and type(waitTask.delay) == 'function' then
+                            (waitTask.delay)(SHOP_WAIT_RETRY_SECONDS, function()
+                                if self.active and voteOpen and lastOffer == offer then
+                                    onRoomOffer(offer, true)
+                                end
+                            end)
+                        end
+
                         return
                     end
 
@@ -9220,6 +9241,8 @@ do
                     end
 
                     shopHandled = true
+                    shopPending = true
+                    shopPendingAt = deps.clock()
 
                     setStatus('Shop: opened, planning purchases')
 
@@ -9262,15 +9285,28 @@ do
                         local events = deps.events
                         local entry = if events then events.ShopClose else nil
 
-                        if self.active and saved.get('leaveShop') == true and type(entry) == 'table' and type(entry.Fire) == 'function' then
+                        if not self.active or (saved.get('leaveShop') ~= true and saved.get('autoStitchesShop') ~= true) then
+                            return
+                        end
+
+                        local pressFn = deps.closeShopUi
+
+                        if type(pressFn) == 'function' then
+                            pcall(pressFn)
+                        end
+
+                        local sent = false
+
+                        if type(entry) == 'table' and type(entry.Fire) == 'function' then
                             local fireFn = entry.Fire
 
-                            shopClosedAt = deps.clock()
-
-                            if pcall(fireFn) then
-                                setStatus(if#plan > 0 then'Shop: bought ' .. tostring(#plan) .. ' item(s), left the shop'else'Left the shop without buying')
-                            end
+                            sent = (pcall(fireFn))
                         end
+
+                        shopClosedAt = deps.clock()
+                        shopPending = false
+
+                        setStatus(if#plan > 0 then'Shop: bought ' .. tostring(#plan) .. ' item(s), left the shop'else'Left the shop without buying' .. (if sent then''else' (button only)'))
                     end
 
                     for position, item in plan do
@@ -9546,6 +9582,7 @@ do
                         if floor ~= lastFloorSeen then
                             lastFloorSeen = floor
                             shopHandled = false
+                            shopPending = false
                             treasureHandling = false
                         end
 
@@ -9649,6 +9686,7 @@ do
                         end,
                         ShopClosed = function()
                             shopHandled = false
+                            shopPending = false
                             shopClosedAt = deps.clock()
                         end,
                         VoteEnded = function()

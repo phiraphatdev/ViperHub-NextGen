@@ -1112,9 +1112,107 @@ test("Adventure runtime buys the selected shop items, then leaves the shop", fun
     flush()
     assert(#sent == 0, "later stock updates (after our own purchases) are ignored")
     settings.set("leaveShop", false)
+    sent = {}
     opened({ Stock = liveStock(), Budget = 100, Spent = 0 })
     flush()
-    assert(sent[#sent] ~= "close", "Leave Shop Rooms off: the shop stays open for the player")
+    assert(sent[#sent] == "close", "Auto Stitches Shop on: it always ends by leaving the shop")
+    settings.set("autoStitchesShop", false)
+    sent = {}
+    opened({ Stock = liveStock(), Budget = 90, Spent = 0 })
+    flush()
+    assert(#sent == 0, "both shop switches off: the shop stays open for the player")
+    runtime.stop()
+end)
+
+test("Auto Route Atlas waits until the shop has been left", function()
+    local settings = AdventureSettings.new(AdventureCatalog.fromModules(nil), {})
+    settings.set("autoRoute", true)
+    settings.set("autoStitchesShop", true)
+    local box: any = { now = 0, votes = {}, pressed = 0 }
+    local pending: { any } = {}
+    local runtime = AdventureRuntime.new(function()
+        return settings
+    end, {
+        clock = function()
+            return box.now
+        end,
+        task = {
+            delay = function(_seconds: number, callback: any)
+                table.insert(pending, callback)
+            end,
+        },
+        isAdventure = function()
+            return true
+        end,
+        roomKind = function()
+            return "Shop"
+        end,
+        floor = function()
+            return 5
+        end,
+        closeShopUi = function()
+            box.pressed += 1
+            return true
+        end,
+        mapRelay = {
+            OnSnapshot = function(callback: any)
+                box.snapshot = callback
+                return function() end
+            end,
+        },
+        events = {
+            CardPickBasicOffer = { On = function() end },
+            ShopOpened = {
+                On = function(callback: any)
+                    box.opened = callback
+                    return function() end
+                end,
+            },
+            SelectRoomSelectionStarted = {
+                On = function(callback: any)
+                    box.room = callback
+                    return function() end
+                end,
+            },
+            VoteCast = {
+                Fire = function(payload: any)
+                    table.insert(box.votes, payload.OptionIndex)
+                end,
+            },
+            ShopClose = { Fire = function() end },
+        },
+    })
+    local function tick(seconds: number)
+        box.now += seconds
+        local batch = pending
+        pending = {}
+        for _, callback in batch do
+            local run: any = callback
+            run()
+        end
+    end
+    assert(runtime.start())
+    local snap: any = box.snapshot
+    snap({
+        CurrentFloor = 5,
+        CurrentLane = 1,
+        Connections = { { From = "F5_L1", To = "F6_L1" } },
+        Nodes = {},
+    })
+    local opened: any = box.opened
+    local room: any = box.room
+    opened({ Stock = {}, Budget = 0, Spent = 0 })
+    room({ Options = { { Index = 1, AdventureRoomKind = "Battle", AdventureFloor = 6 } } })
+    assert(#box.votes == 0, "the shop is being handled: no vote yet")
+    assert(string.find(runtime.status, "waiting for the shop", 1, true) ~= nil, runtime.status)
+    for _ = 1, 6 do
+        tick(1.5)
+    end
+    assert(box.pressed >= 1, "the Leave Shop button was pressed")
+    assert(
+        #box.votes >= 1 and box.votes[1] == 1,
+        "after the shop was left the room is voted: " .. tostring(#box.votes) .. " " .. runtime.status
+    )
     runtime.stop()
 end)
 

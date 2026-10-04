@@ -21,6 +21,8 @@ local SHOP_GAP_SECONDS: number = (config :: any).thresholds.adventureShopGapSeco
 local SHOP_WATCH_SECONDS: number = (config :: any).thresholds.adventureShopWatchSeconds
 local SHOP_ASK_SECONDS: number = (config :: any).thresholds.adventureShopAskSeconds
 local SHOP_UI_GRACE_SECONDS: number = (config :: any).thresholds.adventureShopUiGraceSeconds
+local SHOP_WAIT_SECONDS: number = (config :: any).thresholds.adventureShopWaitSeconds
+local SHOP_WAIT_RETRY_SECONDS: number = (config :: any).thresholds.adventureShopWaitRetrySeconds
 local VOTE_RETRY_SECONDS: number = (config :: any).thresholds.adventureVoteRetrySeconds
 local VOTE_ATTEMPTS: number = (config :: any).thresholds.adventureVoteAttempts
 
@@ -355,6 +357,9 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
 
     local shopHandled = false
     local shopClosedAt = -math.huge
+    -- True from the moment a shop is being handled until it is left; Auto Route Atlas waits meanwhile.
+    local shopPending = false
+    local shopPendingAt = -math.huge
     local lastShopKey = ""
     local lastShopAt = -math.huge
     local lastRoomKey = ""
@@ -441,6 +446,19 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             setStatus("Auto Route Atlas: room offer received")
         end
         if not self.active or saved.get("autoRoute") ~= true or not deps.isAdventure() then
+            return
+        end
+        -- The next room is voted only after the shop has been left (the Leave Shop button or request), up to a limit.
+        if shopPending and deps.clock() - shopPendingAt < SHOP_WAIT_SECONDS then
+            setStatus("Auto Route Atlas: waiting for the shop to be left")
+            local waitTask: any = deps.task
+            if type(waitTask) == "table" and type(waitTask.delay) == "function" then
+                (waitTask.delay :: any)(SHOP_WAIT_RETRY_SECONDS, function()
+                    if self.active and voteOpen and lastOffer == offer then
+                        onRoomOffer(offer, true)
+                    end
+                end)
+            end
             return
         end
         local options: any = if type(offer) == "table" then offer.Options else nil
@@ -653,6 +671,8 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             return
         end
         shopHandled = true
+        shopPending = true
+        shopPendingAt = deps.clock()
         setStatus("Shop: opened, planning purchases")
         -- The shop can announce itself more than once: act on one opening at a time.
         local stock: any = if type(info) == "table" then info.Stock else nil
@@ -697,25 +717,32 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                 action()
             end
         end
+        -- Leaves the shop the way the player does: the Leave Shop button (the X only hides the window), then the
+        -- ShopClose request as a backup. Nothing wanted or nothing selected: this runs at once.
         local function leave()
             local events: any = deps.events
             local entry = if events then events.ShopClose else nil
             if
-                self.active
-                and saved.get("leaveShop") == true
-                and type(entry) == "table"
-                and type(entry.Fire) == "function"
+                not self.active or (saved.get("leaveShop") ~= true and saved.get("autoStitchesShop") ~= true)
             then
-                local fireFn: any = entry.Fire
-                shopClosedAt = deps.clock()
-                if pcall(fireFn) then
-                    setStatus(
-                        if #plan > 0
-                            then "Shop: bought " .. tostring(#plan) .. " item(s), left the shop"
-                            else "Left the shop without buying"
-                    )
-                end
+                return
             end
+            local pressFn: any = deps.closeShopUi
+            if type(pressFn) == "function" then
+                pcall(pressFn)
+            end
+            local sent = false
+            if type(entry) == "table" and type(entry.Fire) == "function" then
+                local fireFn: any = entry.Fire
+                sent = (pcall(fireFn))
+            end
+            shopClosedAt = deps.clock()
+            shopPending = false
+            setStatus(
+                if #plan > 0
+                    then "Shop: bought " .. tostring(#plan) .. " item(s), left the shop"
+                    else "Left the shop without buying" .. (if sent then "" else " (button only)")
+            )
         end
         for position, item in plan do
             later(PICK_DELAY_SECONDS + SHOP_GAP_SECONDS * (position - 1), function()
@@ -965,6 +992,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             if floor ~= lastFloorSeen then
                 lastFloorSeen = floor
                 shopHandled = false
+                shopPending = false
                 treasureHandling = false
             end
             local roomKindOf: any = deps.roomKind
@@ -1060,6 +1088,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             end,
             ShopClosed = function()
                 shopHandled = false
+                shopPending = false
                 shopClosedAt = deps.clock()
             end,
             VoteEnded = function()
