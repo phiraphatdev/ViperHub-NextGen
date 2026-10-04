@@ -340,6 +340,9 @@ return table.freeze({
         riftAttemptWaitSeconds = 45,
         -- After the reward wait, the joiner holds its lobby return while another feature (the webhook) is still sending.
         returnGateMaxSeconds = 8,
+        -- Odyssey: Adventure lobby state: re-request after this long without a reply, and treat it as stale after the max.
+        adventureStateRetrySeconds = 5,
+        adventureStateMaxAgeSeconds = 600,
     }),
     remoteNames = table.freeze({
         worldlineProgress = "GetWorldlineProgress",
@@ -364,5 +367,10 @@ return table.freeze({
         requestAutoPlayData = "RequestAutoPlayData",
         autoPlayPresetsUpdated = "AutoPlayPresetsUpdated",
         showEndScreen = "ShowEndScreen",
+        -- Odyssey: Adventure lobby remotes on the special events client (observed in AdventureClient 2026-10-04).
+        adventureState = "AdventureFullStateChanged",
+        requestAdventureState = "RequestAdventureState",
+        setAdventureLoadout = "SetAdventureLoadout",
+        startOdysseyAdventure = "StartOdysseyAdventure",
     }),
 })

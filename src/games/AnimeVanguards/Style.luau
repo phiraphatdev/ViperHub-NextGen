@@ -24,6 +24,7 @@ local JOINER_ICONS: { [string]: string } = {
     ["Daily Challenge"] = "calendar",
     ["Weekly Challenge"] = "clock",
     Rift = "zap",
+    ["Odyssey Adventure"] = "compass",
 }
 
 -- Mode type shown as a tag in the Auto Join Priority list (text, ui/Theme color name).
@@ -41,6 +42,7 @@ local JOINER_TAGS: { [string]: { text: string, color: string } } = {
     ["Daily Challenge"] = { text = "Challenge", color = "violet" },
     ["Weekly Challenge"] = { text = "Challenge", color = "violet" },
     Rift = { text = "Hourly", color = "rose" },
+    ["Odyssey Adventure"] = { text = "Adventure", color = "secondary" },
 }
 
 Style.section = Base.section

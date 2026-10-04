@@ -4,7 +4,7 @@ Purpose: Render the Odyssey Adventure tab: auto join, character and powers, Rout
          choices, run completion, Memorized memoria and the stage failsafe (settings only; automation is pending)
 Input: WindUI tab handle, an optional catalog and an optional settings object (built from live game data when absent)
 Output: Mounted controls bound to saved Adventure settings
-Dependencies: Style; Config; ui/PriorityList; Adventure/Catalog; Adventure/Settings
+Dependencies: Style; Config; ui/PriorityList; Adventure/Catalog; Adventure/Settings; optional joiner runtime
 ]]
 
 local Style = require("../Style")
@@ -14,12 +14,17 @@ local PriorityList = require("../../../ui/PriorityList")
 local config = require("../Config")
 local Page = {}
 
--- The Adventure automation is not built yet: every control is locked (values stay visible).
-local LOCKED = true
+-- Controls whose automation is built and live-verified; every other control stays locked (values stay visible).
+local UNLOCKED: { [string]: boolean } = { autoJoin = true, character = true, slot1 = true, slot2 = true }
+
+local function isLocked(key: string): boolean
+    return UNLOCKED[key] ~= true
+end
 
 local ADVENTURE: any = (config :: any).adventure
 
-local PENDING = "Coming soon: the Adventure automation is not built yet, so every control is locked."
+local PENDING =
+    "Live: Auto Join with the character and slots. The other controls are locked (Coming soon) until their automation is built."
 
 local function setDesc(control: any, text: string)
     if type(control) == "table" and type(control.SetDesc) == "function" then
@@ -36,14 +41,14 @@ local function priorityEditor(host: any, settings: any, key: string, title: stri
         desc = desc,
         order = settings.order(key),
         tags = tags,
-        locked = LOCKED,
+        locked = isLocked(key),
         onSwap = function(first: string, second: string): { string }?
             return if settings.swap(key, first, second) then settings.order(key) else nil
         end,
     })
     section:Button({
         Title = "Reset " .. title,
-        Locked = LOCKED,
+        Locked = isLocked(key),
         Desc = "Restore the default order.",
         Icon = "rotate-ccw",
         Callback = function()
@@ -64,7 +69,7 @@ end
 local function toggle(host: any, settings: any, key: string, title: string, desc: string)
     host:Toggle({
         Title = title,
-        Locked = LOCKED,
+        Locked = isLocked(key),
         Desc = desc,
         Value = settings.get(key),
         Callback = function(value: boolean)
@@ -77,7 +82,7 @@ local function slider(host: any, settings: any, key: string, title: string, desc
     local range = Settings.FIELDS[key].range
     host:Slider({
         Title = title,
-        Locked = LOCKED,
+        Locked = isLocked(key),
         Desc = desc,
         Step = 1,
         Value = { Min = range.min, Max = range.max, Default = settings.get(key) },
@@ -90,7 +95,7 @@ end
 local function choice(host: any, settings: any, key: string, title: string, desc: string, values: { string })
     host:Dropdown({
         Title = title,
-        Locked = LOCKED,
+        Locked = isLocked(key),
         Desc = desc,
         Values = values,
         Value = settings.get(key),
@@ -103,7 +108,7 @@ end
 local function multi(host: any, settings: any, key: string, title: string, desc: string, values: { string })
     host:Dropdown({
         Title = title,
-        Locked = LOCKED,
+        Locked = isLocked(key),
         Desc = desc,
         Values = values,
         Value = settings.get(key),
@@ -116,7 +121,8 @@ local function multi(host: any, settings: any, key: string, title: string, desc:
 end
 
 --- Mounts the Adventure controls on the given WindUI tab; returns the settings object it is bound to.
-function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?): any
+--- The joiner (optional) owns the Auto Join switch so Odyssey Adventure is one entry in the join priority.
+function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?, joiner: any?): any
     local catalog = catalogOverride or Catalog.read()
     local settings = settingsOverride or Settings.new(catalog)
     local withNone = function(list: { string }): { string }
@@ -133,13 +139,20 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?): an
             then "Autosaved to file"
             else "Session only: file APIs unavailable"),
     })
-    toggle(
-        tab,
-        settings,
-        "autoJoin",
-        "Auto Join Odyssey Adventure",
-        "From the lobby, start an Odyssey: Adventure run with the character and powers below."
-    )
+    local joinDesc =
+        "From the lobby, start an Odyssey: Adventure run with the character and powers below. It joins in the order set in Joiner > Auto Join Priority (last by default)."
+    if joiner then
+        tab:Toggle({
+            Title = "Auto Join Odyssey Adventure",
+            Desc = joinDesc,
+            Value = joiner.isEnabled("Odyssey Adventure"),
+            Callback = function(value: boolean)
+                joiner.setEnabled("Odyssey Adventure", value)
+            end,
+        })
+    else
+        toggle(tab, settings, "autoJoin", "Auto Join Odyssey Adventure", joinDesc)
+    end
 
     local character = Style.section(tab, "Character", "user-round", false)
     choice(
@@ -295,7 +308,7 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?): an
     local saved = settings.get("memoria")
     memorized:Dropdown({
         Title = "Memoria",
-        Locked = LOCKED,
+        Locked = isLocked("memoria"),
         Desc = "Owned memoria to equip on your character for the run.",
         Values = if saved == Settings.NONE then { Settings.NONE } else { Settings.NONE, saved },
         Value = saved,
@@ -305,7 +318,7 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?): an
     })
     memorized:Button({
         Title = "Refresh Inventory",
-        Locked = LOCKED,
+        Locked = isLocked("refreshInventory"),
         Desc = "Reload your owned memoria into the list.",
         Callback = function()
             setDesc(status, "Refresh Inventory: reading your memoria is not built yet (runtime pending).")

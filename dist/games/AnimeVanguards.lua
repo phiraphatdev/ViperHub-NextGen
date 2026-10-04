@@ -491,6 +491,8 @@ do
                     startDelaySeconds = 6,
                     riftAttemptWaitSeconds = 45,
                     returnGateMaxSeconds = 8,
+                    adventureStateRetrySeconds = 5,
+                    adventureStateMaxAgeSeconds = 600,
                 }),
                 remoteNames = table.freeze({
                     worldlineProgress = 'GetWorldlineProgress',
@@ -515,6 +517,10 @@ do
                     requestAutoPlayData = 'RequestAutoPlayData',
                     autoPlayPresetsUpdated = 'AutoPlayPresetsUpdated',
                     showEndScreen = 'ShowEndScreen',
+                    adventureState = 'AdventureFullStateChanged',
+                    requestAdventureState = 'RequestAdventureState',
+                    setAdventureLoadout = 'SetAdventureLoadout',
+                    startOdysseyAdventure = 'StartOdysseyAdventure',
                 }),
             })
         end
@@ -607,6 +613,7 @@ do
                 ['Daily Challenge'] = 'calendar',
                 ['Weekly Challenge'] = 'clock',
                 Rift = 'zap',
+                ['Odyssey Adventure'] = 'compass',
             }
             local JOINER_TAGS = {
                 Stage = {
@@ -660,6 +667,10 @@ do
                 Rift = {
                     text = 'Hourly',
                     color = 'rose',
+                },
+                ['Odyssey Adventure'] = {
+                    text = 'Adventure',
+                    color = 'secondary',
                 },
             }
 
@@ -786,6 +797,7 @@ do
                 'Daily Challenge',
                 'Weekly Challenge',
                 'Rift',
+                'Odyssey Adventure',
             })
         end
 
@@ -4874,12 +4886,46 @@ do
     end
     do
         local function __modImpl()
+            local Detect = {}
+
+            function Detect.isAdventureMatch(matchData)
+                if type(matchData) ~= 'table' then
+                    return false
+                end
+                if matchData.Adventure ~= nil or matchData.IsAdventure == true then
+                    return true
+                end
+
+                local stageType = matchData.StageType
+
+                return type(stageType) == 'string' and (string.find(stageType, 'Adventure', 1, true) ~= nil or string.find(stageType, 'Odyssey', 1, true) ~= nil)
+            end
+
+            return Detect
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.u()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.u
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.u = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
             local Settings = __DARKLUA_BUNDLE_MODULES.m()
             local ActivityState = __DARKLUA_BUNDLE_MODULES.q()
             local TeamEquip = __DARKLUA_BUNDLE_MODULES.h()
             local MacroEquip = __DARKLUA_BUNDLE_MODULES.i()
             local MacroStorage = __DARKLUA_BUNDLE_MODULES.s()
             local TeamAdapter = __DARKLUA_BUNDLE_MODULES.t()
+            local AdventureDetect = __DARKLUA_BUNDLE_MODULES.u()
             local metadata = __DARKLUA_BUNDLE_MODULES.b()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Runtime = {}
@@ -5208,6 +5254,18 @@ do
                 end
                 function self.setGameSettings(gs)
                     self.gameSettings = gs
+                end
+                function self.setAdventure(adventure)
+                    self.adventure = adventure
+                end
+                function self.isEnabled(name)
+                    local live = self.enabled[name]
+
+                    if live ~= nil then
+                        return live == true
+                    end
+
+                    return Settings.get().enabled[name] == true
                 end
                 function self.getTeamOptions()
                     local adapter = self.dependencies and self.dependencies.teamAdapter
@@ -5768,7 +5826,7 @@ do
                     end
                 end
                 function self.setEnabled(name, value)
-                    if (MODES[name] or CHALLENGES[name] or name == 'Worldline' or name == 'Boss Event' or name == 'Boss Bounties' or name == 'Rift') and type(value) == 'boolean' then
+                    if (MODES[name] or CHALLENGES[name] or name == 'Worldline' or name == 'Boss Event' or name == 'Boss Bounties' or name == 'Rift' or name == 'Odyssey Adventure') and type(value) == 'boolean' then
                         self.enabled[name] = value
 
                         Settings.setEnabled(name, value)
@@ -5790,6 +5848,14 @@ do
                     end
 
                     local matchData = deps.gameHandler and deps.gameHandler.GameData
+
+                    if AdventureDetect.isAdventureMatch(matchData) or self.currentJoinedName == 'Odyssey Adventure' then
+                        self.teleportingToLobby = nil
+                        self.returnOnMatchEnd = false
+
+                        return
+                    end
+
                     local currentChallenge = type(matchData) == 'table' and (matchData.ChallengeType or matchData.Challenge) or nil
                     local currentRift = type(matchData) == 'table' and (matchData.Rift ~= nil or matchData.IsBossRift == true or matchData.StageType == 'Rift')
                     local isAnyChallenge = currentChallenge ~= nil or (type(matchData) == 'table' and matchData.StageType == 'Challenge')
@@ -6119,6 +6185,41 @@ do
 
                             return
                         end
+                        if name == 'Odyssey Adventure' and self.enabled[name] then
+                            local adventure = self.adventure
+
+                            if not adventure then
+                                note(name, 'Adventure module unavailable')
+                            else
+                                local plan, reason = adventure.plan()
+
+                                if not plan then
+                                    note(name, reason or 'unavailable')
+                                else
+                                    for _, extra in plan.notes do
+                                        note(name, extra)
+                                    end
+
+                                    self.confirmed = {
+                                        name = name,
+                                        mode = 'OdysseyAdventure',
+                                        confirmedAt = now,
+                                        startSent = now,
+                                    }
+                                    self.lastAttempt = now
+
+                                    if adventure.start(plan) then
+                                        setStatus(name .. ': start sent (' .. plan.character .. '); waiting for teleport')
+                                    else
+                                        self.confirmed = nil
+
+                                        setStatus(name .. ': start request failed')
+                                    end
+
+                                    return
+                                end
+                            end
+                        end
                         if name == 'Boss Event' and self.enabled[name] and choice and deps.bossRotation and deps.bossNetwork then
                             local okCurrent, current = pcall(deps.bossRotation.GetCurrentBossEvent)
 
@@ -6413,6 +6514,12 @@ do
                     self.enabled = table.clone(saved.enabled)
                     self.selection = table.clone(saved.selection)
 
+                    local adventure = self.adventure
+
+                    if adventure and type(adventure.connect) == 'function' then
+                        pcall(adventure.connect)
+                    end
+
                     local function bindMatchConfirmed(deps)
                         if self.disconnect then
                             pcall(function()
@@ -6597,6 +6704,12 @@ do
 
                         self.teleportConnection = nil
                     end
+
+                    local adventure = self.adventure
+
+                    if adventure and type(adventure.stop) == 'function' then
+                        pcall(adventure.stop)
+                    end
                     if self.matchEndConnection then
                         pcall(function()
                             self.matchEndConnection:Disconnect()
@@ -6628,14 +6741,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.u()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.u
+        function __DARKLUA_BUNDLE_MODULES.v()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.v
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.u = v
+                __DARKLUA_BUNDLE_MODULES.cache.v = v
             end
 
             return v.c
@@ -6700,6 +6813,21 @@ do
 
                         if type(item) == 'table' and validName(item.Name) and not table.find(result, item.Name) then
                             table.insert(result, item.Name)
+                        end
+                    end
+                end
+
+                return result
+            end
+            local function readPowerIds(module)
+                local result = {}
+
+                if type(module) == 'table' and type(module.POWERS) == 'table' then
+                    for _, power in ipairs(module.POWERS)do
+                        local item = power
+
+                        if type(item) == 'table' and validName(item.Name) and type(item.Id) == 'number' then
+                            result[item.Name] = item.Id
                         end
                     end
                 end
@@ -6807,6 +6935,14 @@ do
                     defaultCharacter = characters[1]
                 end
 
+                local powerIds = readPowerIds(m.powers)
+
+                if next(powerIds) == nil then
+                    for index, name in ADVENTURE.powers do
+                        powerIds[name] = index
+                    end
+                end
+
                 local rarityOf = {}
                 local basicCards = readBasicCards(m.basicCards, rarityOf)
 
@@ -6819,6 +6955,7 @@ do
                     characters = characters,
                     defaultCharacter = defaultCharacter,
                     powers = pick(readPowers(m.powers), ADVENTURE.powers),
+                    powerIds = powerIds,
                     basicCards = basicCards,
                     basicCardRarity = rarityOf,
                     roomKinds = copy(ADVENTURE.roomKinds),
@@ -6881,14 +7018,14 @@ do
             return Catalog
         end
 
-        function __DARKLUA_BUNDLE_MODULES.v()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.v
+        function __DARKLUA_BUNDLE_MODULES.w()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.w
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.v = v
+                __DARKLUA_BUNDLE_MODULES.cache.w = v
             end
 
             return v.c
@@ -7310,14 +7447,14 @@ do
             return Settings
         end
 
-        function __DARKLUA_BUNDLE_MODULES.w()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.w
+        function __DARKLUA_BUNDLE_MODULES.x()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.x
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.w = v
+                __DARKLUA_BUNDLE_MODULES.cache.x = v
             end
 
             return v.c
@@ -7326,15 +7463,25 @@ do
     do
         local function __modImpl()
             local Style = __DARKLUA_BUNDLE_MODULES.e()
-            local Catalog = __DARKLUA_BUNDLE_MODULES.v()
-            local Settings = __DARKLUA_BUNDLE_MODULES.w()
+            local Catalog = __DARKLUA_BUNDLE_MODULES.w()
+            local Settings = __DARKLUA_BUNDLE_MODULES.x()
             local PriorityList = __DARKLUA_BUNDLE_MODULES.o()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Page = {}
-            local LOCKED = true
+            local UNLOCKED = {
+                autoJoin = true,
+                character = true,
+                slot1 = true,
+                slot2 = true,
+            }
+
+            local function isLocked(key)
+                return UNLOCKED[key] ~= true
+            end
+
             local ADVENTURE = (config).adventure
             local PENDING =
-[[Coming soon: the Adventure automation is not built yet, so every control is locked.]]
+[[Live: Auto Join with the character and slots. The other controls are locked (Coming soon) until their automation is built.]]
 
             local function setDesc(control, text)
                 if type(control) == 'table' and type(control.SetDesc) == 'function' then
@@ -7355,7 +7502,7 @@ do
                     desc = desc,
                     order = settings.order(key),
                     tags = tags,
-                    locked = LOCKED,
+                    locked = isLocked(key),
                     onSwap = function(first, second)
                         return if settings.swap(key, first, second)then settings.order(key)else nil
                     end,
@@ -7363,7 +7510,7 @@ do
 
                 section:Button({
                     Title = 'Reset ' .. title,
-                    Locked = LOCKED,
+                    Locked = isLocked(key),
                     Desc = 'Restore the default order.',
                     Icon = 'rotate-ccw',
                     Callback = function()
@@ -7386,7 +7533,7 @@ do
             local function toggle(host, settings, key, title, desc)
                 host:Toggle({
                     Title = title,
-                    Locked = LOCKED,
+                    Locked = isLocked(key),
                     Desc = desc,
                     Value = settings.get(key),
                     Callback = function(value)
@@ -7399,7 +7546,7 @@ do
 
                 host:Slider({
                     Title = title,
-                    Locked = LOCKED,
+                    Locked = isLocked(key),
                     Desc = desc,
                     Step = 1,
                     Value = {
@@ -7415,7 +7562,7 @@ do
             local function choice(host, settings, key, title, desc, values)
                 host:Dropdown({
                     Title = title,
-                    Locked = LOCKED,
+                    Locked = isLocked(key),
                     Desc = desc,
                     Values = values,
                     Value = settings.get(key),
@@ -7427,7 +7574,7 @@ do
             local function multi(host, settings, key, title, desc, values)
                 host:Dropdown({
                     Title = title,
-                    Locked = LOCKED,
+                    Locked = isLocked(key),
                     Desc = desc,
                     Values = values,
                     Value = settings.get(key),
@@ -7439,7 +7586,7 @@ do
                 })
             end
 
-            function Page.mount(tab, catalogOverride, settingsOverride)
+            function Page.mount(tab, catalogOverride, settingsOverride, joiner)
                 local catalog = catalogOverride or Catalog.read()
                 local settings = settingsOverride or Settings.new(catalog)
                 local withNone = function(list)
@@ -7457,9 +7604,21 @@ do
                     Title = 'Status',
                     Desc = PENDING .. '\n' .. (if settings.persistent()then'Autosaved to file'else'Session only: file APIs unavailable'),
                 })
+                local joinDesc =
+[[From the lobby, start an Odyssey: Adventure run with the character and powers below. It joins in the order set in Joiner > Auto Join Priority (last by default).]]
 
-                toggle(tab, settings, 'autoJoin', 'Auto Join Odyssey Adventure',
-[[From the lobby, start an Odyssey: Adventure run with the character and powers below.]])
+                if joiner then
+                    tab:Toggle({
+                        Title = 'Auto Join Odyssey Adventure',
+                        Desc = joinDesc,
+                        Value = joiner.isEnabled('Odyssey Adventure'),
+                        Callback = function(value)
+                            joiner.setEnabled('Odyssey Adventure', value)
+                        end,
+                    })
+                else
+                    toggle(tab, settings, 'autoJoin', 'Auto Join Odyssey Adventure', joinDesc)
+                end
 
                 local character = Style.section(tab, 'Character', 'user-round', false)
 
@@ -7521,7 +7680,7 @@ do
 
                 memorized:Dropdown({
                     Title = 'Memoria',
-                    Locked = LOCKED,
+                    Locked = isLocked('memoria'),
                     Desc = 'Owned memoria to equip on your character for the run.',
                     Values = if saved == Settings.NONE then{
                         Settings.NONE,
@@ -7536,7 +7695,7 @@ do
                 })
                 memorized:Button({
                     Title = 'Refresh Inventory',
-                    Locked = LOCKED,
+                    Locked = isLocked('refreshInventory'),
                     Desc = 'Reload your owned memoria into the list.',
                     Callback = function()
                         setDesc(status,
@@ -7556,14 +7715,336 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.x()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.x
+        function __DARKLUA_BUNDLE_MODULES.y()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.y
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.x = v
+                __DARKLUA_BUNDLE_MODULES.cache.y = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
+            local config = __DARKLUA_BUNDLE_MODULES.c()
+            local Catalog = __DARKLUA_BUNDLE_MODULES.w()
+            local Settings = __DARKLUA_BUNDLE_MODULES.x()
+            local Adapter = {}
+            local REMOTES = (config).remoteNames
+            local RETRY_SECONDS = (config).thresholds.adventureStateRetrySeconds
+            local MAX_AGE_SECONDS = (config).thresholds.adventureStateMaxAgeSeconds
+
+            local function resolve(root, path)
+                local value = root
+
+                for part in string.gmatch(path, '[^%.]+')do
+                    if not value then
+                        return nil
+                    end
+
+                    local current = value
+                    local ok, child = pcall(function()
+                        return current:FindFirstChild(part)
+                    end)
+
+                    value = if ok then child else nil
+                end
+
+                return value
+            end
+            local function optionalModule(root, path)
+                local ok, result = pcall(function()
+                    local object = resolve(root, path)
+
+                    return if object then(require)(object)else nil
+                end)
+
+                return if ok then result else nil
+            end
+            local function liveDependencies()
+                local env = getfenv()
+                local replicated = env.game:GetService('ReplicatedStorage')
+                local paths = config.instancePaths
+
+                return {
+                    task = env.task,
+                    clock = os.clock,
+                    specialEvents = optionalModule(replicated, paths.specialEventsClient),
+                    characters = optionalModule(replicated, paths.adventureCharacters),
+                }
+            end
+            local function decodeState(payload)
+                if type(payload) ~= 'table' or type(payload.Characters) ~= 'table' then
+                    return nil
+                end
+
+                local characters = {}
+                local owns = payload.OwnsLoadoutSlot2 == true
+                local global = {}
+
+                if type(payload.UnlockedPowerIds) == 'table' then
+                    for _, id in payload.UnlockedPowerIds do
+                        if type(id) == 'number' then
+                            global[id] = true
+                        end
+                    end
+                end
+
+                for _, entry in payload.Characters do
+                    if type(entry) == 'table' and type(entry.CharacterName) == 'string' then
+                        local unlocked = {}
+
+                        if type(entry.UnlockedPowerIds) == 'table' then
+                            for _, id in entry.UnlockedPowerIds do
+                                if type(id) == 'number' then
+                                    unlocked[id] = true
+                                end
+                            end
+                        end
+
+                        local loadout = if type(entry.Loadout) == 'table'then entry.Loadout else{}
+
+                        characters[entry.CharacterName] = {
+                            unlocked = unlocked,
+                            slot1 = if type(loadout.Slot1) == 'number'then loadout.Slot1 else nil,
+                            slot2 = if type(loadout.Slot2) == 'number'then loadout.Slot2 else nil,
+                            ownsSlot2 = entry.OwnsLoadoutSlot2 == true,
+                        }
+                        owns = owns or entry.OwnsLoadoutSlot2 == true
+                    end
+                end
+
+                return {
+                    characters = characters,
+                    global = global,
+                    ownsSlot2 = owns,
+                }
+            end
+
+            function Adapter.new(injected)
+                local deps = injected
+                local self = {
+                    state = nil,
+                    stateAt = 0,
+                    lastRequest = -math.huge,
+                }
+                local disconnect = nil
+                local catalog = if injected then injected.catalog else nil
+                local settings = if injected then injected.settings else nil
+                local clock = if injected and injected.clock then injected.clock else os.clock
+
+                local function dependencies()
+                    if not deps then
+                        deps = liveDependencies()
+                    end
+
+                    return deps
+                end
+
+                function self.getCatalog()
+                    if not catalog then
+                        catalog = Catalog.read()
+                    end
+
+                    return catalog
+                end
+                function self.getSettings()
+                    if not settings then
+                        settings = Settings.new(self.getCatalog())
+                    end
+
+                    return settings
+                end
+
+                local function remote(name)
+                    local events = dependencies().specialEvents
+                    local entry = if type(events) == 'table'then events[REMOTES[name] ]else nil
+
+                    return if type(entry) == 'table'then entry else nil
+                end
+                local function fire(name, payload)
+                    local entry = remote(name)
+
+                    if not entry or type(entry.Fire) ~= 'function' then
+                        return false
+                    end
+
+                    local fireFn = entry.Fire
+
+                    return (pcall(fireFn, payload))
+                end
+
+                function self.connect()
+                    if disconnect then
+                        return true
+                    end
+
+                    local entry = remote('adventureState')
+
+                    if not entry or type(entry.On) ~= 'function' then
+                        return false
+                    end
+
+                    local onFn = entry.On
+                    local ok, result = pcall(onFn, function(payload)
+                        local decoded = decodeState(payload)
+
+                        if decoded then
+                            self.state = decoded
+                            self.stateAt = clock()
+                        end
+                    end)
+
+                    if not ok then
+                        return false
+                    end
+
+                    disconnect = if type(result) == 'function'then result else function(
+                    ) end
+
+                    return true
+                end
+                function self.requestState()
+                    local now = clock()
+
+                    if now - self.lastRequest < RETRY_SECONDS then
+                        return
+                    end
+
+                    self.lastRequest = now
+
+                    fire('requestAdventureState', nil)
+                end
+
+                local function characterAvailable(name)
+                    local module = dependencies().characters
+
+                    if type(module) ~= 'table' or type(module.IsCharacterAvailable) ~= 'function' then
+                        return true
+                    end
+
+                    local ok, available = pcall(module.IsCharacterAvailable, name)
+
+                    return not ok or available ~= false
+                end
+                local function slotId(label, powerName, owned, notes)
+                    if powerName == Settings.NONE then
+                        return nil
+                    end
+
+                    local id = self.getCatalog().powerIds[powerName]
+
+                    if id == nil then
+                        table.insert(notes, label .. ': unknown power ' .. powerName)
+
+                        return nil
+                    end
+                    if not owned(id) then
+                        table.insert(notes, label .. ': ' .. powerName .. ' is not unlocked')
+
+                        return nil
+                    end
+
+                    return id
+                end
+
+                function self.plan()
+                    self.connect()
+
+                    local state = self.state
+
+                    if not state or clock() - self.stateAt > MAX_AGE_SECONDS then
+                        self.requestState()
+
+                        return nil, 'waiting for Adventure data from the game'
+                    end
+
+                    local saved = self.getSettings()
+                    local character = saved.get('character')
+                    local entry = state.characters[character]
+
+                    if not entry then
+                        return nil, character .. ' is not available on this account'
+                    end
+                    if not characterAvailable(character) then
+                        return nil, character .. ' is not available yet'
+                    end
+
+                    local notes = {}
+
+                    local function owned(id)
+                        return entry.unlocked[id] == true or state.global[id] == true
+                    end
+
+                    local slot1 = slotId('Slot 1', saved.get('slot1'), owned, notes)
+                    local slot2 = nil
+
+                    if saved.get('slot2') ~= Settings.NONE then
+                        if state.ownsSlot2 or entry.ownsSlot2 then
+                            slot2 = slotId('Slot 2', saved.get('slot2'), owned, notes)
+                        else
+                            table.insert(notes, 'Slot 2: Loadout Slot 2 is not owned')
+                        end
+                    end
+
+                    return {
+                        character = character,
+                        slot1 = slot1,
+                        slot2 = slot2,
+                        notes = notes,
+                        saved = entry,
+                    }, nil
+                end
+                function self.start(plan)
+                    if type(plan) ~= 'table' then
+                        return false
+                    end
+
+                    local saved = plan.saved
+
+                    if type(saved) == 'table' and (saved.slot1 ~= plan.slot1 or saved.slot2 ~= plan.slot2) then
+                        fire('setAdventureLoadout', {
+                            CharacterName = plan.character,
+                            Slot1 = plan.slot1,
+                            Slot2 = plan.slot2,
+                        })
+                    end
+
+                    return fire('startOdysseyAdventure', {
+                        LoadoutProvided = true,
+                        CharacterName = plan.character,
+                        Slot1 = plan.slot1,
+                        Slot2 = plan.slot2,
+                    })
+                end
+                function self.stop()
+                    local undo = disconnect
+
+                    disconnect = nil
+
+                    if undo then
+                        pcall(undo)
+                    end
+                end
+
+                return self
+            end
+
+            return Adapter
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.z()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.z
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.z = v
             end
 
             return v.c
@@ -8004,14 +8485,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.y()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.y
+        function __DARKLUA_BUNDLE_MODULES.A()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.A
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.y = v
+                __DARKLUA_BUNDLE_MODULES.cache.A = v
             end
 
             return v.c
@@ -8862,14 +9343,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.z()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.z
+        function __DARKLUA_BUNDLE_MODULES.B()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.B
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.z = v
+                __DARKLUA_BUNDLE_MODULES.cache.B = v
             end
 
             return v.c
@@ -8878,7 +9359,7 @@ do
     do
         local function __modImpl()
             local Document = __DARKLUA_BUNDLE_MODULES.r()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.z()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.B()
             local Runtime = {}
             local POLL_SECONDS = 0.2
             local ACTION_TIMEOUT = 12
@@ -9937,14 +10418,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.A()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.A
+        function __DARKLUA_BUNDLE_MODULES.C()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.C
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.A = v
+                __DARKLUA_BUNDLE_MODULES.cache.C = v
             end
 
             return v.c
@@ -10084,14 +10565,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.B()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.B
+        function __DARKLUA_BUNDLE_MODULES.D()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.D
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.B = v
+                __DARKLUA_BUNDLE_MODULES.cache.D = v
             end
 
             return v.c
@@ -10100,6 +10581,7 @@ do
     do
         local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
+            local AdventureDetect = __DARKLUA_BUNDLE_MODULES.u()
             local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
             local Adapter = {}
             local SETTINGS_STORAGE_KEY = 'AnimeVanguardsGameSettings'
@@ -10429,7 +10911,7 @@ do
                         if okGh and gh and gh.MatchEnded and type(gh.MatchEnded.Connect) == 'function' then
                             self.matchEndConnection = (gh.MatchEnded.Connect)(gh.MatchEnded, function(
                             )
-                                if self.autoBackToLobby then
+                                if self.autoBackToLobby and not AdventureDetect.isAdventureMatch(gh.GameData) then
                                     local taskApi = env.task
 
                                     local function doTeleport(held)
@@ -10540,14 +11022,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.C()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.C
+        function __DARKLUA_BUNDLE_MODULES.E()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.E
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.C = v
+                __DARKLUA_BUNDLE_MODULES.cache.E = v
             end
 
             return v.c
@@ -10814,14 +11296,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.D()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.D
+        function __DARKLUA_BUNDLE_MODULES.F()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.F
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.D = v
+                __DARKLUA_BUNDLE_MODULES.cache.F = v
             end
 
             return v.c
@@ -10973,14 +11455,14 @@ do
             return Rules
         end
 
-        function __DARKLUA_BUNDLE_MODULES.E()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.E
+        function __DARKLUA_BUNDLE_MODULES.G()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.G
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.E = v
+                __DARKLUA_BUNDLE_MODULES.cache.G = v
             end
 
             return v.c
@@ -10989,7 +11471,7 @@ do
     do
         local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Rules = __DARKLUA_BUNDLE_MODULES.E()
+            local Rules = __DARKLUA_BUNDLE_MODULES.G()
             local Adapter = {}
 
             local function resolve(root, path)
@@ -11414,14 +11896,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.F()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.F
+        function __DARKLUA_BUNDLE_MODULES.H()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.H
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.F = v
+                __DARKLUA_BUNDLE_MODULES.cache.H = v
             end
 
             return v.c
@@ -11431,8 +11913,8 @@ do
         local function __modImpl()
             local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.F()
-            local Rules = __DARKLUA_BUNDLE_MODULES.E()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.H()
+            local Rules = __DARKLUA_BUNDLE_MODULES.G()
             local Runtime = {}
             local STORAGE_KEY = 'AnimeVanguardsAutoPlay'
             local SCHEMA_VERSION = 3
@@ -12019,14 +12501,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.G()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.G
+        function __DARKLUA_BUNDLE_MODULES.I()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.I
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.G = v
+                __DARKLUA_BUNDLE_MODULES.cache.I = v
             end
 
             return v.c
@@ -12484,14 +12966,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.H()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.H
+        function __DARKLUA_BUNDLE_MODULES.J()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.J
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.H = v
+                __DARKLUA_BUNDLE_MODULES.cache.J = v
             end
 
             return v.c
@@ -12661,14 +13143,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.I()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.I
+        function __DARKLUA_BUNDLE_MODULES.K()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.K
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.I = v
+                __DARKLUA_BUNDLE_MODULES.cache.K = v
             end
 
             return v.c
@@ -12961,14 +13443,14 @@ do
             return Embed
         end
 
-        function __DARKLUA_BUNDLE_MODULES.J()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.J
+        function __DARKLUA_BUNDLE_MODULES.L()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.L
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.J = v
+                __DARKLUA_BUNDLE_MODULES.cache.L = v
             end
 
             return v.c
@@ -12976,7 +13458,7 @@ do
     end
     do
         local function __modImpl()
-            local Embed = __DARKLUA_BUNDLE_MODULES.J()
+            local Embed = __DARKLUA_BUNDLE_MODULES.L()
             local Events = {}
             local UNIT_ROWS = 6
             local SHARE_BAR = 10
@@ -13425,14 +13907,14 @@ do
             return Events
         end
 
-        function __DARKLUA_BUNDLE_MODULES.K()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.K
+        function __DARKLUA_BUNDLE_MODULES.M()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.M
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.K = v
+                __DARKLUA_BUNDLE_MODULES.cache.M = v
             end
 
             return v.c
@@ -13441,7 +13923,7 @@ do
     do
         local function __modImpl()
             local Style = __DARKLUA_BUNDLE_MODULES.e()
-            local Events = __DARKLUA_BUNDLE_MODULES.K()
+            local Events = __DARKLUA_BUNDLE_MODULES.M()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Page = {}
             local WEBHOOK = (config).webhook
@@ -13609,14 +14091,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.L()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.L
+        function __DARKLUA_BUNDLE_MODULES.N()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.N
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.L = v
+                __DARKLUA_BUNDLE_MODULES.cache.N = v
             end
 
             return v.c
@@ -13832,14 +14314,14 @@ do
             return Sender
         end
 
-        function __DARKLUA_BUNDLE_MODULES.M()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.M
+        function __DARKLUA_BUNDLE_MODULES.O()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.O
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.M = v
+                __DARKLUA_BUNDLE_MODULES.cache.O = v
             end
 
             return v.c
@@ -13943,14 +14425,14 @@ do
             return Session
         end
 
-        function __DARKLUA_BUNDLE_MODULES.N()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.N
+        function __DARKLUA_BUNDLE_MODULES.P()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.P
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.N = v
+                __DARKLUA_BUNDLE_MODULES.cache.P = v
             end
 
             return v.c
@@ -13961,10 +14443,10 @@ do
             local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local metadata = __DARKLUA_BUNDLE_MODULES.b()
-            local Embed = __DARKLUA_BUNDLE_MODULES.J()
-            local Events = __DARKLUA_BUNDLE_MODULES.K()
-            local Sender = __DARKLUA_BUNDLE_MODULES.M()
-            local Session = __DARKLUA_BUNDLE_MODULES.N()
+            local Embed = __DARKLUA_BUNDLE_MODULES.L()
+            local Events = __DARKLUA_BUNDLE_MODULES.M()
+            local Sender = __DARKLUA_BUNDLE_MODULES.O()
+            local Session = __DARKLUA_BUNDLE_MODULES.P()
             local Runtime = {}
             local STORAGE_KEY = 'AnimeVanguardsWebhook'
             local SCHEMA_VERSION = 1
@@ -15328,14 +15810,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.O()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.O
+        function __DARKLUA_BUNDLE_MODULES.Q()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.Q
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.O = v
+                __DARKLUA_BUNDLE_MODULES.cache.Q = v
             end
 
             return v.c
@@ -15412,14 +15894,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.P()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.P
+        function __DARKLUA_BUNDLE_MODULES.R()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.R
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.P = v
+                __DARKLUA_BUNDLE_MODULES.cache.R = v
             end
 
             return v.c
@@ -15763,14 +16245,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.Q()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.Q
+        function __DARKLUA_BUNDLE_MODULES.S()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.S
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.Q = v
+                __DARKLUA_BUNDLE_MODULES.cache.S = v
             end
 
             return v.c
@@ -15782,22 +16264,24 @@ local Types = __DARKLUA_BUNDLE_MODULES.a()
 local metadata = __DARKLUA_BUNDLE_MODULES.b()
 local config = __DARKLUA_BUNDLE_MODULES.c()
 local JoinerPage = __DARKLUA_BUNDLE_MODULES.p()
-local JoinerRuntime = __DARKLUA_BUNDLE_MODULES.u()
-local AdventurePage = __DARKLUA_BUNDLE_MODULES.x()
-local MacroPage = __DARKLUA_BUNDLE_MODULES.y()
-local MacroRuntime = __DARKLUA_BUNDLE_MODULES.A()
-local GamePage = __DARKLUA_BUNDLE_MODULES.B()
-local GameAdapter = __DARKLUA_BUNDLE_MODULES.C()
-local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.D()
-local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.G()
-local StatusPage = __DARKLUA_BUNDLE_MODULES.H()
-local DashboardPage = __DARKLUA_BUNDLE_MODULES.I()
-local WebhookPage = __DARKLUA_BUNDLE_MODULES.L()
-local WebhookRuntime = __DARKLUA_BUNDLE_MODULES.O()
-local MiscPage = __DARKLUA_BUNDLE_MODULES.P()
-local MiscRuntime = __DARKLUA_BUNDLE_MODULES.Q()
+local JoinerRuntime = __DARKLUA_BUNDLE_MODULES.v()
+local AdventurePage = __DARKLUA_BUNDLE_MODULES.y()
+local AdventureAdapter = __DARKLUA_BUNDLE_MODULES.z()
+local MacroPage = __DARKLUA_BUNDLE_MODULES.A()
+local MacroRuntime = __DARKLUA_BUNDLE_MODULES.C()
+local GamePage = __DARKLUA_BUNDLE_MODULES.D()
+local GameAdapter = __DARKLUA_BUNDLE_MODULES.E()
+local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.F()
+local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.I()
+local StatusPage = __DARKLUA_BUNDLE_MODULES.J()
+local DashboardPage = __DARKLUA_BUNDLE_MODULES.K()
+local WebhookPage = __DARKLUA_BUNDLE_MODULES.N()
+local WebhookRuntime = __DARKLUA_BUNDLE_MODULES.Q()
+local MiscPage = __DARKLUA_BUNDLE_MODULES.R()
+local MiscRuntime = __DARKLUA_BUNDLE_MODULES.S()
 local active = false
 local joiner = JoinerRuntime.new()
+local adventure = AdventureAdapter.new()
 local macro = MacroRuntime.new()
 local gameSettings = GameAdapter.new()
 local autoPlay = AutoPlayRuntime.new()
@@ -15841,7 +16325,7 @@ local pages = {
         group = 'Farming',
         iconColor = 'violet',
         render = function(tab)
-            AdventurePage.mount(tab)
+            AdventurePage.mount(tab, adventure.getCatalog(), adventure.getSettings(), joiner)
         end,
     },
     {
@@ -15923,6 +16407,7 @@ function GameModule.start(context)
     active = true
 
     joiner.setMacro(macro)
+    joiner.setAdventure(adventure)
     joiner.setReturnGate(webhook.isBusy)
     gameSettings.setReturnGate(webhook.isBusy)
     joiner.setGameSettings(gameSettings)

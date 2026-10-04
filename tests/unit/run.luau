@@ -439,7 +439,7 @@ test("Joiner settings pause cooldown priority and reset", function()
     local reset = JoinerSettings.resetPriority()
     assert(reset[1] == "Rift" and reset[2] == "Weekly Challenge")
     assert(reset[3] == "Daily Challenge" and reset[4] == "Regular Challenge")
-    assert(#reset == 13 and reset[5] == "Stage")
+    assert(#reset == 14 and reset[5] == "Stage")
     local seen: { [string]: boolean } = {}
     for _, name in reset do
         assert(not seen[name])
@@ -501,7 +501,11 @@ test("Joiner controls auto-save and reload with executor files", function()
     local restored = JoinerSettings.get()
     assert(restored.persistent and not restored.paused and restored.cooldown == 12)
     assert(restored.enabled.Stage and restored.selection.Stage.act == "Act1")
-    assert(#restored.priority == 13 and restored.priority[2] == oldOrder[5])
+    assert(
+        #restored.priority == 14
+            and restored.priority[14] == "Odyssey Adventure"
+            and restored.priority[2] == oldOrder[5]
+    )
     JoinerSettings.setEnabled("Stage", false)
     JoinerSettings.setPaused(true)
 end)

@@ -1,5 +1,12 @@
 # Updates
 
+## Local Odyssey Adventure Phase 1: Auto Join, Character and Slots — runtime pending
+
+- Odyssey Adventure is a new Joiner mode ("Odyssey Adventure", last in Auto Join Priority by default; saved priorities get it appended). The Adventure tab's Auto Join switch and the Joiner use the same enabled value; Select Character, Slot 1 and Slot 2 are unlocked, every other Adventure control stays locked (Coming soon).
+- `Adventure/Adapter.luau` subscribes to the lobby's `AdventureFullStateChanged`, asks with `RequestAdventureState`, validates the character and the slots against the unlocked power ids (Slot 2 only with Loadout Slot 2) and starts with `StartOdysseyAdventure` (`LoadoutProvided=true`), sending `SetAdventureLoadout` first only when the loadout changed. A reason is written to the Joiner Report when it cannot start.
+- The joiner and Auto Back to Lobby leave Adventure matches alone (`Adventure/Detect.luau`). INFERENCE: the match data field that marks an Adventure match has not been observed yet (Phase 0), so any Adventure/Odyssey marker counts.
+- Observed from the game's own client code (not yet run by this hub): the remote names above and the state shape (`Characters[]` with `CharacterName`, `UnlockedPowerIds`, `Loadout{Slot1,Slot2}`, `OwnsLoadoutSlot2`). INFERENCE: `LoadoutProvided=true` with a nil slot means an empty slot.
+- Mock tests only (tests/unit/run4.luau). Live: not verified; the client disconnected during the first state read. Still to check live: the state reply matches the shape, and (with permission) that Auto Join starts a run with the chosen character and slots.
 ## Local Odyssey Adventure tab (settings only) — not published
 
 - New Farming tab **Odyssey Adventure** with the requested layout: Auto Join; Character (Select Character, Slot 1, Slot 2); Miscellaneous with Auto Route Atlas (Use Second Prioritize after Floor 1–200, Floor Prioritize, Second Floor Prioritize), Auto Choose Unit Reward, Auto Buy Itches; Auto Character Card; Auto Basic Card with Card Priority; Auto Stitches Shop (Buy Basic Card, Buy Starter Card, Buy Unit Trait, Buy Unit Memoria); Run Completion (Auto Cash Out, Cash out at floor 1–100, Auto Start New Run, Auto Ascension); Memorized Modifier (Auto Select Memorized Memoria, Memoria, Refresh Inventory); Stage Failsafe (Teleport Lobby if Stage not Finished, Failsafe Time 1–30 minutes).

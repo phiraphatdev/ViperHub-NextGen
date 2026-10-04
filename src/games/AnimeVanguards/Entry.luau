@@ -12,6 +12,7 @@ local config = require("./Config")
 local JoinerPage = require("./Joiner/Page")
 local JoinerRuntime = require("./Joiner/Runtime")
 local AdventurePage = require("./Adventure/Page")
+local AdventureAdapter = require("./Adventure/Adapter")
 local MacroPage = require("./Macro/Page")
 local MacroRuntime = require("./Macro/Runtime")
 local GamePage = require("./Game/Page")
@@ -26,6 +27,7 @@ local MiscPage = require("./Misc/Page")
 local MiscRuntime = require("./Misc/Runtime")
 local active = false
 local joiner = JoinerRuntime.new()
+local adventure = AdventureAdapter.new()
 local macro = MacroRuntime.new()
 local gameSettings = GameAdapter.new()
 local autoPlay = AutoPlayRuntime.new()
@@ -63,7 +65,7 @@ local pages: { Types.PageDefinition } = {
         group = "Farming",
         iconColor = "violet",
         render = function(tab: any)
-            AdventurePage.mount(tab)
+            AdventurePage.mount(tab, adventure.getCatalog(), adventure.getSettings(), joiner)
         end,
     },
     {
@@ -135,6 +137,7 @@ function GameModule.start(context: Types.Context)
     end
     active = true
     joiner.setMacro(macro)
+    joiner.setAdventure(adventure)
     joiner.setReturnGate(webhook.isBusy)
     gameSettings.setReturnGate(webhook.isBusy)
     joiner.setGameSettings(gameSettings)

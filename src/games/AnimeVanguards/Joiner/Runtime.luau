@@ -12,6 +12,7 @@ local TeamEquip = require("./TeamEquip")
 local MacroEquip = require("./MacroEquip")
 local MacroStorage = require("../Macro/Storage")
 local TeamAdapter = require("./TeamAdapter")
+local AdventureDetect = require("../Adventure/Detect")
 local metadata = require("../Metadata")
 local config = require("../Config")
 local Runtime = {}
@@ -332,6 +333,20 @@ function Runtime.new(dependencies: any?): any
 
     function self.setGameSettings(gs: any)
         self.gameSettings = gs
+    end
+
+    --- Gives the joiner the Odyssey: Adventure adapter (plan() and start(plan)); without it the mode reports unavailable.
+    function self.setAdventure(adventure: any)
+        self.adventure = adventure
+    end
+
+    --- True when a joiner is enabled (live value once started, else the saved one).
+    function self.isEnabled(name: string): boolean
+        local live = self.enabled[name]
+        if live ~= nil then
+            return live == true
+        end
+        return Settings.get().enabled[name] == true
     end
 
     --- Returns the saved-team dropdown options (owned teams only), or nil when team data is unavailable.
@@ -886,6 +901,7 @@ function Runtime.new(dependencies: any?): any
                 or name == "Boss Event"
                 or name == "Boss Bounties"
                 or name == "Rift"
+                or name == "Odyssey Adventure"
             ) and type(value) == "boolean"
         then
             self.enabled[name] = value
@@ -909,6 +925,13 @@ function Runtime.new(dependencies: any?): any
         end
 
         local matchData = deps.gameHandler and deps.gameHandler.GameData
+        -- An Odyssey: Adventure run is owned by the Adventure features: never return to the lobby, switch the stage
+        -- or run the bounty/challenge logic inside it.
+        if AdventureDetect.isAdventureMatch(matchData) or self.currentJoinedName == "Odyssey Adventure" then
+            self.teleportingToLobby = nil
+            self.returnOnMatchEnd = false
+            return
+        end
         local currentChallenge = type(matchData) == "table"
                 and (matchData.ChallengeType or matchData.Challenge)
             or nil
@@ -1248,6 +1271,35 @@ function Runtime.new(dependencies: any?): any
                 note(name, "waiting for the joiner cooldown")
                 return
             end
+            if name == "Odyssey Adventure" and self.enabled[name] then
+                local adventure: any = self.adventure
+                if not adventure then
+                    note(name, "Adventure module unavailable")
+                else
+                    local plan, reason = adventure.plan()
+                    if not plan then
+                        note(name, reason or "unavailable")
+                    else
+                        for _, extra in plan.notes do
+                            note(name, extra)
+                        end
+                        self.confirmed = {
+                            name = name,
+                            mode = "OdysseyAdventure",
+                            confirmedAt = now,
+                            startSent = now,
+                        }
+                        self.lastAttempt = now
+                        if adventure.start(plan) then
+                            setStatus(name .. ": start sent (" .. plan.character .. "); waiting for teleport")
+                        else
+                            self.confirmed = nil
+                            setStatus(name .. ": start request failed")
+                        end
+                        return
+                    end
+                end
+            end
             if
                 name == "Boss Event"
                 and self.enabled[name]
@@ -1555,6 +1607,10 @@ function Runtime.new(dependencies: any?): any
         local saved = Settings.get()
         self.enabled = table.clone(saved.enabled)
         self.selection = table.clone(saved.selection)
+        local adventure: any = self.adventure
+        if adventure and type(adventure.connect) == "function" then
+            pcall(adventure.connect)
+        end
         local function bindMatchConfirmed(deps: any)
             if self.disconnect then
                 pcall(function()
@@ -1747,6 +1803,10 @@ function Runtime.new(dependencies: any?): any
                 self.teleportConnection:Disconnect()
             end)
             self.teleportConnection = nil
+        end
+        local adventure: any = self.adventure
+        if adventure and type(adventure.stop) == "function" then
+            pcall(adventure.stop)
         end
         if self.matchEndConnection then
             pcall(function()

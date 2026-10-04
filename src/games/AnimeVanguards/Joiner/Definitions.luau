@@ -20,4 +20,5 @@ return table.freeze({
     "Daily Challenge",
     "Weekly Challenge",
     "Rift",
+    "Odyssey Adventure",
 })

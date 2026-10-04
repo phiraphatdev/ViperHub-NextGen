@@ -18,6 +18,7 @@ export type Data = {
     characters: { string },
     defaultCharacter: string,
     powers: { string },
+    powerIds: { [string]: number },
     basicCards: { string },
     basicCardRarity: { [string]: string },
     roomKinds: { string },
@@ -65,6 +66,20 @@ local function readPowers(module: any): { string }
             local item: any = power
             if type(item) == "table" and validName(item.Name) and not table.find(result, item.Name) then
                 table.insert(result, item.Name)
+            end
+        end
+    end
+    return result
+end
+
+-- Power ids by name from PowersData.POWERS (the lobby remotes take ids, not names).
+local function readPowerIds(module: any): { [string]: number }
+    local result: { [string]: number } = {}
+    if type(module) == "table" and type(module.POWERS) == "table" then
+        for _, power in ipairs(module.POWERS) do
+            local item: any = power
+            if type(item) == "table" and validName(item.Name) and type(item.Id) == "number" then
+                result[item.Name] = item.Id
             end
         end
     end
@@ -154,6 +169,13 @@ function Catalog.fromModules(modules: any): Data
     if not table.find(characters, defaultCharacter) then
         defaultCharacter = characters[1]
     end
+    local powerIds = readPowerIds(m.powers)
+    if next(powerIds) == nil then
+        -- Observed: ids 1-14 follow the order of the config list.
+        for index, name in ADVENTURE.powers do
+            powerIds[name] = index
+        end
+    end
     local rarityOf: { [string]: string } = {}
     local basicCards = readBasicCards(m.basicCards, rarityOf)
     if #basicCards == 0 then
@@ -164,6 +186,7 @@ function Catalog.fromModules(modules: any): Data
         characters = characters,
         defaultCharacter = defaultCharacter,
         powers = pick(readPowers(m.powers), ADVENTURE.powers),
+        powerIds = powerIds,
         basicCards = basicCards,
         basicCardRarity = rarityOf,
         roomKinds = copy(ADVENTURE.roomKinds),

@@ -3,10 +3,11 @@
 Purpose: Interface with in-game gameplay settings via SharedSettingsClient and SettingsState
 Input: ReplicatedStorage and StarterPlayer modules, setting mutations
 Output: Read, mutate and observe in-game settings (AutoReplay, AutoNext, AutoSkipWaves, AutoSkipStart)
-Dependencies: Config
+Dependencies: Config; Adventure/Detect
 ]]
 
 local config = require("../Config")
+local AdventureDetect = require("../Adventure/Detect")
 local FileStorage = require("../../../platform/FileStorage")
 local Adapter = {}
 local SETTINGS_STORAGE_KEY = "AnimeVanguardsGameSettings"
@@ -288,7 +289,8 @@ function Adapter.new(injectedDeps: any?): any
             local okGh, gh = pcall(require, gameHandlerMod)
             if okGh and gh and gh.MatchEnded and type(gh.MatchEnded.Connect) == "function" then
                 self.matchEndConnection = (gh.MatchEnded.Connect :: any)(gh.MatchEnded, function()
-                    if self.autoBackToLobby then
+                    -- An Odyssey: Adventure run is owned by the Adventure features, never sent back from here.
+                    if self.autoBackToLobby and not AdventureDetect.isAdventureMatch(gh.GameData) then
                         local taskApi = env.task
                         local function doTeleport(held: number?)
                             if self.teleportCancelled or not self.context or not self.context.alive then
