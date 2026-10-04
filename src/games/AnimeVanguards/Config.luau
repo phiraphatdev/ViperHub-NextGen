@@ -352,6 +352,9 @@ return table.freeze({
         adventureChestGapSeconds = 1,
         -- Between two Stitches Shop purchases.
         adventureShopGapSeconds = 1.2,
+        -- The shop watcher checks the room this often and asks for the shop state at most this often.
+        adventureShopWatchSeconds = 2,
+        adventureShopAskSeconds = 6,
         -- A room vote still open after this long is cast again, at most this many times.
         adventureVoteRetrySeconds = 20,
         adventureVoteAttempts = 3,

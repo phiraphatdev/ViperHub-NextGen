@@ -16,6 +16,8 @@ local PICK_DELAY_SECONDS: number = (config :: any).thresholds.adventurePickDelay
 local REPEAT_SECONDS: number = (config :: any).thresholds.adventureRepeatSeconds
 local CHEST_GAP_SECONDS: number = (config :: any).thresholds.adventureChestGapSeconds
 local SHOP_GAP_SECONDS: number = (config :: any).thresholds.adventureShopGapSeconds
+local SHOP_WATCH_SECONDS: number = (config :: any).thresholds.adventureShopWatchSeconds
+local SHOP_ASK_SECONDS: number = (config :: any).thresholds.adventureShopAskSeconds
 local VOTE_RETRY_SECONDS: number = (config :: any).thresholds.adventureVoteRetrySeconds
 local VOTE_ATTEMPTS: number = (config :: any).thresholds.adventureVoteAttempts
 
@@ -68,6 +70,18 @@ local function liveDependencies(): any
             if root and root.Visible then
                 root.Visible = false
             end
+        end,
+        roomKind = function(): string?
+            local data = if handler then handler.GameData else nil
+            return if type(data) == "table" and type(data.AdventureRoomKind) == "string"
+                then data.AdventureRoomKind
+                else nil
+        end,
+        floor = function(): number?
+            local data = if handler then handler.GameData else nil
+            return if type(data) == "table" and type(data.AdventureFloor) == "number"
+                then data.AdventureFloor
+                else nil
         end,
         placedUnitGuid = function(name: any): string?
             local handler = optionalModule(env.game:GetService("StarterPlayer"), paths.clientUnitHandler)
@@ -576,6 +590,48 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         end
     end
 
+    -- The shop's opening event can come before the hub is ready (or be missed): while the current room is a Shop and
+    -- this shop was not handled, ask the game for its state (its reply is handled like an opening).
+    local lastFloorSeen: number? = nil
+    local lastShopAsk = -math.huge
+    local function watchShop()
+        local taskApi: any = deps.task
+        if not self.active or type(taskApi) ~= "table" or type(taskApi.delay) ~= "function" then
+            return
+        end
+        local ok = pcall(function()
+            local floorOf: any = deps.floor
+            local floor = if type(floorOf) == "function" then (floorOf :: any)() else nil
+            if floor ~= lastFloorSeen then
+                lastFloorSeen = floor
+                shopHandled = false
+            end
+            local roomKindOf: any = deps.roomKind
+            local saved = getSettings()
+            local wanted = saved.get("autoStitchesShop") == true or saved.get("leaveShop") == true
+            local now = deps.clock()
+            if
+                wanted
+                and not shopHandled
+                and type(roomKindOf) == "function"
+                and (roomKindOf :: any)() == "Shop"
+                and now - lastShopAsk >= SHOP_ASK_SECONDS
+            then
+                lastShopAsk = now
+                local events: any = deps.events
+                local ask = if events then events.ShopRequestState else nil
+                if type(ask) == "table" and type(ask.Fire) == "function" then
+                    local askFire: any = ask.Fire
+                    pcall(askFire)
+                end
+            end
+        end)
+        if not ok then
+            setStatus("Shop watcher failed")
+        end
+        (taskApi.delay :: any)(SHOP_WATCH_SECONDS, watchShop)
+    end
+
     --- Starts listening for offers; returns whether the match events exist (false in the lobby). Safe to repeat.
     function self.start(): boolean
         if self.active then
@@ -655,6 +711,10 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         end
         self.active = true
         setStatus("Listening for card and room offers")
+        local roomKindDep: any = deps.roomKind
+        if type(roomKindDep) == "function" then
+            watchShop()
+        end
         local startTask: any = deps.task
         if type(startTask) == "table" and type(startTask.delay) == "function" then
             (startTask.delay :: any)(10, ensureStart)

@@ -499,6 +499,8 @@ do
                     adventureRepeatSeconds = 4,
                     adventureChestGapSeconds = 1,
                     adventureShopGapSeconds = 1.2,
+                    adventureShopWatchSeconds = 2,
+                    adventureShopAskSeconds = 6,
                     adventureVoteRetrySeconds = 20,
                     adventureVoteAttempts = 3,
                 }),
@@ -8350,6 +8352,8 @@ do
             local REPEAT_SECONDS = (config).thresholds.adventureRepeatSeconds
             local CHEST_GAP_SECONDS = (config).thresholds.adventureChestGapSeconds
             local SHOP_GAP_SECONDS = (config).thresholds.adventureShopGapSeconds
+            local SHOP_WATCH_SECONDS = (config).thresholds.adventureShopWatchSeconds
+            local SHOP_ASK_SECONDS = (config).thresholds.adventureShopAskSeconds
             local VOTE_RETRY_SECONDS = (config).thresholds.adventureVoteRetrySeconds
             local VOTE_ATTEMPTS = (config).thresholds.adventureVoteAttempts
 
@@ -8409,6 +8413,16 @@ do
                         if root and root.Visible then
                             root.Visible = false
                         end
+                    end,
+                    roomKind = function()
+                        local data = if handler then handler.GameData else nil
+
+                        return if type(data) == 'table' and type(data.AdventureRoomKind) == 'string'then data.AdventureRoomKind else nil
+                    end,
+                    floor = function()
+                        local data = if handler then handler.GameData else nil
+
+                        return if type(data) == 'table' and type(data.AdventureFloor) == 'number'then data.AdventureFloor else nil
                     end,
                     placedUnitGuid = function(name)
                         local handler = optionalModule(env.game:GetService('StarterPlayer'), paths.clientUnitHandler)
@@ -8938,6 +8952,51 @@ do
                     end
                 end
 
+                local lastFloorSeen = nil
+                local lastShopAsk = -math.huge
+
+                local function watchShop()
+                    local taskApi = deps.task
+
+                    if not self.active or type(taskApi) ~= 'table' or type(taskApi.delay) ~= 'function' then
+                        return
+                    end
+
+                    local ok = pcall(function()
+                        local floorOf = deps.floor
+                        local floor = if type(floorOf) == 'function'then(floorOf)()else nil
+
+                        if floor ~= lastFloorSeen then
+                            lastFloorSeen = floor
+                            shopHandled = false
+                        end
+
+                        local roomKindOf = deps.roomKind
+                        local saved = getSettings()
+                        local wanted = saved.get('autoStitchesShop') == true or saved.get('leaveShop') == true
+                        local now = deps.clock()
+
+                        if wanted and not shopHandled and type(roomKindOf) == 'function' and (roomKindOf)() == 'Shop' and now - lastShopAsk >= SHOP_ASK_SECONDS then
+                            lastShopAsk = now
+
+                            local events = deps.events
+                            local ask = if events then events.ShopRequestState else nil
+
+                            if type(ask) == 'table' and type(ask.Fire) == 'function' then
+                                local askFire = ask.Fire
+
+                                pcall(askFire)
+                            end
+                        end
+                    end)
+
+                    if not ok then
+                        setStatus('Shop watcher failed')
+                    end
+
+                    (taskApi.delay)(SHOP_WATCH_SECONDS, watchShop)
+                end
+
                 function self.start()
                     if self.active then
                         return true
@@ -9039,6 +9098,12 @@ do
                     self.active = true
 
                     setStatus('Listening for card and room offers')
+
+                    local roomKindDep = deps.roomKind
+
+                    if type(roomKindDep) == 'function' then
+                        watchShop()
+                    end
 
                     local startTask = deps.task
 

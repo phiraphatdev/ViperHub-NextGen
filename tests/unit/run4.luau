@@ -1064,4 +1064,80 @@ test("Adventure runtime buys the selected shop items, then leaves the shop", fun
     runtime.stop()
 end)
 
+test("The shop watcher asks for the shop when a Shop room is current and the opening was missed", function()
+    local settings = AdventureSettings.new(AdventureCatalog.fromModules(nil), {})
+    local box: any = { kind = "Battle", floor = 10, asked = 0, now = 0 }
+    local pending: { any } = {}
+    local runtime = AdventureRuntime.new(function()
+        return settings
+    end, {
+        clock = function()
+            return box.now
+        end,
+        task = {
+            delay = function(_seconds: number, callback: any)
+                table.insert(pending, callback)
+            end,
+        },
+        isAdventure = function()
+            return true
+        end,
+        roomKind = function()
+            return box.kind
+        end,
+        floor = function()
+            return box.floor
+        end,
+        events = {
+            CardPickBasicOffer = { On = function() end },
+            ShopStockUpdated = {
+                On = function(callback: any)
+                    box.updated = callback
+                    return function() end
+                end,
+            },
+            ShopRequestState = {
+                Fire = function(...: any)
+                    assert(select("#", ...) == 0, "no arguments")
+                    box.asked += 1
+                end,
+            },
+            ShopClose = { Fire = function() end },
+        },
+    })
+    local function tick(seconds: number)
+        box.now += seconds
+        local batch = pending
+        pending = {}
+        for _, callback in batch do
+            local run: any = callback
+            run()
+        end
+    end
+    assert(runtime.start())
+    tick(2)
+    assert(box.asked == 0, "not a Shop room: nothing asked")
+    box.kind = "Shop"
+    box.floor = 11
+    tick(2)
+    assert(box.asked == 1, "a Shop room: the hub asks for the shop state")
+    tick(2)
+    assert(box.asked == 1, "asks at most every few seconds")
+    tick(6)
+    assert(box.asked == 2, "asks again while the shop is still unhandled")
+    local updated: any = box.updated
+    updated({ Stock = {}, Budget = 100, Spent = 0 })
+    tick(10)
+    assert(box.asked == 2, "once handled it stops asking")
+    box.floor = 12
+    tick(10)
+    assert(box.asked == 3, "a new Shop floor is watched again")
+    settings.set("leaveShop", false)
+    settings.set("autoStitchesShop", false)
+    box.floor = 13
+    tick(10)
+    assert(box.asked == 3, "with both shop features off the hub leaves the shop alone")
+    runtime.stop()
+end)
+
 print(string.format("PASS: %d unit scenarios (part 4)", passed))
