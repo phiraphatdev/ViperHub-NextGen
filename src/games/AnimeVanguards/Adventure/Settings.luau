@@ -2,7 +2,7 @@
 --[[
 Purpose: Validate and persist the Odyssey: Adventure tab choices (no automation reads them yet)
 Input: A catalog of valid option names and optional storage/codec dependencies
-Output: A settings object: get, set, moveUp, resetOrder and whether changes are saved to file
+Output: A settings object: get, set, setRank, order, resetOrder and whether changes are saved to file
 Dependencies: Config; FileStorage
 ]]
 
@@ -14,23 +14,26 @@ local ADVENTURE: any = (config :: any).adventure
 local SCHEMA_VERSION = 1
 local NONE = "None"
 local MAX_TEXT = 64
+local MAX_RANK = 999
 
 Settings.NONE = NONE
+Settings.MAX_RANK = MAX_RANK
 
--- Field kinds: bool, choice (one catalog name), number (clamped integer), set (subset), order (full permutation).
+-- Field kinds: bool, choice (one catalog name), number (clamped integer), set (subset), ranks (name -> priority
+-- number; the highest number comes first, like the reference UI).
 local FIELDS: { [string]: any } = {
     autoJoin = { kind = "bool", default = false },
     character = { kind = "choice", list = "characters" },
     slot1 = { kind = "choice", list = "powers", none = true },
     slot2 = { kind = "choice", list = "powers", none = true },
     secondPriorityFloor = { kind = "number", range = ADVENTURE.secondPriorityFloor },
-    floorPriority = { kind = "order", list = "roomKinds", default = ADVENTURE.floorPriority },
-    secondFloorPriority = { kind = "order", list = "roomKinds", default = ADVENTURE.secondFloorPriority },
+    floorPriority = { kind = "ranks", list = "roomKinds", default = ADVENTURE.floorPriority },
+    secondFloorPriority = { kind = "ranks", list = "roomKinds", default = ADVENTURE.secondFloorPriority },
     autoUnitReward = { kind = "bool", default = false },
     autoBuyItches = { kind = "bool", default = false },
     autoCharacterCard = { kind = "bool", default = false },
     autoBasicCard = { kind = "bool", default = false },
-    cardPriority = { kind = "order", list = "basicCards" },
+    cardPriority = { kind = "ranks", list = "basicCards" },
     autoStitchesShop = { kind = "bool", default = false },
     buyBasicCards = { kind = "set", list = "basicCards" },
     buyStarterCards = { kind = "set", list = "powers" },
@@ -51,7 +54,7 @@ local function finite(value: any): boolean
     return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
 end
 
--- Orders the default list so that known names come first in the given order and the rest keep catalog order.
+-- The default order: names from the spec default first, then the rest in catalog order.
 local function defaultOrder(spec: any, list: { string }): { string }
     local result = {}
     if spec.default then
@@ -69,6 +72,40 @@ local function defaultOrder(spec: any, list: { string }): { string }
     return result
 end
 
+-- Default ranks: the first name of the default order gets the highest number, the last gets 1.
+local function defaultRanks(spec: any, list: { string }): { [string]: number }
+    local order = defaultOrder(spec, list)
+    local ranks: { [string]: number } = {}
+    for index, name in order do
+        ranks[name] = #order - index + 1
+    end
+    return ranks
+end
+
+-- Names sorted by rank, highest first; equal ranks keep the default order.
+local function rankedOrder(spec: any, list: { string }, ranks: { [string]: number }): { string }
+    local order = defaultOrder(spec, list)
+    local position: { [string]: number } = {}
+    for index, name in order do
+        position[name] = index
+    end
+    table.sort(order, function(a: string, b: string): boolean
+        local left, right = ranks[a] or 0, ranks[b] or 0
+        if left ~= right then
+            return left > right
+        end
+        return position[a] < position[b]
+    end)
+    return order
+end
+
+local function validRank(value: any): number?
+    if not finite(value) then
+        return nil
+    end
+    return math.clamp(math.floor(value), 0, MAX_RANK)
+end
+
 local function defaultValue(spec: any, catalog: any): any
     if spec.kind == "choice" then
         return if spec.none then NONE else catalog.defaultCharacter
@@ -76,13 +113,14 @@ local function defaultValue(spec: any, catalog: any): any
         return spec.range.default
     elseif spec.kind == "set" then
         return {}
-    elseif spec.kind == "order" then
-        return defaultOrder(spec, catalog[spec.list])
+    elseif spec.kind == "ranks" then
+        return defaultRanks(spec, catalog[spec.list])
     end
     return spec.default
 end
 
--- Returns the validated value or nil; order lists keep unknown names out and append missing ones.
+-- Returns the validated value or nil. Ranks keep known names only (missing ones rank 0); an array is read as an
+-- order list (first = highest), the format saved before ranks existed.
 local function validate(spec: any, catalog: any, value: any): any
     if spec.kind == "bool" then
         return if type(value) == "boolean" then value else nil
@@ -105,17 +143,34 @@ local function validate(spec: any, catalog: any, value: any): any
         return nil
     end
     local list = catalog[spec.list]
+    if spec.kind == "ranks" then
+        local ranks: { [string]: number } = {}
+        if value[1] ~= nil then
+            local order = {}
+            for _, name in value do
+                if type(name) == "string" and table.find(list, name) and not table.find(order, name) then
+                    table.insert(order, name)
+                end
+            end
+            for _, name in defaultOrder(spec, list) do
+                if not table.find(order, name) then
+                    table.insert(order, name)
+                end
+            end
+            for index, name in order do
+                ranks[name] = #order - index + 1
+            end
+            return ranks
+        end
+        for _, name in list do
+            ranks[name] = validRank(value[name]) or 0
+        end
+        return ranks
+    end
     local result = {}
     for _, name in value do
         if type(name) == "string" and table.find(list, name) and not table.find(result, name) then
             table.insert(result, name)
-        end
-    end
-    if spec.kind == "order" then
-        for _, name in defaultOrder(spec, list) do
-            if not table.find(result, name) then
-                table.insert(result, name)
-            end
         end
     end
     return result
@@ -188,7 +243,7 @@ function Settings.new(catalog: any, injected: any?): any
         return storage ~= nil
     end
 
-    --- Returns one value (lists are copies).
+    --- Returns one value (tables are copies).
     function self.get(key: string): any
         local value = values[key]
         return if type(value) == "table" then table.clone(value) else value
@@ -209,30 +264,38 @@ function Settings.new(catalog: any, injected: any?): any
         return true
     end
 
-    --- Moves a name one place up in an order list; returns true when it moved.
-    function self.moveUp(key: string, name: any): boolean
+    --- Sets one name's priority number (0-999, highest first) in a ranks field; returns true when accepted.
+    function self.setRank(key: string, name: any, rank: any): boolean
         local spec = FIELDS[key]
-        local order = values[key]
-        if not spec or spec.kind ~= "order" or type(name) ~= "string" then
+        local number = validRank(rank)
+        if not spec or spec.kind ~= "ranks" or type(name) ~= "string" or number == nil then
             return false
         end
-        local index = table.find(order, name)
-        if not index or index == 1 then
+        if not table.find(catalog[spec.list], name) then
             return false
         end
-        order[index], order[index - 1] = order[index - 1], order[index]
+        values[key][name] = number
         save()
         return true
     end
 
-    --- Restores an order list to its default; returns the new order.
+    --- Returns a ranks field as names sorted highest number first (empty for other fields).
+    function self.order(key: string): { string }
+        local spec = FIELDS[key]
+        if not spec or spec.kind ~= "ranks" then
+            return {}
+        end
+        return rankedOrder(spec, catalog[spec.list], values[key])
+    end
+
+    --- Restores a ranks field to its default numbers; returns the resulting order.
     function self.resetOrder(key: string): { string }
         local spec = FIELDS[key]
-        if spec and spec.kind == "order" then
-            values[key] = defaultOrder(spec, catalog[spec.list])
+        if spec and spec.kind == "ranks" then
+            values[key] = defaultRanks(spec, catalog[spec.list])
             save()
         end
-        return self.get(key)
+        return self.order(key)
     end
 
     return self

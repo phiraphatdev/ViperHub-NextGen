@@ -5864,8 +5864,10 @@ do
             local SCHEMA_VERSION = 1
             local NONE = 'None'
             local MAX_TEXT = 64
+            local MAX_RANK = 999
 
             Settings.NONE = NONE
+            Settings.MAX_RANK = MAX_RANK
 
             local FIELDS = {
                 autoJoin = {
@@ -5891,12 +5893,12 @@ do
                     range = ADVENTURE.secondPriorityFloor,
                 },
                 floorPriority = {
-                    kind = 'order',
+                    kind = 'ranks',
                     list = 'roomKinds',
                     default = ADVENTURE.floorPriority,
                 },
                 secondFloorPriority = {
-                    kind = 'order',
+                    kind = 'ranks',
                     list = 'roomKinds',
                     default = ADVENTURE.secondFloorPriority,
                 },
@@ -5917,7 +5919,7 @@ do
                     default = false,
                 },
                 cardPriority = {
-                    kind = 'order',
+                    kind = 'ranks',
                     list = 'basicCards',
                 },
                 autoStitchesShop = {
@@ -5999,6 +6001,43 @@ do
 
                 return result
             end
+            local function defaultRanks(spec, list)
+                local order = defaultOrder(spec, list)
+                local ranks = {}
+
+                for index, name in order do
+                    ranks[name] = #order - index + 1
+                end
+
+                return ranks
+            end
+            local function rankedOrder(spec, list, ranks)
+                local order = defaultOrder(spec, list)
+                local position = {}
+
+                for index, name in order do
+                    position[name] = index
+                end
+
+                table.sort(order, function(a, b)
+                    local left, right = ranks[a] or 0, ranks[b] or 0
+
+                    if left ~= right then
+                        return left > right
+                    end
+
+                    return position[a] < position[b]
+                end)
+
+                return order
+            end
+            local function validRank(value)
+                if not finite(value) then
+                    return nil
+                end
+
+                return math.clamp(math.floor(value), 0, MAX_RANK)
+            end
             local function defaultValue(spec, catalog)
                 if spec.kind == 'choice' then
                     return if spec.none then NONE else catalog.defaultCharacter
@@ -6006,8 +6045,8 @@ do
                     return spec.range.default
                 elseif spec.kind == 'set' then
                     return {}
-                elseif spec.kind == 'order' then
-                    return defaultOrder(spec, catalog[spec.list])
+                elseif spec.kind == 'ranks' then
+                    return defaultRanks(spec, catalog[spec.list])
                 end
 
                 return spec.default
@@ -6037,19 +6076,42 @@ do
                 end
 
                 local list = catalog[spec.list]
+
+                if spec.kind == 'ranks' then
+                    local ranks = {}
+
+                    if value[1] ~= nil then
+                        local order = {}
+
+                        for _, name in value do
+                            if type(name) == 'string' and table.find(list, name) and not table.find(order, name) then
+                                table.insert(order, name)
+                            end
+                        end
+                        for _, name in defaultOrder(spec, list)do
+                            if not table.find(order, name) then
+                                table.insert(order, name)
+                            end
+                        end
+                        for index, name in order do
+                            ranks[name] = #order - index + 1
+                        end
+
+                        return ranks
+                    end
+
+                    for _, name in list do
+                        ranks[name] = validRank(value[name]) or 0
+                    end
+
+                    return ranks
+                end
+
                 local result = {}
 
                 for _, name in value do
                     if type(name) == 'string' and table.find(list, name) and not table.find(result, name) then
                         table.insert(result, name)
-                    end
-                end
-
-                if spec.kind == 'order' then
-                    for _, name in defaultOrder(spec, list)do
-                        if not table.find(result, name) then
-                            table.insert(result, name)
-                        end
                     end
                 end
 
@@ -6154,36 +6216,42 @@ do
 
                     return true
                 end
-                function self.moveUp(key, name)
+                function self.setRank(key, name, rank)
                     local spec = FIELDS[key]
-                    local order = values[key]
+                    local number = validRank(rank)
 
-                    if not spec or spec.kind ~= 'order' or type(name) ~= 'string' then
+                    if not spec or spec.kind ~= 'ranks' or type(name) ~= 'string' or number == nil then
+                        return false
+                    end
+                    if not table.find(catalog[spec.list], name) then
                         return false
                     end
 
-                    local index = table.find(order, name)
-
-                    if not index or index == 1 then
-                        return false
-                    end
-
-                    order[index], order[index - 1] = order[index - 1], order[index]
+                    values[key][name] = number
 
                     save()
 
                     return true
                 end
+                function self.order(key)
+                    local spec = FIELDS[key]
+
+                    if not spec or spec.kind ~= 'ranks' then
+                        return {}
+                    end
+
+                    return rankedOrder(spec, catalog[spec.list], values[key])
+                end
                 function self.resetOrder(key)
                     local spec = FIELDS[key]
 
-                    if spec and spec.kind == 'order' then
-                        values[key] = defaultOrder(spec, catalog[spec.list])
+                    if spec and spec.kind == 'ranks' then
+                        values[key] = defaultRanks(spec, catalog[spec.list])
 
                         save()
                     end
 
-                    return self.get(key)
+                    return self.order(key)
                 end
 
                 return self
@@ -6211,17 +6279,16 @@ do
             local Catalog = __DARKLUA_BUNDLE_MODULES.t()
             local Settings = __DARKLUA_BUNDLE_MODULES.u()
             local Page = {}
+            local SUMMARY_ENTRIES = 10
             local PENDING =
 [[Settings only for now: the Adventure automation is not built yet, so these choices are saved but nothing runs.]]
 
             local function orderText(order)
-                local parts = {}
-
-                for index, name in order do
-                    table.insert(parts, index .. '. ' .. name)
+                if #order <= SUMMARY_ENTRIES then
+                    return table.concat(order, ' > ')
                 end
 
-                return table.concat(parts, ' > ')
+                return table.concat(order, ' > ', 1, SUMMARY_ENTRIES) .. string.format(' > \u{2026} (+%d)', #order - SUMMARY_ENTRIES)
             end
             local function setDesc(control, text)
                 if type(control) == 'table' and type(control.SetDesc) == 'function' then
@@ -6229,38 +6296,55 @@ do
                 end
             end
             local function priorityEditor(host, settings, key, title, desc)
-                local order = settings.get(key)
-                local selected = order[1]
-                local dropdown
-
-                local function refresh()
-                    setDesc(dropdown, desc .. '\n' .. orderText(settings.get(key)))
+                local function text()
+                    return desc .. '\n' .. orderText(settings.order(key))
                 end
 
-                dropdown = host:Dropdown({
+                local summary = host:Paragraph({
                     Title = title,
-                    Desc = desc .. '\n' .. orderText(order),
-                    Values = order,
-                    Value = selected,
-                    Callback = function(value)
-                        if type(value) == 'string' then
-                            selected = value
-                        end
-                    end,
+                    Desc = text(),
                 })
 
-                host:Button({
-                    Title = title .. ': move selected up',
-                    Callback = function()
-                        if settings.moveUp(key, selected) then
-                            refresh()
-                        end
-                    end,
-                })
-                host:Button({
-                    Title = title .. ': reset order',
+                local function refresh()
+                    setDesc(summary, text())
+                end
+
+                local rows = Style.sub(host, title .. ' numbers', 'list-ordered', false)
+                local inputs = {}
+                local ranks = settings.get(key)
+
+                for _, name in settings.order(key)do
+                    inputs[name] = rows:Input({
+                        Title = name,
+                        Value = tostring(ranks[name] or 0),
+                        Placeholder = '0-' .. Settings.MAX_RANK,
+                        Callback = function(text)
+                            local number = tonumber(text)
+
+                            if number == nil or settings.get(key)[name] == math.floor(number) then
+                                return
+                            end
+                            if settings.setRank(key, name, number) then
+                                refresh()
+                            end
+                        end,
+                    })
+                end
+
+                rows:Button({
+                    Title = title .. ': reset',
+                    Desc = 'Restore the default numbers.',
                     Callback = function()
                         settings.resetOrder(key)
+
+                        local reset = settings.get(key)
+
+                        for name, input in inputs do
+                            if type(input) == 'table' and type(input.Set) == 'function' then
+                                pcall(input.Set, input, tostring(reset[name] or 0))
+                            end
+                        end
+
                         refresh()
                     end,
                 })
@@ -6352,7 +6436,8 @@ do
 
                 slider(route, settings, 'secondPriorityFloor', 'Use Second Prioritize after Floor',
 [[From this floor on, the Second Floor Prioritize order is used.]])
-                priorityEditor(route, settings, 'floorPriority', 'Floor Prioritize', 'Next room to pick on the Route Atlas, first is preferred.')
+                priorityEditor(route, settings, 'floorPriority', 'Floor Prioritize',
+[[Next room to pick on the Route Atlas; the highest number is preferred.]])
                 priorityEditor(route, settings, 'secondFloorPriority', 'Second Floor Prioritize', 'Used instead after the floor above.')
                 toggle(misc, settings, 'autoUnitReward', 'Auto Choose Unit Reward',
 [[After an Elite floor, take the highest-rarity unit offered; skipped when off.]])
@@ -6368,7 +6453,8 @@ do
 
                 toggle(basicCard, settings, 'autoBasicCard', 'Auto Basic Card',
 [[After each floor, pick a basic card by the priority below; skipped when off.]])
-                priorityEditor(basicCard, settings, 'cardPriority', 'Card Priority', 'Basic card (Odyssey modifier) priority, first is preferred.')
+                priorityEditor(basicCard, settings, 'cardPriority', 'Card Priority',
+[[Basic card (Odyssey modifier) to pick; the highest number is preferred.]])
 
                 local shop = Style.section(tab, 'Auto Stitches Shop', 'store', false)
 

@@ -12,15 +12,17 @@ local Catalog = require("./Catalog")
 local Settings = require("./Settings")
 local Page = {}
 
+local SUMMARY_ENTRIES = 10
 local PENDING =
     "Settings only for now: the Adventure automation is not built yet, so these choices are saved but nothing runs."
 
+-- The order summary lists the first SUMMARY_ENTRIES names, then how many follow.
 local function orderText(order: { string }): string
-    local parts = {}
-    for index, name in order do
-        table.insert(parts, index .. ". " .. name)
+    if #order <= SUMMARY_ENTRIES then
+        return table.concat(order, " > ")
     end
-    return table.concat(parts, " > ")
+    return table.concat(order, " > ", 1, SUMMARY_ENTRIES)
+        .. string.format(" > … (+%d)", #order - SUMMARY_ENTRIES)
 end
 
 local function setDesc(control: any, text: string)
@@ -29,37 +31,46 @@ local function setDesc(control: any, text: string)
     end
 end
 
--- A priority list: a dropdown to pick an entry (its description shows the order), Move up and Reset buttons.
+-- A priority list like the reference UI: the current order on top, then a collapsible group with one number box per
+-- entry (the highest number is preferred) and a reset button.
 local function priorityEditor(host: any, settings: any, key: string, title: string, desc: string)
-    local order = settings.get(key)
-    local selected = order[1]
-    local dropdown: any
-    local function refresh()
-        setDesc(dropdown, desc .. "\n" .. orderText(settings.get(key)))
+    local function text(): string
+        return desc .. "\n" .. orderText(settings.order(key))
     end
-    dropdown = host:Dropdown({
-        Title = title,
-        Desc = desc .. "\n" .. orderText(order),
-        Values = order,
-        Value = selected,
-        Callback = function(value: any)
-            if type(value) == "string" then
-                selected = value
-            end
-        end,
-    })
-    host:Button({
-        Title = title .. ": move selected up",
-        Callback = function()
-            if settings.moveUp(key, selected) then
-                refresh()
-            end
-        end,
-    })
-    host:Button({
-        Title = title .. ": reset order",
+    local summary = host:Paragraph({ Title = title, Desc = text() })
+    local function refresh()
+        setDesc(summary, text())
+    end
+    local rows = Style.sub(host, title .. " numbers", "list-ordered", false)
+    local inputs: { [string]: any } = {}
+    local ranks = settings.get(key)
+    for _, name in settings.order(key) do
+        inputs[name] = rows:Input({
+            Title = name,
+            Value = tostring(ranks[name] or 0),
+            Placeholder = "0-" .. Settings.MAX_RANK,
+            Callback = function(text: any)
+                local number = tonumber(text)
+                if number == nil or settings.get(key)[name] == math.floor(number) then
+                    return
+                end
+                if settings.setRank(key, name, number) then
+                    refresh()
+                end
+            end,
+        })
+    end
+    rows:Button({
+        Title = title .. ": reset",
+        Desc = "Restore the default numbers.",
         Callback = function()
             settings.resetOrder(key)
+            local reset = settings.get(key)
+            for name, input in inputs do
+                if type(input) == "table" and type(input.Set) == "function" then
+                    pcall(input.Set, input, tostring(reset[name] or 0))
+                end
+            end
             refresh()
         end,
     })
@@ -181,7 +192,7 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?): an
         settings,
         "floorPriority",
         "Floor Prioritize",
-        "Next room to pick on the Route Atlas, first is preferred."
+        "Next room to pick on the Route Atlas; the highest number is preferred."
     )
     priorityEditor(
         route,
@@ -227,7 +238,7 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?): an
         settings,
         "cardPriority",
         "Card Priority",
-        "Basic card (Odyssey modifier) priority, first is preferred."
+        "Basic card (Odyssey modifier) to pick; the highest number is preferred."
     )
 
     local shop = Style.section(tab, "Auto Stitches Shop", "store", false)

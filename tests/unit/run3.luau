@@ -101,8 +101,10 @@ test("Adventure settings validate every field kind", function()
     assert(
         s.get("secondPriorityFloor") == 30 and s.get("cashOutFloor") == 30 and s.get("failsafeMinutes") == 10
     )
-    assert(table.concat(s.get("floorPriority"), ",") == "Treasure,Elite,Shop,Battle,Boss")
-    assert(#s.get("cardPriority") == 33 and #s.get("buyBasicCards") == 0)
+    assert(table.concat(s.order("floorPriority"), ",") == "Treasure,Elite,Shop,Battle,Boss")
+    assert(s.get("floorPriority").Treasure == 5 and s.get("floorPriority").Boss == 1)
+    assert(#s.order("cardPriority") == 33 and s.get("cardPriority")["Limit Break"] == 33)
+    assert(#s.get("buyBasicCards") == 0 and #s.order("autoJoin") == 0)
     assert(not s.set("autoJoin", "yes") and s.set("autoJoin", true) and s.get("autoJoin"))
     assert(not s.set("character", "Nobody") and s.set("character", "Luce (Hacker)"))
     assert(not s.set("character", "None") and s.set("slot2", "None") and s.set("slot1", "Flight"))
@@ -110,22 +112,33 @@ test("Adventure settings validate every field kind", function()
     assert(s.set("failsafeMinutes", -3) and s.get("failsafeMinutes") == 1)
     assert(s.set("buyTraits", { "Blitz", "Blitz", "Fake", "Solar" }))
     assert(table.concat(s.get("buyTraits"), ",") == "Blitz,Solar")
-    assert(s.set("floorPriority", { "Boss", "Fake" }) and s.get("floorPriority")[1] == "Boss")
-    assert(#s.get("floorPriority") == 5)
+    -- An order list (the earlier saved format) becomes numbers; a map keeps known names, missing ones rank 0.
+    assert(s.set("floorPriority", { "Boss", "Fake" }) and s.order("floorPriority")[1] == "Boss")
+    assert(s.get("floorPriority").Boss == 5 and s.get("floorPriority").Treasure == 4)
+    assert(s.set("floorPriority", { Shop = 50.7, Elite = -4, Fake = 9, Battle = 1e9 }))
+    assert(table.concat(s.order("floorPriority"), ",") == "Battle,Shop,Treasure,Elite,Boss")
+    assert(s.get("floorPriority").Battle == 999 and s.get("floorPriority").Shop == 50)
+    assert(s.get("floorPriority").Fake == nil and s.get("floorPriority").Elite == 0)
     assert(not s.set("memoria", "") and s.set("memoria", "Power Surge"))
     assert(not s.set("unknownKey", true))
     local copy = s.get("floorPriority")
-    copy[1] = "tampered"
-    assert(s.get("floorPriority")[1] == "Boss")
+    copy.Boss = 500
+    assert(s.get("floorPriority").Boss == 0)
 end)
 
-test("Adventure settings reorder and reset priority lists", function()
+test("Adventure settings rank priority entries by number, highest first", function()
     local s = AdventureSettings.new(AdventureCatalog.fromModules(nil), {})
-    assert(not s.moveUp("floorPriority", "Treasure"), "first entry stays")
-    assert(not s.moveUp("floorPriority", "Nope") and not s.moveUp("autoJoin", "Elite"))
-    assert(s.moveUp("floorPriority", "Elite") and s.get("floorPriority")[1] == "Elite")
-    assert(s.moveUp("cardPriority", "Golden Age") and s.get("cardPriority")[1] == "Golden Age")
-    assert(s.resetOrder("floorPriority")[1] == "Treasure")
+    assert(not s.setRank("floorPriority", "Nope", 3) and not s.setRank("autoJoin", "Elite", 3))
+    assert(not s.setRank("floorPriority", "Elite", "high") and not s.setRank("floorPriority", "Elite", 0 / 0))
+    assert(s.setRank("floorPriority", "Boss", 10) and s.order("floorPriority")[1] == "Boss")
+    assert(
+        s.setRank("floorPriority", "Shop", 5) and s.order("floorPriority")[2] == "Treasure",
+        "ties keep default order"
+    )
+    assert(s.setRank("cardPriority", "Ambush", 2000) and s.get("cardPriority").Ambush == 999)
+    assert(s.order("cardPriority")[1] == "Ambush")
+    assert(s.setRank("cardPriority", "Limit Break", -1) and s.order("cardPriority")[33] == "Limit Break")
+    assert(s.resetOrder("floorPriority")[1] == "Treasure" and s.get("floorPriority").Boss == 1)
 end)
 
 test("Adventure settings persist, reload and never overwrite an unreadable file", function()
@@ -135,11 +148,11 @@ test("Adventure settings persist, reload and never overwrite an unreadable file"
     assert(first.persistent())
     first.set("autoCashOut", true)
     first.set("character", "Tuji (Sorcerer Killer)")
-    first.moveUp("secondFloorPriority", "Battle")
+    first.setRank("secondFloorPriority", "Boss", 9)
     assert(store.writes == 3 and store.document.schemaVersion == 1)
     local second = AdventureSettings.new(catalog, store.deps)
     assert(second.get("autoCashOut") and second.get("character") == "Tuji (Sorcerer Killer)")
-    assert(second.get("secondFloorPriority")[1] == "Battle")
+    assert(second.order("secondFloorPriority")[1] == "Boss" and second.get("secondFloorPriority").Boss == 9)
 
     local tampered =
         fakeStore({ schemaVersion = 1, character = "Ghost", cashOutFloor = 1e9, autoJoin = "true" })
@@ -164,15 +177,31 @@ test("Adventure page mounts the requested layout and binds every control", funct
     local controls: { [string]: any } = {}
     local sections: { string } = {}
     local statusText = ""
+    local inputs: { [string]: any } = {}
     local function host(path: string): any
         local node: any = {}
-        for _, kind in { "Toggle", "Dropdown", "Slider", "Button" } do
+        for _, kind in { "Toggle", "Dropdown", "Slider", "Button", "Input", "Paragraph" } do
             node[kind] = function(_self: any, options: any): any
-                local entry: any = { kind = kind, options = options, path = path }
+                local entry: any = { kind = kind, options = options, path = path, desc = options.Desc }
                 entry.SetDesc = function(_s: any, text: string)
                     entry.desc = text
+                    if options.Title == "Status" then
+                        statusText = text
+                    end
                 end
-                controls[options.Title] = entry
+                -- Like WindUI: Set stores the text and runs the callback.
+                entry.Set = function(_s: any, value: any)
+                    entry.value = value
+                    options.Callback(value)
+                end
+                if options.Title == "Status" then
+                    statusText = options.Desc
+                end
+                if kind == "Input" then
+                    inputs[path .. options.Title] = entry
+                else
+                    controls[options.Title] = entry
+                end
                 return entry
             end
         end
@@ -180,21 +209,13 @@ test("Adventure page mounts the requested layout and binds every control", funct
             table.insert(sections, path .. options.Title)
             return host(path .. options.Title .. "/")
         end
-        node.Paragraph = function(_self: any, options: any): any
-            statusText = options.Desc
-            return {
-                SetDesc = function(_s: any, text: string)
-                    statusText = text
-                end,
-            }
-        end
         return node
     end
     assert(AdventurePage.mount(host(""), catalog, settings) == settings)
     assert(string.find(statusText, "not built yet", 1, true), statusText)
     assert(
         table.concat(sections, "|")
-            == "Character|Miscellaneous|Miscellaneous/Auto Route Atlas|Auto Character Card|Auto Basic Card|Auto Stitches Shop|Run Completion|Memorized Modifier|Stage Failsafe",
+            == "Character|Miscellaneous|Miscellaneous/Auto Route Atlas|Miscellaneous/Auto Route Atlas/Floor Prioritize numbers|Miscellaneous/Auto Route Atlas/Second Floor Prioritize numbers|Auto Character Card|Auto Basic Card|Auto Basic Card/Card Priority numbers|Auto Stitches Shop|Run Completion|Memorized Modifier|Stage Failsafe",
         table.concat(sections, "|")
     )
     local expected: { [string]: string } = {
@@ -242,15 +263,43 @@ test("Adventure page mounts the requested layout and binds every control", funct
     assert(settings.get("autoJoin") and settings.get("character") == "Luce (Hacker)")
     assert(settings.get("cashOutFloor") == 45 and #settings.get("buyMemoria") == 2)
 
-    controls["Floor Prioritize"].options.Callback("Shop")
-    controls["Floor Prioritize: move selected up"].options.Callback()
-    assert(settings.get("floorPriority")[2] == "Shop")
+    -- One number box per entry, listed highest first, like the reference UI.
+    local floorRows = "Miscellaneous/Auto Route Atlas/Floor Prioritize numbers/"
     assert(
-        string.find(controls["Floor Prioritize"].desc, "2. Shop", 1, true),
+        inputs[floorRows .. "Treasure"].options.Value == "5"
+            and inputs[floorRows .. "Boss"].options.Value == "1"
+    )
+    local cardRows = "Auto Basic Card/Card Priority numbers/"
+    local cardCount = 0
+    for name in inputs do
+        if string.sub(name, 1, #cardRows) == cardRows then
+            cardCount += 1
+        end
+    end
+    assert(cardCount == 33 and inputs[cardRows .. "Limit Break"].options.Value == "33")
+    local cardSummary: string = controls["Card Priority"].desc
+    assert(
+        string.find(cardSummary, "Limit Break > Golden Age", 1, true) ~= nil
+            and string.find(cardSummary, "(+23)", 1, true) ~= nil
+    )
+    assert(string.find(controls["Floor Prioritize"].desc, "Treasure > Elite > Shop", 1, true) ~= nil)
+    inputs[floorRows .. "Boss"].options.Callback("9")
+    assert(settings.order("floorPriority")[1] == "Boss")
+    assert(
+        string.find(controls["Floor Prioritize"].desc, "Boss > Treasure", 1, true),
         controls["Floor Prioritize"].desc
     )
-    controls["Floor Prioritize: reset order"].options.Callback()
-    assert(settings.get("floorPriority")[2] == "Elite")
+    inputs[floorRows .. "Shop"].options.Callback("")
+    inputs[floorRows .. "Shop"].options.Callback("abc")
+    assert(settings.get("floorPriority").Shop == 3, "partial or invalid text is ignored")
+    inputs["Miscellaneous/Auto Route Atlas/Second Floor Prioritize numbers/Elite"].options.Callback("100")
+    assert(
+        settings.order("secondFloorPriority")[1] == "Elite"
+            and settings.order("floorPriority")[2] == "Treasure"
+    )
+    controls["Floor Prioritize: reset"].options.Callback()
+    assert(settings.get("floorPriority").Boss == 1 and inputs[floorRows .. "Boss"].value == "1")
+    assert(string.find(controls["Floor Prioritize"].desc, "Treasure > Elite", 1, true) ~= nil)
 
     controls["Refresh Inventory"].options.Callback()
     assert(string.find(statusText, "runtime pending", 1, true), statusText)
