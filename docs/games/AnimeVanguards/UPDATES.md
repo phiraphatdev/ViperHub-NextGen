@@ -1,5 +1,12 @@
 # Updates
 
+## Local: Auto Route Atlas waits for each floor's own steps; boss reward; unit skip; one-by-one chests
+
+- Requested by the user: the next room is voted only after the floor's steps are done: Basic floor (the card chosen, also while the game's card window is still open), Elite (unit reward answered, character card answered), Shop (left), Boss (reward claimed or skipped), Treasure (the chests opened). Each step is a named task with a 90 s limit so a lost event cannot stall the run.
+- Read from the game's own scripts (client `StarterPlayer.Modules.Gameplay.Odyssey.Adventure` and the `GameOdysseyClient` codec): unit reward panel sends `UnitRewardEvent:FireServer("Pick", index)` or `("Skip", nil)`; the boss panel sends `BossRewardPick.Fire({Kind = "Memoria"|"Familiar", TargetUnitGUID})` (the target is the selected hotbar unit) or `BossRewardSkip.Fire()`; the treasure panel sends `TreasureOpenChest.Fire({ChestIndex})`. New switch "Auto Boss Reward" (default off). Auto Choose Unit Reward now skips when no unit can be taken.
+- Open Treasure Chests now works one chest at a time: move next to the 3D chest when found, wait, open (`TreasureOpenChest`), wait, next.
+- Mock-tested only (23 scenarios in part 4). Live: not yet seen on a Treasure floor, an Elite reward panel or a boss.
+
 ## Local: shops always end with Leave Shop; Auto Route Atlas waits for it
 
 - Requested by the user: Auto Stitches Shop looks for the wanted items and buys them; if none are wanted or none are selected it leaves at once. The shop is left by pressing the window's Leave Shop button (the X only hides it), with the ShopClose request as a backup; both Auto Stitches Shop and Leave Shop Rooms cause this (both off: the shop is left for the player). Auto Route Atlas does not vote while a shop is being handled (up to 90 s) and votes right after the shop was left.

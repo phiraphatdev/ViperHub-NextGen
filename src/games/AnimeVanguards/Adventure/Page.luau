@@ -28,6 +28,7 @@ local UNLOCKED: { [string]: boolean } = {
     openTreasure = true,
     autoStitchesShop = true,
     autoUnitReward = true,
+    autoBossReward = true,
     buyBasicCards = true,
     buyStarterCards = true,
     buyTraits = true,
@@ -244,7 +245,14 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?, joi
         settings,
         "autoUnitReward",
         "Auto Choose Unit Reward",
-        "After an Elite floor, take the highest-rarity unit offered; skipped when off."
+        "After an Elite floor, take the highest-rarity unit offered, or skip when none can be taken; the next room waits for it."
+    )
+    toggle(
+        misc,
+        settings,
+        "autoBossReward",
+        "Auto Boss Reward",
+        "After a boss floor, claim the rarest Memoria or Familiar on a placed unit, or skip when none; the next room waits for it."
     )
     toggle(
         misc,

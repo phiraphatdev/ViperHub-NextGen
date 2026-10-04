@@ -559,8 +559,8 @@ do
                     adventureShopWatchSeconds = 2,
                     adventureShopAskSeconds = 6,
                     adventureShopUiGraceSeconds = 2,
-                    adventureShopWaitSeconds = 90,
-                    adventureShopWaitRetrySeconds = 1.5,
+                    adventureTaskWaitSeconds = 90,
+                    adventureTaskWaitRetrySeconds = 1.5,
                     adventureVoteRetrySeconds = 20,
                     adventureVoteAttempts = 3,
                 }),
@@ -7242,6 +7242,10 @@ do
                     kind = 'bool',
                     default = false,
                 },
+                autoBossReward = {
+                    kind = 'bool',
+                    default = false,
+                },
                 autoBuyItches = {
                     kind = 'bool',
                     default = false,
@@ -7641,6 +7645,7 @@ do
                 openTreasure = true,
                 autoStitchesShop = true,
                 autoUnitReward = true,
+                autoBossReward = true,
                 buyBasicCards = true,
                 buyStarterCards = true,
                 buyTraits = true,
@@ -7817,7 +7822,9 @@ do
                 toggle(misc, settings, 'openTreasure', 'Open Treasure Chests',
 [[On a Treasure floor, open the allowed chests so the floor ends (it ends only after the picks are used).]])
                 toggle(misc, settings, 'autoUnitReward', 'Auto Choose Unit Reward',
-[[After an Elite floor, take the highest-rarity unit offered; skipped when off.]])
+[[After an Elite floor, take the highest-rarity unit offered, or skip when none can be taken; the next room waits for it.]])
+                toggle(misc, settings, 'autoBossReward', 'Auto Boss Reward',
+[[After a boss floor, claim the rarest Memoria or Familiar on a placed unit, or skip when none; the next room waits for it.]])
                 toggle(misc, settings, 'autoBuyItches', 'Auto Buy Itches',
 [[Buy from the Stitches NPC when it appears on the map and you have enough Yen.]])
 
@@ -8496,6 +8503,29 @@ do
 
                 return best
             end
+            function Choice.pickBossReward(options)
+                if type(options) ~= 'table' then
+                    return nil
+                end
+
+                local best = nil
+                local bestRank = -math.huge
+
+                for index = 1, #options do
+                    local option = options[index]
+
+                    if type(option) == 'table' and (option.Kind == 'Memoria' or option.Kind == 'Familiar') then
+                        local rank = if type(option.Rarity) == 'string'then UNIT_RARITY[option.Rarity] or 0 else 0
+
+                        if rank > bestRank then
+                            best = option.Kind
+                            bestRank = rank
+                        end
+                    end
+                end
+
+                return best
+            end
 
             return Choice
         end
@@ -8527,8 +8557,8 @@ do
             local SHOP_WATCH_SECONDS = (config).thresholds.adventureShopWatchSeconds
             local SHOP_ASK_SECONDS = (config).thresholds.adventureShopAskSeconds
             local SHOP_UI_GRACE_SECONDS = (config).thresholds.adventureShopUiGraceSeconds
-            local SHOP_WAIT_SECONDS = (config).thresholds.adventureShopWaitSeconds
-            local SHOP_WAIT_RETRY_SECONDS = (config).thresholds.adventureShopWaitRetrySeconds
+            local TASK_WAIT_SECONDS = (config).thresholds.adventureTaskWaitSeconds
+            local TASK_WAIT_RETRY_SECONDS = (config).thresholds.adventureTaskWaitRetrySeconds
             local VOTE_RETRY_SECONDS = (config).thresholds.adventureVoteRetrySeconds
             local VOTE_ATTEMPTS = (config).thresholds.adventureVoteAttempts
 
@@ -8717,7 +8747,7 @@ do
                         local listPlaced = handler.GetAllPlacedUnits
 
                         for _, unit in listPlaced()do
-                            if type(unit) == 'table' and unit.Name == name and type(unit.UniqueIdentifier) == 'string' then
+                            if type(unit) == 'table' and (name == nil or unit.Name == name) and type(unit.UniqueIdentifier) == 'string' then
                                 return unit.UniqueIdentifier
                             end
                         end
@@ -8916,8 +8946,36 @@ do
                 local guardedRetry
                 local shopHandled = false
                 local shopClosedAt = -math.huge
-                local shopPending = false
-                local shopPendingAt = -math.huge
+                local floorTasks = {}
+
+                local function beginTask(name)
+                    floorTasks[name] = deps.clock()
+                end
+                local function endTask(name)
+                    floorTasks[name] = nil
+                end
+                local function waitingFor()
+                    local now = deps.clock()
+
+                    for name, since in floorTasks do
+                        if now - since < TASK_WAIT_SECONDS then
+                            return name
+                        end
+                    end
+
+                    local readOffer = deps.readActiveCardOffer
+
+                    if type(readOffer) == 'function' and getSettings().get('autoBasicCard') == true then
+                        local okRead, activeOffer = pcall(readOffer)
+
+                        if okRead and type(activeOffer) == 'table' then
+                            return 'card'
+                        end
+                    end
+
+                    return nil
+                end
+
                 local lastShopKey = ''
                 local lastShopAt = -math.huge
                 local lastRoomKey = ''
@@ -8967,10 +9025,15 @@ do
 
                     lastKey, lastAt = key, now
 
+                    beginTask('card')
+
                     local function pick()
                         if not self.active or getSettings().get('autoBasicCard') ~= true then
                             return
                         end
+
+                        endTask('card')
+
                         if sendPick(index) then
                             self.picked += 1
 
@@ -9019,13 +9082,16 @@ do
                     if not self.active or saved.get('autoRoute') ~= true or not deps.isAdventure() then
                         return
                     end
-                    if shopPending and deps.clock() - shopPendingAt < SHOP_WAIT_SECONDS then
-                        setStatus('Auto Route Atlas: waiting for the shop to be left')
+
+                    local waiting = waitingFor()
+
+                    if waiting then
+                        setStatus('Auto Route Atlas: waiting for ' .. waiting)
 
                         local waitTask = deps.task
 
                         if type(waitTask) == 'table' and type(waitTask.delay) == 'function' then
-                            (waitTask.delay)(SHOP_WAIT_RETRY_SECONDS, function()
+                            (waitTask.delay)(TASK_WAIT_RETRY_SECONDS, function()
                                 if self.active and voteOpen and lastOffer == offer then
                                     onRoomOffer(offer, true)
                                 end
@@ -9171,7 +9237,11 @@ do
                     local atCap = type(offer) == 'table' and offer.AtCap == true
                     local index = if atCap then nil else Choice.pickCharacterCard(options)
 
+                    beginTask('character card')
+
                     local function answer()
+                        endTask('character card')
+
                         if not self.active or getSettings().get('autoCharacterCard') ~= true then
                             return
                         end
@@ -9241,9 +9311,8 @@ do
                     end
 
                     shopHandled = true
-                    shopPending = true
-                    shopPendingAt = deps.clock()
 
+                    beginTask('shop')
                     setStatus('Shop: opened, planning purchases')
 
                     local stock = if type(info) == 'table'then info.Stock else nil
@@ -9304,8 +9373,8 @@ do
                         end
 
                         shopClosedAt = deps.clock()
-                        shopPending = false
 
+                        endTask('shop')
                         setStatus(if#plan > 0 then'Shop: bought ' .. tostring(#plan) .. ' item(s), left the shop'else'Left the shop without buying' .. (if sent then''else' (button only)'))
                     end
 
@@ -9350,6 +9419,7 @@ do
 
                     treasureHandling = true
 
+                    beginTask('treasure')
                     setStatus('Treasure floor: opening chests')
 
                     local taskApi = deps.task
@@ -9361,69 +9431,10 @@ do
                             action()
                         end
                     end
+                    local function finish()
+                        treasureHandling = false
 
-                    local getChestsFn = deps.getUnopenedChests
-                    local physicalChests = if type(getChestsFn) == 'function'then(getChestsFn)()else nil
-
-                    if type(physicalChests) == 'table' and #physicalChests > 0 then
-                        local picks = if type(info) == 'table' and type(info.PicksRemaining) == 'number'then info.PicksRemaining else 3
-                        local toOpen = {}
-
-                        for i = 1, math.min(#physicalChests, picks)do
-                            table.insert(toOpen, physicalChests[i])
-                        end
-
-                        for index, chest in toOpen do
-                            local delayTime = (index - 1) * (CHEST_TELEPORT_DELAY_SECONDS + CHEST_GAP_SECONDS)
-
-                            later(delayTime, function()
-                                if not self.active or getSettings().get('openTreasure') ~= true then
-                                    return
-                                end
-
-                                setStatus(string.format('Treasure floor: moving to chest %s/%s', tostring(index), tostring(#toOpen)))
-
-                                local tpFn = deps.teleportTo
-
-                                if type(tpFn) == 'function' and chest.cframe then
-                                    (tpFn)(chest.cframe)
-                                end
-                            end)
-                            later(delayTime + CHEST_TELEPORT_DELAY_SECONDS, function(
-                            )
-                                if not self.active or getSettings().get('openTreasure') ~= true then
-                                    return
-                                end
-
-                                local ok = false
-                                local openReqFn = deps.openChestRequest
-
-                                if type(openReqFn) == 'function' then
-                                    ok = (openReqFn)(chest.id)
-                                end
-
-                                local events = deps.events
-                                local entry = if events then events.TreasureOpenChest else nil
-
-                                if type(entry) == 'table' and type(entry.Fire) == 'function' then
-                                    pcall(entry.Fire, {ChestIndex = index})
-
-                                    ok = true
-                                end
-                                if ok then
-                                    self.chests += 1
-
-                                    setStatus('Opened treasure chest ' .. tostring(index) .. '/' .. tostring(#toOpen))
-                                end
-                                if index == #toOpen then
-                                    later(CHEST_GAP_SECONDS, function()
-                                        treasureHandling = false
-                                    end)
-                                end
-                            end)
-                        end
-
-                        return
+                        endTask('treasure')
                     end
 
                     local total = if type(info) == 'table' and type(info.TotalChests) == 'number'then info.TotalChests else 6
@@ -9450,14 +9461,36 @@ do
                     end
 
                     if #order == 0 then
-                        treasureHandling = false
+                        finish()
 
                         return
                     end
 
-                    for position, chest in order do
-                        local function open()
+                    local getChestsFn = deps.getUnopenedChests
+                    local physical = if type(getChestsFn) == 'function'then(getChestsFn)()else nil
+
+                    local function step(position)
+                        if not self.active or getSettings().get('openTreasure') ~= true or position > #order then
+                            finish()
+
+                            return
+                        end
+
+                        local chestIndex = order[position]
+
+                        setStatus(string.format('Treasure floor: moving to chest %s/%s', tostring(position), tostring(#order)))
+
+                        local chest = if type(physical) == 'table'then physical[position]else nil
+                        local tpFn = deps.teleportTo
+
+                        if type(tpFn) == 'function' and type(chest) == 'table' and chest.cframe then
+                            pcall(tpFn, chest.cframe)
+                        end
+
+                        later(CHEST_TELEPORT_DELAY_SECONDS, function()
                             if not self.active or getSettings().get('openTreasure') ~= true then
+                                finish()
+
                                 return
                             end
 
@@ -9467,19 +9500,20 @@ do
                             if type(entry) == 'table' and type(entry.Fire) == 'function' then
                                 local fireFn = entry.Fire
 
-                                if pcall(fireFn, {ChestIndex = chest}) then
+                                if pcall(fireFn, {ChestIndex = chestIndex}) then
                                     self.chests += 1
 
-                                    setStatus('Opened treasure chest ' .. tostring(chest))
+                                    setStatus('Opened treasure chest ' .. tostring(position) .. '/' .. tostring(#order))
                                 end
                             end
-                            if position == #order then
-                                treasureHandling = false
-                            end
-                        end
 
-                        later(PICK_DELAY_SECONDS * position + CHEST_GAP_SECONDS * (position - 1), open)
+                            later(CHEST_GAP_SECONDS, function()
+                                step(position + 1)
+                            end)
+                        end)
                     end
+
+                    step(1)
                 end
                 local function onTreasureBegin(info)
                     if not self.active or type(info) ~= 'table' then
@@ -9499,6 +9533,11 @@ do
                     runOpenChests(info)
                 end
                 local function onUnitReward(kind, data)
+                    if kind == 'Close' then
+                        endTask('unit reward')
+
+                        return
+                    end
                     if kind ~= 'Offer' or not self.active or getSettings().get('autoUnitReward') ~= true or not deps.isAdventure() then
                         return
                     end
@@ -9506,25 +9545,92 @@ do
                     local index = Choice.pickUnitReward(data)
                     local remote = deps.unitReward
 
-                    if not index or remote == nil then
-                        setStatus('Auto Choose Unit Reward: no unit offered')
+                    if remote == nil then
+                        setStatus('Auto Choose Unit Reward: reward remote missing')
 
                         return
                     end
 
+                    beginTask('unit reward')
+
                     local function answer()
                         if not self.active or getSettings().get('autoUnitReward') ~= true then
+                            endTask('unit reward')
+
                             return
                         end
 
                         local okFire = pcall(function()
-                            remote:FireServer('Pick', index)
+                            if index then
+                                remote:FireServer('Pick', index)
+                            else
+                                remote:FireServer('Skip', nil)
+                            end
                         end)
 
                         if okFire then
-                            self.units += 1
+                            if index then
+                                self.units += 1
+                            end
 
-                            setStatus('Auto Choose Unit Reward: picked unit option ' .. tostring(index))
+                            setStatus(if index then'Auto Choose Unit Reward: picked unit option ' .. tostring(index)else'Auto Choose Unit Reward: no unit to pick, skipped')
+                        end
+
+                        endTask('unit reward')
+                    end
+
+                    local taskApi = deps.task
+
+                    if type(taskApi) == 'table' and type(taskApi.delay) == 'function' then
+                        (taskApi.delay)(PICK_DELAY_SECONDS, answer)
+                    else
+                        answer()
+                    end
+                end
+                local function onBossOffer(offer)
+                    if not self.active or getSettings().get('autoBossReward') ~= true or not deps.isAdventure() then
+                        return
+                    end
+
+                    local options = if type(offer) == 'table'then offer.Options else nil
+                    local kind = Choice.pickBossReward(options)
+
+                    beginTask('boss reward')
+
+                    local function answer()
+                        endTask('boss reward')
+
+                        if not self.active or getSettings().get('autoBossReward') ~= true then
+                            return
+                        end
+
+                        local events = deps.events
+                        local guidOf = deps.placedUnitGuid
+                        local guid = nil
+
+                        if kind and type(guidOf) == 'function' then
+                            guid = (guidOf)(getSettings().get('character')) or (guidOf)(nil)
+                        end
+
+                        local remoteName = if kind and guid then'BossRewardPick'else'BossRewardSkip'
+                        local entry = if events then events[remoteName]else nil
+
+                        if type(entry) ~= 'table' or type(entry.Fire) ~= 'function' then
+                            setStatus('Auto Boss Reward: remote missing')
+
+                            return
+                        end
+
+                        local fireFn = entry.Fire
+                        local ok = if remoteName == 'BossRewardPick'then pcall(fireFn, {
+                            Kind = kind,
+                            TargetUnitGUID = guid,
+                        })else pcall(fireFn)
+
+                        if ok then
+                            setStatus(if remoteName == 'BossRewardPick'then'Auto Boss Reward: claimed a ' .. tostring(kind)else'Auto Boss Reward: skipped (nothing to claim)')
+                        else
+                            setStatus('Auto Boss Reward: request failed')
                         end
                     end
 
@@ -9582,7 +9688,7 @@ do
                         if floor ~= lastFloorSeen then
                             lastFloorSeen = floor
                             shopHandled = false
-                            shopPending = false
+                            floorTasks = {}
                             treasureHandling = false
                         end
 
@@ -9679,6 +9785,7 @@ do
                         CardPickCharacterOffer = onCharacterOffer,
                         ShopOpened = onShopOpened,
                         TreasureBegin = onTreasureBegin,
+                        BossRewardOffer = onBossOffer,
                         ShopStockUpdated = function(info)
                             if not shopHandled then
                                 onShopOpened(info)
@@ -9686,7 +9793,9 @@ do
                         end,
                         ShopClosed = function()
                             shopHandled = false
-                            shopPending = false
+
+                            endTask('shop')
+
                             shopClosedAt = deps.clock()
                         end,
                         VoteEnded = function()

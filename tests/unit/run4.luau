@@ -698,38 +698,38 @@ test("Adventure opens the allowed treasure chests one by one", function()
         pending = {}
     end
     assert(runtime.start())
+    local function drain()
+        for _ = 1, 12 do
+            flush()
+        end
+    end
     local begin: any = box.begin
     begin({ TotalChests = 6, PicksRemaining = 3, OpenedChests = {} })
-    assert(#opened == 0, "chests open after a short wait")
-    flush()
-    assert(table.concat(opened, ",") == "1,2,3" and runtime.chests == 3)
+    drain()
+    assert(table.concat(opened, ",") == "1,2,3" and runtime.chests == 3, table.concat(opened, ","))
     opened = {}
     begin({ TotalChests = 6, PicksRemaining = 2, OpenedChests = { 1, 2, 3 } })
-    flush()
+    drain()
     assert(table.concat(opened, ",") == "4,5", "already opened chests are skipped")
     opened = {}
     settings.set("openTreasure", false)
     begin({ TotalChests = 6, PicksRemaining = 3, OpenedChests = {} })
-    flush()
+    drain()
     assert(#opened == 0, "switch off: the player opens them")
     runtime.stop()
 end)
 
-test("Adventure opens treasure chests by teleporting to 3D chests", function()
+test("Adventure opens treasure chests one after the other, moving to each first", function()
     local catalog = AdventureCatalog.fromModules(nil)
     local settings = AdventureSettings.new(catalog, {})
     settings.set("openTreasure", true)
-    local now = 100
-    local box: any = {}
-    local teleported: { string } = {}
-    local openedRequests: { string } = {}
+    local box: any = { log = {} }
     local pending: { any } = {}
     local runtime = AdventureRuntime.new(function()
         return settings
     end, {
         clock = function()
-            now += 10
-            return now
+            return 100
         end,
         task = {
             delay = function(_seconds: number, callback: any)
@@ -740,7 +740,7 @@ test("Adventure opens treasure chests by teleporting to 3D chests", function()
             return true
         end,
         teleportTo = function(cf: any)
-            table.insert(teleported, tostring(cf))
+            table.insert(box.log, "tp:" .. tostring(cf))
             return true
         end,
         getUnopenedChests = function()
@@ -751,10 +751,6 @@ test("Adventure opens treasure chests by teleporting to 3D chests", function()
                 { id = "chest-4", cframe = "cf4" },
             }
         end,
-        openChestRequest = function(id: string)
-            table.insert(openedRequests, id)
-            return true
-        end,
         events = {
             CardPickBasicOffer = { On = function() end },
             TreasureBegin = {
@@ -763,23 +759,188 @@ test("Adventure opens treasure chests by teleporting to 3D chests", function()
                     return function() end
                 end,
             },
+            TreasureOpenChest = {
+                Fire = function(payload: any)
+                    table.insert(box.log, "open:" .. tostring(payload.ChestIndex))
+                end,
+            },
         },
     })
-    local function flush()
-        for _, callback in pending do
+    local function step()
+        local batch = pending
+        pending = {}
+        for _, callback in batch do
             local run: any = callback
             run()
         end
-        pending = {}
     end
     assert(runtime.start())
     local begin: any = box.begin
     begin({ TotalChests = 6, PicksRemaining = 3, OpenedChests = {} })
-    flush()
-    assert(#teleported == 3, "teleports to 3 chests")
-    assert(table.concat(teleported, ",") == "cf1,cf2,cf3", "teleported in chest order")
-    assert(table.concat(openedRequests, ",") == "chest-1,chest-2,chest-3", "opens the 3 chests in order")
+    assert(table.concat(box.log, ",") == "tp:cf1", "moves to the first chest and nothing is opened yet")
+    step()
+    assert(table.concat(box.log, ",") == "tp:cf1,open:1", "opens it after the wait")
+    step()
+    assert(table.concat(box.log, ",") == "tp:cf1,open:1,tp:cf2", "only then moves on to the second")
+    for _ = 1, 8 do
+        step()
+    end
+    assert(
+        table.concat(box.log, ",") == "tp:cf1,open:1,tp:cf2,open:2,tp:cf3,open:3",
+        table.concat(box.log, ",")
+    )
     assert(runtime.chests == 3)
+    runtime.stop()
+end)
+
+test("Auto Route Atlas waits for the floor's card, unit reward, boss reward and chests", function()
+    local settings = AdventureSettings.new(AdventureCatalog.fromModules(nil), {})
+    settings.set("autoRoute", true)
+    settings.set("autoBasicCard", true)
+    settings.set("autoUnitReward", true)
+    settings.set("autoBossReward", true)
+    local box: any = { now = 0, votes = {}, fired = {} }
+    local pending: { any } = {}
+    local remote: any = {
+        FireServer = function(_self: any, kind: any, value: any)
+            table.insert(box.fired, tostring(kind) .. ":" .. tostring(value))
+            if kind == "Skip" or kind == "Pick" then
+                box.unitCallback("Close", nil)
+            end
+        end,
+    }
+    local runtime = AdventureRuntime.new(function()
+        return settings
+    end, {
+        clock = function()
+            return box.now
+        end,
+        task = {
+            delay = function(_seconds: number, callback: any)
+                table.insert(pending, callback)
+            end,
+        },
+        isAdventure = function()
+            return true
+        end,
+        roomKind = function()
+            return "Elite"
+        end,
+        floor = function()
+            return 9
+        end,
+        unitReward = {
+            OnClientEvent = {
+                Connect = function(_self: any, callback: any)
+                    box.unitCallback = callback
+                    return { Disconnect = function() end }
+                end,
+            },
+            FireServer = remote.FireServer,
+        },
+        placedUnitGuid = function(name: any)
+            return if name == nil or name == settings.get("character") then "guid-1" else nil
+        end,
+        mapRelay = {
+            OnSnapshot = function(callback: any)
+                box.snapshot = callback
+                return function() end
+            end,
+        },
+        events = {
+            CardPickBasicOffer = {
+                On = function(callback: any)
+                    box.card = callback
+                    return function() end
+                end,
+            },
+            CardPickPick = {
+                Fire = function(payload: any)
+                    table.insert(box.fired, "card:" .. tostring(payload.Choice))
+                end,
+            },
+            BossRewardOffer = {
+                On = function(callback: any)
+                    box.boss = callback
+                    return function() end
+                end,
+            },
+            BossRewardPick = {
+                Fire = function(payload: any)
+                    table.insert(
+                        box.fired,
+                        "boss:" .. tostring(payload.Kind) .. "@" .. tostring(payload.TargetUnitGUID)
+                    )
+                end,
+            },
+            BossRewardSkip = {
+                Fire = function()
+                    table.insert(box.fired, "bossskip")
+                end,
+            },
+            SelectRoomSelectionStarted = {
+                On = function(callback: any)
+                    box.room = callback
+                    return function() end
+                end,
+            },
+            VoteCast = {
+                Fire = function(payload: any)
+                    table.insert(box.votes, payload.OptionIndex)
+                end,
+            },
+        },
+    })
+    local function tick(seconds: number)
+        box.now += seconds
+        local batch = pending
+        pending = {}
+        for _, callback in batch do
+            local run: any = callback
+            run()
+        end
+    end
+    assert(runtime.start())
+    local snap: any = box.snapshot
+    snap({
+        CurrentFloor = 9,
+        CurrentLane = 1,
+        Connections = { { From = "F9_L1", To = "F10_L1" } },
+        Nodes = {},
+    })
+    local card: any = box.card
+    local boss: any = box.boss
+    local room: any = box.room
+    card({
+        Options = {
+            { CardName = "Ambush", Rarity = "Rare" },
+            { CardName = "Limit Break", Rarity = "Mythic" },
+        },
+    })
+    boss({
+        Options = {
+            { Kind = "Memoria", Rarity = "Secret", Name = "x" },
+            { Kind = "Familiar", Rarity = "Vanguard", Name = "y" },
+        },
+    })
+    box.unitCallback("Offer", { Options = {} })
+    room({ Options = { { Index = 1, AdventureRoomKind = "Battle", AdventureFloor = 10 } } })
+    assert(#box.votes == 0, "card, boss reward and unit reward are pending: no vote")
+    assert(string.find(runtime.status, "waiting for", 1, true) ~= nil, runtime.status)
+    for _ = 1, 8 do
+        tick(1.5)
+    end
+    local fired = table.concat(box.fired, ",")
+    assert(string.find(fired, "card:", 1, true) ~= nil, fired)
+    assert(
+        string.find(fired, "boss:Familiar@guid-1", 1, true) ~= nil,
+        "the rarest kind on a placed unit: " .. fired
+    )
+    assert(
+        string.find(fired, "Skip:nil", 1, true) ~= nil,
+        "no unit offered: the reward is skipped: " .. fired
+    )
+    assert(#box.votes >= 1 and box.votes[1] == 1, "all answered: the room is voted")
     runtime.stop()
 end)
 
@@ -1204,7 +1365,7 @@ test("Auto Route Atlas waits until the shop has been left", function()
     opened({ Stock = {}, Budget = 0, Spent = 0 })
     room({ Options = { { Index = 1, AdventureRoomKind = "Battle", AdventureFloor = 6 } } })
     assert(#box.votes == 0, "the shop is being handled: no vote yet")
-    assert(string.find(runtime.status, "waiting for the shop", 1, true) ~= nil, runtime.status)
+    assert(string.find(runtime.status, "waiting for shop", 1, true) ~= nil, runtime.status)
     for _ = 1, 6 do
         tick(1.5)
     end

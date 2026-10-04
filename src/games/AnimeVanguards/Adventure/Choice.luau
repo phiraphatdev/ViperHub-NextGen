@@ -218,4 +218,26 @@ function Choice.pickUnitReward(data: any): number?
     return best
 end
 
+--- Chooses the boss reward kind to claim ("Memoria" or "Familiar"): the option of the highest rarity (the game's
+--- BossRewardPick takes only the kind and a target unit, not an option); a tie keeps the first. Nil when nothing valid
+--- is offered.
+function Choice.pickBossReward(options: any): string?
+    if type(options) ~= "table" then
+        return nil
+    end
+    local best: string? = nil
+    local bestRank = -math.huge
+    for index = 1, #options do
+        local option = options[index]
+        if type(option) == "table" and (option.Kind == "Memoria" or option.Kind == "Familiar") then
+            local rank = if type(option.Rarity) == "string" then UNIT_RARITY[option.Rarity] or 0 else 0
+            if rank > bestRank then
+                best = option.Kind
+                bestRank = rank
+            end
+        end
+    end
+    return best
+end
+
 return Choice

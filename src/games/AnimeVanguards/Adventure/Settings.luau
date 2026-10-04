@@ -33,6 +33,7 @@ local FIELDS: { [string]: any } = {
     floorPriority = { kind = "ranks", list = "roomKinds", default = ADVENTURE.floorPriority },
     secondFloorPriority = { kind = "ranks", list = "roomKinds", default = ADVENTURE.secondFloorPriority },
     autoUnitReward = { kind = "bool", default = false },
+    autoBossReward = { kind = "bool", default = false },
     autoBuyItches = { kind = "bool", default = false },
     autoCharacterCard = { kind = "bool", default = false },
     autoBasicCard = { kind = "bool", default = false },
