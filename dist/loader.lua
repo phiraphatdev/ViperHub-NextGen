@@ -1075,6 +1075,10 @@ do
             local Theme = {}
 
             Theme.DEFAULT = 'Viper'
+
+            local BACKDROP_TINT = 0.38
+            local BACKDROP_ROTATION = 125
+
             Theme.colors = table.freeze({
                 primary = '#10b981',
                 secondary = '#2dd4bf',
@@ -1420,6 +1424,24 @@ do
                         },
                     }, {Rotation = rotation})
                 end
+                local function backdrop(spec)
+                    local tint = hex(spec.background[2]):Lerp(hex(spec.button[1]), BACKDROP_TINT)
+
+                    return (lib.Gradient)(lib, {
+                        ['0'] = {
+                            Color = hex(spec.background[1]),
+                            Transparency = 0,
+                        },
+                        ['55'] = {
+                            Color = hex(spec.background[2]),
+                            Transparency = 0,
+                        },
+                        ['100'] = {
+                            Color = tint,
+                            Transparency = 0,
+                        },
+                    }, {Rotation = BACKDROP_ROTATION})
+                end
 
                 for _, spec in Theme.SPECS do
                     pcall(function()
@@ -1430,7 +1452,7 @@ do
                             Outline = hex(spec.outline),
                             Text = hex(spec.text),
                             Placeholder = hex(spec.placeholder),
-                            Background = gradient(spec.background, 90),
+                            Background = backdrop(spec),
                             Button = gradient(spec.button, 45),
                             Icon = hex(spec.icon),
                             Toggle = gradient(spec.button, 45),
@@ -1488,8 +1510,183 @@ do
     end
     do
         local function __modImpl()
+            local Theme = __DARKLUA_BUNDLE_MODULES.v()
+            local ENV = getfenv()
+            local MIN_WIDTH = 110
+            local MIN_HEIGHT = 26
+            local GLOW_NAME = 'ViperGlow'
+            local GLOW_ALPHA = 0.84
+            local FADE_SECONDS = 0.18
+            local CORNER_RADIUS = 10
+            local HoverGlow = {}
+
+            local function isButton(object)
+                return object:IsA('TextButton') or object:IsA('ImageButton')
+            end
+            local function buildGlow(card, color)
+                local create = ENV.Instance
+                local glow = create.new('Frame')
+
+                glow.Name = GLOW_NAME
+                glow.Size = ENV.UDim2.fromScale(1, 1)
+                glow.BackgroundColor3 = color
+                glow.BackgroundTransparency = 1
+                glow.BorderSizePixel = 0
+                glow.ZIndex = 0
+                glow.Active = false
+
+                local corner = create.new('UICorner')
+
+                corner.CornerRadius = ENV.UDim.new(0, CORNER_RADIUS)
+                corner.Parent = glow
+
+                local gradient = create.new('UIGradient')
+
+                gradient.Transparency = ENV.NumberSequence.new({
+                    ENV.NumberSequenceKeypoint.new(0, 1),
+                    ENV.NumberSequenceKeypoint.new(0.5, 0),
+                    ENV.NumberSequenceKeypoint.new(1, 1),
+                })
+                gradient.Parent = glow
+                glow.Parent = card
+
+                return glow
+            end
+
+            function HoverGlow.attach(gui, cleanup)
+                local color = Theme.color('primary')
+
+                if gui == nil or color == nil or ENV.Instance == nil or ENV.UDim2 == nil or ENV.NumberSequence == nil then
+                    return
+                end
+
+                local tweenService = nil
+
+                pcall(function()
+                    tweenService = (ENV.game):GetService('TweenService')
+                end)
+
+                local connections = {}
+                local glows = {}
+                local wired = {}
+
+                local function fade(glow, transparency)
+                    if tweenService then
+                        pcall(function()
+                            tweenService:Create(glow, ENV.TweenInfo.new(FADE_SECONDS), {BackgroundTransparency = transparency}):Play()
+                        end)
+                    else
+                        glow.BackgroundTransparency = transparency
+                    end
+                end
+                local function wire(button)
+                    if wired[button] then
+                        return
+                    end
+
+                    wired[button] = true
+
+                    local glow = nil
+
+                    local function card()
+                        local parent = button.Parent
+
+                        if parent and parent:IsA('ImageLabel') and parent.AbsoluteSize.X >= button.AbsoluteSize.X then
+                            return parent
+                        end
+
+                        return button
+                    end
+                    local function follow()
+                        if not glow then
+                            return
+                        end
+
+                        local owner = glow.Parent
+                        local mouse = (ENV.game):GetService('UserInputService'):GetMouseLocation()
+                        local width = math.max(owner.AbsoluteSize.X, 1)
+                        local fraction = math.clamp((mouse.X - owner.AbsolutePosition.X) / width, 0, 1)
+                        local gradient = glow:FindFirstChildOfClass('UIGradient')
+
+                        if gradient then
+                            gradient.Offset = ENV.Vector2.new(fraction - 0.5, 0)
+                        end
+                    end
+
+                    table.insert(connections, (button.MouseEnter:Connect(function(
+                    )
+                        if button.AbsoluteSize.X < MIN_WIDTH or button.AbsoluteSize.Y < MIN_HEIGHT then
+                            return
+                        end
+                        if not glow or not glow.Parent then
+                            glow = buildGlow(card(), color)
+
+                            table.insert(glows, glow)
+                        end
+
+                        follow()
+                        fade(glow, GLOW_ALPHA)
+                    end)))
+                    table.insert(connections, (button.MouseMoved:Connect(function(
+                    )
+                        follow()
+                    end)))
+                    table.insert(connections, (button.MouseLeave:Connect(function(
+                    )
+                        if glow then
+                            fade(glow, 1)
+                        end
+                    end)))
+                end
+
+                for _, object in gui:GetDescendants()do
+                    if isButton(object) then
+                        pcall(wire, object)
+                    end
+                end
+
+                table.insert(connections, (gui.DescendantAdded:Connect(function(
+                    object
+                )
+                    if isButton(object) then
+                        pcall(wire, object)
+                    end
+                end)))
+                cleanup.add(function()
+                    for _, connection in connections do
+                        pcall(function()
+                            connection:Disconnect()
+                        end)
+                    end
+                    for _, glow in glows do
+                        pcall(function()
+                            glow:Destroy()
+                        end)
+                    end
+                end)
+            end
+
+            return HoverGlow
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.w()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.w
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.w = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
             local Types = __DARKLUA_BUNDLE_MODULES.i()
             local Theme = __DARKLUA_BUNDLE_MODULES.v()
+            local HoverGlow = __DARKLUA_BUNDLE_MODULES.w()
             local ENV = getfenv()
             local WINDOW_WIDTH = 680
             local WINDOW_HEIGHT = 460
@@ -1605,6 +1802,9 @@ do
                 local BASE_DISPLAY_ORDER = 100
 
                 if library.ScreenGui then
+                    pcall(HoverGlow.attach, library.ScreenGui, context.cleanup)
+                end
+                if library.ScreenGui then
                     pcall(function()
                         (library.ScreenGui).DisplayOrder = BASE_DISPLAY_ORDER
                     end)
@@ -1643,14 +1843,14 @@ do
             return WindUIAdapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.w()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.w
+        function __DARKLUA_BUNDLE_MODULES.x()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.x
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.w = v
+                __DARKLUA_BUNDLE_MODULES.cache.x = v
             end
 
             return v.c
@@ -1684,14 +1884,14 @@ do
             return Overview
         end
 
-        function __DARKLUA_BUNDLE_MODULES.x()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.x
+        function __DARKLUA_BUNDLE_MODULES.y()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.y
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.x = v
+                __DARKLUA_BUNDLE_MODULES.cache.y = v
             end
 
             return v.c
@@ -1840,14 +2040,14 @@ do
             return Settings
         end
 
-        function __DARKLUA_BUNDLE_MODULES.y()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.y
+        function __DARKLUA_BUNDLE_MODULES.z()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.z
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.y = v
+                __DARKLUA_BUNDLE_MODULES.cache.z = v
             end
 
             return v.c
@@ -1883,14 +2083,14 @@ do
             return Diagnostics
         end
 
-        function __DARKLUA_BUNDLE_MODULES.z()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.z
+        function __DARKLUA_BUNDLE_MODULES.A()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.A
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.z = v
+                __DARKLUA_BUNDLE_MODULES.cache.A = v
             end
 
             return v.c
@@ -1898,11 +2098,11 @@ do
     end
     do
         local function __modImpl()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.w()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.x()
             local Theme = __DARKLUA_BUNDLE_MODULES.v()
-            local Overview = __DARKLUA_BUNDLE_MODULES.x()
-            local Settings = __DARKLUA_BUNDLE_MODULES.y()
-            local Diagnostics = __DARKLUA_BUNDLE_MODULES.z()
+            local Overview = __DARKLUA_BUNDLE_MODULES.y()
+            local Settings = __DARKLUA_BUNDLE_MODULES.z()
+            local Diagnostics = __DARKLUA_BUNDLE_MODULES.A()
             local App = {}
             local HOME_GROUP = 'Home'
             local SYSTEM_GROUP = 'System'
@@ -2015,14 +2215,14 @@ do
             return App
         end
 
-        function __DARKLUA_BUNDLE_MODULES.A()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.A
+        function __DARKLUA_BUNDLE_MODULES.B()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.B
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.A = v
+                __DARKLUA_BUNDLE_MODULES.cache.B = v
             end
 
             return v.c
@@ -2041,8 +2241,8 @@ local ManifestClient = __DARKLUA_BUNDLE_MODULES.t()
 local ModuleLoader = __DARKLUA_BUNDLE_MODULES.u()
 local Version = __DARKLUA_BUNDLE_MODULES.r()
 local Validation = __DARKLUA_BUNDLE_MODULES.e()
-local App = __DARKLUA_BUNDLE_MODULES.A()
-local UIAdapter = __DARKLUA_BUNDLE_MODULES.w()
+local App = __DARKLUA_BUNDLE_MODULES.B()
+local UIAdapter = __DARKLUA_BUNDLE_MODULES.x()
 local LOADER_VERSION = '0.3.0'
 local TIMEOUT_SECONDS = 15
 local NOTIFY_RETRY_SECONDS = 0.2

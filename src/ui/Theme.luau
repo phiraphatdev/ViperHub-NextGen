@@ -10,6 +10,9 @@ local Theme = {}
 
 Theme.DEFAULT = "Viper"
 
+local BACKDROP_TINT = 0.38 -- share of the button color mixed into the far corner of the window fill
+local BACKDROP_ROTATION = 125
+
 -- Brand colors shared by window tags, tab icons and page accents.
 Theme.colors = table.freeze({
     primary = "#10b981",
@@ -269,6 +272,15 @@ function Theme.register(library: any, preferred: string?): string
             ["100"] = { Color = colors[2], Transparency = 0 },
         }, { Rotation = rotation })
     end
+    -- Window fill: dark corner -> body -> a soft tint of the theme's button color, diagonal so it is clearly graded.
+    local function backdrop(spec: Spec): any
+        local tint = hex(spec.background[2]):Lerp(hex(spec.button[1]), BACKDROP_TINT)
+        return (lib.Gradient :: any)(lib, {
+            ["0"] = { Color = hex(spec.background[1]), Transparency = 0 },
+            ["55"] = { Color = hex(spec.background[2]), Transparency = 0 },
+            ["100"] = { Color = tint, Transparency = 0 },
+        }, { Rotation = BACKDROP_ROTATION })
+    end
     for _, spec in Theme.SPECS do
         pcall(function()
             (lib.AddTheme :: any)(lib, {
@@ -278,7 +290,7 @@ function Theme.register(library: any, preferred: string?): string
                 Outline = hex(spec.outline),
                 Text = hex(spec.text),
                 Placeholder = hex(spec.placeholder),
-                Background = gradient(spec.background, 90),
+                Background = backdrop(spec),
                 Button = gradient(spec.button, 45),
                 Icon = hex(spec.icon),
                 Toggle = gradient(spec.button, 45),

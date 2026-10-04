@@ -1781,6 +1781,10 @@ do
             local Theme = {}
 
             Theme.DEFAULT = 'Viper'
+
+            local BACKDROP_TINT = 0.38
+            local BACKDROP_ROTATION = 125
+
             Theme.colors = table.freeze({
                 primary = '#10b981',
                 secondary = '#2dd4bf',
@@ -2126,6 +2130,24 @@ do
                         },
                     }, {Rotation = rotation})
                 end
+                local function backdrop(spec)
+                    local tint = hex(spec.background[2]):Lerp(hex(spec.button[1]), BACKDROP_TINT)
+
+                    return (lib.Gradient)(lib, {
+                        ['0'] = {
+                            Color = hex(spec.background[1]),
+                            Transparency = 0,
+                        },
+                        ['55'] = {
+                            Color = hex(spec.background[2]),
+                            Transparency = 0,
+                        },
+                        ['100'] = {
+                            Color = tint,
+                            Transparency = 0,
+                        },
+                    }, {Rotation = BACKDROP_ROTATION})
+                end
 
                 for _, spec in Theme.SPECS do
                     pcall(function()
@@ -2136,7 +2158,7 @@ do
                             Outline = hex(spec.outline),
                             Text = hex(spec.text),
                             Placeholder = hex(spec.placeholder),
-                            Background = gradient(spec.background, 90),
+                            Background = backdrop(spec),
                             Button = gradient(spec.button, 45),
                             Icon = hex(spec.icon),
                             Toggle = gradient(spec.button, 45),
