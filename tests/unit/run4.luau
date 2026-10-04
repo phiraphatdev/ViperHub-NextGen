@@ -20,8 +20,12 @@ local function fixture(): any
     local fx: any = { fired = {}, handler = nil, disconnected = 0, now = 100 }
     local function remote(name: string): any
         return {
-            Fire = function(payload: any)
-                table.insert(fx.fired, { name = name, payload = payload })
+            Fire = function(...: any)
+                -- Like the game: RequestAdventureState takes no arguments at all, not even nil.
+                if name == "RequestAdventureState" and select("#", ...) > 0 then
+                    error("[AV-Blink] too many arguments")
+                end
+                table.insert(fx.fired, { name = name, payload = (...) })
             end,
         }
     end
@@ -394,6 +398,108 @@ test("Adventure runtime picks the basic card only in Adventure matches with the 
     assert(not AdventureRuntime.new(function()
         return settings
     end, { events = {} }).start(), "no match events (lobby): not started")
+end)
+
+test(
+    "Adventure picks the next room by the floor priorities and switches lists at the chosen floor",
+    function()
+        local offer: any = {
+            { Index = 1, AdventureRoomKind = "Battle", AdventureFloor = 12 },
+            { Index = 2, AdventureRoomKind = "Elite", AdventureFloor = 12 },
+            { Index = 3, AdventureRoomKind = "Challenge", AdventureFloor = 12 },
+        }
+        local first: any = { Treasure = 5, Elite = 4, Shop = 3, Battle = 2, Boss = 1 }
+        local second: any = { Battle = 5, Elite = 1 }
+        assert(AdventureChoice.pickRoom(offer, first, second, 30) == 2, "first list: Elite over Battle")
+        assert(
+            AdventureChoice.pickRoom(offer, first, second, 12) == 1,
+            "from the chosen floor the second list applies"
+        )
+        assert(
+            AdventureChoice.pickRoom({ { Index = 7, AdventureRoomKind = "Challenge" } }, first, second, 30)
+                == 7
+        )
+        assert(AdventureChoice.pickRoom({ "bad", { AdventureRoomKind = 5 } }, first, second, 30) == nil)
+        assert(AdventureChoice.pickRoom(nil, first, second, 30) == nil)
+        local defaults = AdventureSettings.new(AdventureCatalog.fromModules(nil), {})
+        assert(
+            AdventureChoice.pickRoom(
+                offer,
+                defaults.get("floorPriority"),
+                defaults.get("secondFloorPriority"),
+                defaults.get("secondPriorityFloor")
+            ) == 2
+        )
+    end
+)
+
+test("Adventure runtime chooses the next room only in Adventure matches with Auto Route Atlas on", function()
+    local settings = AdventureSettings.new(AdventureCatalog.fromModules(nil), {})
+    local box: any = {}
+    local chosen: { any } = {}
+    local pending: { any } = {}
+    local runtime = AdventureRuntime.new(function()
+        return settings
+    end, {
+        clock = function()
+            return 50
+        end,
+        task = {
+            delay = function(_seconds: number, callback: any)
+                table.insert(pending, callback)
+            end,
+        },
+        isAdventure = function()
+            return true
+        end,
+        events = {
+            CardPickBasicOffer = { On = function() end },
+            SelectRoomSelectionStarted = {
+                On = function(callback: any)
+                    box.room = callback
+                    return function() end
+                end,
+            },
+            SelectRoomChoose = {
+                Fire = function(payload: any)
+                    table.insert(chosen, payload)
+                end,
+            },
+        },
+    })
+    local function flush()
+        for _, callback in pending do
+            local run: any = callback
+            run()
+        end
+        pending = {}
+    end
+    local function offerRooms()
+        local callback: any = box.room
+        callback({
+            Options = {
+                { Index = 1, AdventureRoomKind = "Battle", AdventureFloor = 12 },
+                { Index = 2, AdventureRoomKind = "Elite", AdventureFloor = 12 },
+            },
+        })
+    end
+    assert(runtime.start() and box.room ~= nil)
+    offerRooms()
+    flush()
+    assert(#chosen == 0, "switch is off: the player routes")
+    settings.set("autoRoute", true)
+    offerRooms()
+    assert(#chosen == 0, "the choice waits a moment")
+    flush()
+    assert(
+        #chosen == 1 and chosen[1].RoomIndex == 2 and runtime.routed == 1,
+        "Elite outranks Battle by default"
+    )
+    assert(string.find(runtime.status, "chose a Elite room", 1, true) ~= nil, runtime.status)
+    offerRooms()
+    flush()
+    assert(#chosen == 1, "an identical selection right away is ignored")
+    runtime.stop()
 end)
 
 print(string.format("PASS: %d unit scenarios (part 4)", passed))

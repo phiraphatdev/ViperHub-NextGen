@@ -7063,6 +7063,10 @@ do
                     list = 'powers',
                     none = true,
                 },
+                autoRoute = {
+                    kind = 'bool',
+                    default = false,
+                },
                 secondPriorityFloor = {
                     kind = 'number',
                     range = ADVENTURE.secondPriorityFloor,
@@ -7474,6 +7478,10 @@ do
                 slot2 = true,
                 autoBasicCard = true,
                 cardPriority = true,
+                autoRoute = true,
+                secondPriorityFloor = true,
+                floorPriority = true,
+                secondFloorPriority = true,
             }
 
             local function isLocked(key)
@@ -7482,7 +7490,7 @@ do
 
             local ADVENTURE = (config).adventure
             local PENDING =
-[[Live: Auto Join with the character and slots, and Auto Basic Card. The other controls are locked (Coming soon) until their automation is built.]]
+[[Live: Auto Join with the character and slots, Auto Basic Card and Auto Route Atlas. The other controls are locked (Coming soon) until their automation is built.]]
 
             local function setDesc(control, text)
                 if type(control) == 'table' and type(control.SetDesc) == 'function' then
@@ -7632,6 +7640,8 @@ do
                 local misc = Style.section(tab, 'Miscellaneous', 'wrench', false)
                 local route = Style.sub(misc, 'Auto Route Atlas', 'route')
 
+                toggle(route, settings, 'autoRoute', 'Auto Route Atlas',
+[[After each floor, choose the next room by the priorities below (highest number first).]])
                 slider(route, settings, 'secondPriorityFloor', 'Use Second Prioritize after Floor',
 [[From this floor on, the Second Floor Prioritize order is used.]])
                 priorityEditor(route, settings, 'floorPriority', 'Floor Prioritize',
@@ -7876,6 +7886,10 @@ do
 
                     local fireFn = entry.Fire
 
+                    if payload == nil then
+                        return (pcall(fireFn))
+                    end
+
                     return (pcall(fireFn, payload))
                 end
 
@@ -7907,6 +7921,8 @@ do
                     disconnect = if type(result) == 'function'then result else function(
                     ) end
 
+                    self.requestState()
+
                     return true
                 end
                 function self.requestState()
@@ -7918,7 +7934,7 @@ do
 
                     self.lastRequest = now
 
-                    fire('requestAdventureState', nil)
+                    fire('requestAdventureState')
                 end
 
                 local function characterAvailable(name)
@@ -8079,6 +8095,33 @@ do
 
                 return best
             end
+            function Choice.pickRoom(options, first, second, secondFromFloor)
+                if type(options) ~= 'table' then
+                    return nil
+                end
+
+                local best = nil
+                local bestRank = -math.huge
+
+                for position = 1, #options do
+                    local option = options[position]
+
+                    if type(option) == 'table' and type(option.AdventureRoomKind) == 'string' then
+                        local floor = if type(option.AdventureFloor) == 'number'then option.AdventureFloor else 0
+                        local ranks = if floor >= secondFromFloor then second else first
+                        local rank = ranks[option.AdventureRoomKind]
+                        local value = if type(rank) == 'number'then rank else-1
+                        local index = if type(option.Index) == 'number'then option.Index else position
+
+                        if value > bestRank then
+                            best = index
+                            bestRank = value
+                        end
+                    end
+                end
+
+                return best
+            end
 
             return Choice
         end
@@ -8163,12 +8206,15 @@ do
                 local self = {
                     status = 'Idle',
                     picked = 0,
+                    routed = 0,
                     onStatus = nil,
                 }
                 local deps = injected
                 local disconnects = {}
                 local lastKey = ''
                 local lastAt = -math.huge
+                local lastRoomKey = ''
+                local lastRoomAt = -math.huge
 
                 local function setStatus(text)
                     self.status = text
@@ -8233,6 +8279,65 @@ do
                         pick()
                     end
                 end
+                local function onRoomOffer(offer)
+                    local saved = getSettings()
+
+                    if not self.active or saved.get('autoRoute') ~= true or not deps.isAdventure() then
+                        return
+                    end
+
+                    local options = if type(offer) == 'table'then offer.Options else nil
+                    local index = Choice.pickRoom(options, saved.get('floorPriority'), saved.get('secondFloorPriority'), saved.get('secondPriorityFloor'))
+
+                    if not index then
+                        setStatus('Auto Route Atlas: no valid room offered')
+
+                        return
+                    end
+
+                    local now = deps.clock()
+                    local key = 'room:' .. #options .. ':' .. index
+
+                    if key == lastRoomKey and now - lastRoomAt < REPEAT_SECONDS then
+                        return
+                    end
+
+                    lastRoomKey, lastRoomAt = key, now
+
+                    local function go()
+                        local entry = if deps.events then deps.events.SelectRoomChoose else nil
+
+                        if not self.active or saved.get('autoRoute') ~= true or type(entry) ~= 'table' or type(entry.Fire) ~= 'function' then
+                            return
+                        end
+
+                        local fireFn = entry.Fire
+
+                        if pcall(fireFn, {RoomIndex = index}) then
+                            self.routed += 1
+
+                            local kind = '?'
+
+                            for _, option in options do
+                                if type(option) == 'table' and option.Index == index then
+                                    kind = tostring(option.AdventureRoomKind)
+                                end
+                            end
+
+                            setStatus(string.format('Auto Route Atlas: chose a %s room (#%s)', kind, tostring(self.routed)))
+                        else
+                            setStatus('Auto Route Atlas: choose request failed')
+                        end
+                    end
+
+                    local taskApi = deps.task
+
+                    if type(taskApi) == 'table' and type(taskApi.delay) == 'function' then
+                        (taskApi.delay)(PICK_DELAY_SECONDS, go)
+                    else
+                        go()
+                    end
+                end
 
                 function self.start()
                     if self.active then
@@ -8262,9 +8367,20 @@ do
                         table.insert(disconnects, undo)
                     end
 
+                    local roomEntry = if type(events) == 'table'then events.SelectRoomSelectionStarted else nil
+
+                    if type(roomEntry) == 'table' and type(roomEntry.On) == 'function' then
+                        local roomOn = roomEntry.On
+                        local okRoom, undoRoom = pcall(roomOn, onRoomOffer)
+
+                        if okRoom and type(undoRoom) == 'function' then
+                            table.insert(disconnects, undoRoom)
+                        end
+                    end
+
                     self.active = true
 
-                    setStatus('Listening for card offers')
+                    setStatus('Listening for card and room offers')
 
                     return true
                 end

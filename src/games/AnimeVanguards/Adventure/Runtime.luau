@@ -1,6 +1,7 @@
 --!strict
 --[[
-Purpose: Odyssey: Adventure in-match automation: today Auto Basic Card (pick the offered basic card by priority)
+Purpose: Odyssey: Adventure in-match automation: Auto Basic Card (pick the offered basic card by priority) and Auto
+         Route Atlas (pick the next room by the floor priorities)
 Input: The match's GameOdysseyClient events, GameHandler game data and the saved Adventure settings
 Output: CardPickPick requests, a status line and counters; nothing outside Adventure matches or when the switch is off
 Dependencies: Config; Adventure/Detect; Adventure/Choice; Adventure/Adapter (shared settings)
@@ -63,11 +64,13 @@ end
 
 --- Creates a stopped controller; getSettings returns the shared Adventure settings (read lazily); deps are injectable.
 function Runtime.new(getSettings: () -> any, injected: any?): any
-    local self: any = { status = "Idle", picked = 0, onStatus = nil }
+    local self: any = { status = "Idle", picked = 0, routed = 0, onStatus = nil }
     local deps: any = injected
     local disconnects: { () -> () } = {}
     local lastKey = ""
     local lastAt = -math.huge
+    local lastRoomKey = ""
+    local lastRoomAt = -math.huge
 
     local function setStatus(text: string)
         self.status = text
@@ -124,6 +127,63 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         end
     end
 
+    -- A room selection: pick the next room by the floor priorities (the second list from the chosen floor on).
+    local function onRoomOffer(offer: any)
+        local saved = getSettings()
+        if not self.active or saved.get("autoRoute") ~= true or not deps.isAdventure() then
+            return
+        end
+        local options: any = if type(offer) == "table" then offer.Options else nil
+        local index = Choice.pickRoom(
+            options,
+            saved.get("floorPriority"),
+            saved.get("secondFloorPriority"),
+            saved.get("secondPriorityFloor")
+        )
+        if not index then
+            setStatus("Auto Route Atlas: no valid room offered")
+            return
+        end
+        local now = deps.clock()
+        local key = "room:" .. #options .. ":" .. index
+        if key == lastRoomKey and now - lastRoomAt < REPEAT_SECONDS then
+            return
+        end
+        lastRoomKey, lastRoomAt = key, now
+        local function go()
+            local entry = if deps.events then deps.events.SelectRoomChoose else nil
+            if
+                not self.active
+                or saved.get("autoRoute") ~= true
+                or type(entry) ~= "table"
+                or type(entry.Fire) ~= "function"
+            then
+                return
+            end
+            local fireFn: any = entry.Fire
+            if pcall(fireFn, { RoomIndex = index }) then
+                self.routed += 1
+                local kind = "?"
+                for _, option in options do
+                    if type(option) == "table" and option.Index == index then
+                        kind = tostring(option.AdventureRoomKind)
+                    end
+                end
+                setStatus(
+                    string.format("Auto Route Atlas: chose a %s room (#%s)", kind, tostring(self.routed))
+                )
+            else
+                setStatus("Auto Route Atlas: choose request failed")
+            end
+        end
+        local taskApi: any = deps.task
+        if type(taskApi) == "table" and type(taskApi.delay) == "function" then
+            (taskApi.delay :: any)(PICK_DELAY_SECONDS, go)
+        else
+            go()
+        end
+    end
+
     --- Starts listening for offers; returns whether the match events exist (false in the lobby). Safe to repeat.
     function self.start(): boolean
         if self.active then
@@ -145,8 +205,16 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         if type(undo) == "function" then
             table.insert(disconnects, undo)
         end
+        local roomEntry = if type(events) == "table" then events.SelectRoomSelectionStarted else nil
+        if type(roomEntry) == "table" and type(roomEntry.On) == "function" then
+            local roomOn: any = roomEntry.On
+            local okRoom, undoRoom = pcall(roomOn, onRoomOffer)
+            if okRoom and type(undoRoom) == "function" then
+                table.insert(disconnects, undoRoom)
+            end
+        end
         self.active = true
-        setStatus("Listening for card offers")
+        setStatus("Listening for card and room offers")
         return true
     end
 

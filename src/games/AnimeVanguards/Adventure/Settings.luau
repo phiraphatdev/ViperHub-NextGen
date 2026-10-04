@@ -26,6 +26,7 @@ local FIELDS: { [string]: any } = {
     character = { kind = "choice", list = "characters" },
     slot1 = { kind = "choice", list = "powers", none = true },
     slot2 = { kind = "choice", list = "powers", none = true },
+    autoRoute = { kind = "bool", default = false },
     secondPriorityFloor = { kind = "number", range = ADVENTURE.secondPriorityFloor },
     floorPriority = { kind = "ranks", list = "roomKinds", default = ADVENTURE.floorPriority },
     secondFloorPriority = { kind = "ranks", list = "roomKinds", default = ADVENTURE.secondFloorPriority },

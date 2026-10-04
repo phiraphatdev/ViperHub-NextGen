@@ -134,6 +134,11 @@ function Adapter.new(injected: any?): any
             return false
         end
         local fireFn: any = entry.Fire
+        -- Observed live: the game's remotes reject an extra nil argument ("too many arguments"), so a remote without
+        -- a payload must be called with no arguments at all.
+        if payload == nil then
+            return (pcall(fireFn))
+        end
         return (pcall(fireFn, payload))
     end
 
@@ -158,6 +163,7 @@ function Adapter.new(injected: any?): any
             return false
         end
         disconnect = if type(result) == "function" then result else function() end
+        self.requestState()
         return true
     end
 
@@ -168,7 +174,7 @@ function Adapter.new(injected: any?): any
             return
         end
         self.lastRequest = now
-        fire("requestAdventureState", nil)
+        fire("requestAdventureState")
     end
 
     local function characterAvailable(name: string): boolean

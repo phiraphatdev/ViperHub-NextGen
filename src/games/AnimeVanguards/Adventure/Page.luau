@@ -22,6 +22,10 @@ local UNLOCKED: { [string]: boolean } = {
     slot2 = true,
     autoBasicCard = true,
     cardPriority = true,
+    autoRoute = true,
+    secondPriorityFloor = true,
+    floorPriority = true,
+    secondFloorPriority = true,
 }
 
 local function isLocked(key: string): boolean
@@ -31,7 +35,7 @@ end
 local ADVENTURE: any = (config :: any).adventure
 
 local PENDING =
-    "Live: Auto Join with the character and slots, and Auto Basic Card. The other controls are locked (Coming soon) until their automation is built."
+    "Live: Auto Join with the character and slots, Auto Basic Card and Auto Route Atlas. The other controls are locked (Coming soon) until their automation is built."
 
 local function setDesc(control: any, text: string)
     if type(control) == "table" and type(control.SetDesc) == "function" then
@@ -189,6 +193,13 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?, joi
 
     local misc = Style.section(tab, "Miscellaneous", "wrench", false)
     local route = Style.sub(misc, "Auto Route Atlas", "route")
+    toggle(
+        route,
+        settings,
+        "autoRoute",
+        "Auto Route Atlas",
+        "After each floor, choose the next room by the priorities below (highest number first)."
+    )
     slider(
         route,
         settings,
