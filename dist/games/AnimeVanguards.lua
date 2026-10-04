@@ -3874,7 +3874,9 @@ do
                                     end
 
                                     for index = math.max(1, #previous - TRACE_LINES + 2), #previous do
-                                        table.insert(traceLines, #traceLines, previous[index])
+                                        local position = #traceLines
+
+                                        table.insert(traceLines, position, previous[index])
                                     end
                                 end
                             end)
@@ -10806,6 +10808,8 @@ do
         local function __modImpl()
             local Embed = __DARKLUA_BUNDLE_MODULES.D()
             local Events = {}
+            local UNIT_ROWS = 6
+            local SHARE_BAR = 10
             local GREEN = 0x2ecc71
             local RED = 0xe74c3c
             local BLUE = 0x3498db
@@ -11065,25 +11069,45 @@ do
                     if info.takedowns then
                         table.insert(extra, '\u{2620}\u{fe0f} **Takedowns**: `' .. tostring(info.takedowns) .. '`')
                     end
-
-                    local seconds = tonumber(info.duration)
-
-                    if seconds and seconds >= 1 then
-                        local damage = Embed.parseAmount(info.damage)
-                        local kills = Embed.parseAmount(info.takedowns)
-
-                        if damage then
-                            table.insert(extra, '\u{26a1} **DPS**: `' .. Embed.number(damage / seconds) .. '`')
-                        end
-                        if kills then
-                            table.insert(extra, string.format('\u{1f3af} **Kills/min**: `%.1f`', kills / seconds * 60))
-                        end
-                    end
                     if #extra > 0 then
                         table.insert(lines, '> ' .. table.concat(extra, ' \u{2022} '))
                     end
                     if #lines > 0 then
                         spec.description = table.concat(lines, '\n')
+                    end
+
+                    local unitRows = if type(info.units) == 'table'then info.units else{}
+
+                    if #unitRows > 0 then
+                        local total = 0
+
+                        for _, row in unitRows do
+                            total += row.damage
+                        end
+
+                        local contribution = {}
+
+                        for index, row in unitRows do
+                            if index > UNIT_ROWS then
+                                break
+                            end
+
+                            local share = if total > 0 then row.damage / total else 0
+                            local filled = math.clamp(math.floor(share * SHARE_BAR + 0.5), 0, SHARE_BAR)
+                            local style = config.rarityStyle[row.rarity or '']
+                            local badge = if index == 1
+                                then'\u{1f451}'
+                                elseif style
+                                then style.emoji
+                                else'\u{25ab}\u{fe0f}'
+                            local count = if row.placements and row.placements > 1 then string.format(' `x%d`', row.placements)else''
+                            local dps = if row.deployed and row.deployed > 0 then' \u{2022} \u{26a1} `' .. Embed.number(row.damage / row.deployed) .. '/s`'else''
+
+                            table.insert(contribution, string.format('%s **%s**%s\n`%s%s` **%.1f%%** \u{2022} \u{1f4a5} `%s`%s \u{2022} \u{2620}\u{fe0f} `%s`', tostring(badge), tostring(row.name), tostring(count), string.rep('\u{25b0}', filled), string.rep('\u{25b1}', SHARE_BAR - filled), share * 100, Embed.number(row.damage), tostring(dps), Embed.commas(row.takedowns)))
+                        end
+
+                        table.insert(contribution, '**Match total** \u{2022} \u{1f4a5} `' .. Embed.number(total) .. '`')
+                        addField(fields, '\u{2694}\u{fe0f} Unit Contribution', table.concat(contribution, '\n'), false)
                     end
 
                     local earned = {}
@@ -11926,6 +11950,49 @@ do
                 return if ok then result else nil
             end
 
+            function Runtime.contributionRows(summary)
+                local found = {}
+                local seen = {}
+
+                local function visit(node, depth)
+                    if type(node) ~= 'table' or depth > 5 or seen[node] or #found > 0 then
+                        return
+                    end
+
+                    seen[node] = true
+
+                    local first = node[1]
+
+                    if type(first) == 'table' and type(first.DisplayName) == 'string' and type(first.Damage) == 'number' then
+                        for _, row in node do
+                            if type(row) == 'table' and type(row.DisplayName) == 'string' and type(row.Damage) == 'number' then
+                                table.insert(found, {
+                                    name = row.DisplayName,
+                                    rarity = if type(row.Rarity) == 'string'then row.Rarity else nil,
+                                    damage = row.Damage,
+                                    takedowns = if type(row.Takedowns) == 'number'then row.Takedowns else 0,
+                                    spent = if type(row.YenSpent) == 'number'then row.YenSpent else nil,
+                                    placements = if type(row.PlacementCount) == 'number'then row.PlacementCount else 1,
+                                    deployed = if type(row.TimeDeployed) == 'number'then row.TimeDeployed else nil,
+                                })
+                            end
+                        end
+
+                        return
+                    end
+
+                    for _, child in node do
+                        visit(child, depth + 1)
+                    end
+                end
+
+                visit(summary, 0)
+                table.sort(found, function(a, b)
+                    return a.damage > b.damage
+                end)
+
+                return found
+            end
             function Runtime.new(injected)
                 local self = {
                     deps = injected,
@@ -12584,12 +12651,21 @@ do
                     return earnings, rows, gains
                 end
 
-                function self.onEndSummary(status)
+                function self.onEndSummary(status, summary)
                     local result = if type(status) == 'string'then WEBHOOK.resultStatus[status]else nil
 
                     if result then
                         self.endStatus = {
                             result = result,
+                            at = clock(),
+                        }
+                    end
+
+                    local units = Runtime.contributionRows(summary)
+
+                    if #units > 0 then
+                        self.endUnits = {
+                            rows = units,
                             at = clock(),
                         }
                     end
@@ -12657,6 +12733,14 @@ do
 
                         info.result = summaryResult() or argumentResult or info.result
                         self.endStatus = nil
+
+                        local unitEntry = self.endUnits
+
+                        if unitEntry and clock() - unitEntry.at < 60 then
+                            info.units = unitEntry.rows
+                        end
+
+                        self.endUnits = nil
 
                         if wave then
                             info.wave = wave
@@ -12864,7 +12948,7 @@ do
                                         local okDecode, summary = pcall(decode, payload)
 
                                         if okDecode and type(summary) == 'table' and summary.IsFakeEndScreen ~= true then
-                                            callback(summary.Status)
+                                            callback(summary.Status, summary)
                                         end
                                     end)
 
@@ -12969,8 +13053,11 @@ do
 
                     self.unitReadyAt = clock() + THRESHOLDS.webhookUnitIgnoreSeconds
 
-                    local endDisconnect = call('onEndSummary', function(status)
-                        self.onEndSummary(status)
+                    local endDisconnect = call('onEndSummary', function(
+                        status,
+                        summary
+                    )
+                        self.onEndSummary(status, summary)
                     end)
 
                     if endDisconnect then

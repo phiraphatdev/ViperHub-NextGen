@@ -129,6 +129,7 @@ function check(){
         if(/\bsyn\s*\.|(?<![\w.])(?:wait|spawn|delay)\s*\(/.test(code))throw Error('Forbidden API: '+p);
     }
     console.log(run(tool('luau'),['tests/unit/run.luau']));
+    console.log(run(tool('luau'),['tests/unit/run2.luau']));
     const integration='local run=require("../tests/integration/Bootstrap")\nrun('+long(read('dist/loader.lua'))+')\n';
     write('work/integration.luau',integration);
     console.log(run(tool('luau'),['work/integration.luau']));

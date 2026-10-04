@@ -153,6 +153,53 @@ local function readEndScreen(gameObject: any): any
     return if ok then result else nil
 end
 
+--- Finds the per-unit contribution rows inside a decoded end-of-match summary without relying on its key names:
+--- any list of tables carrying DisplayName and Damage (as observed on the game's Summary page). Returns rows sorted
+--- by damage: {name, rarity, damage, takedowns, spent, placements, deployed}.
+function Runtime.contributionRows(summary: any): { any }
+    local found: { any } = {}
+    local seen: { [any]: boolean } = {}
+    local function visit(node: any, depth: number)
+        if type(node) ~= "table" or depth > 5 or seen[node] or #found > 0 then
+            return
+        end
+        seen[node] = true
+        local first = node[1]
+        if
+            type(first) == "table"
+            and type(first.DisplayName) == "string"
+            and type(first.Damage) == "number"
+        then
+            for _, row in node do
+                if
+                    type(row) == "table"
+                    and type(row.DisplayName) == "string"
+                    and type(row.Damage) == "number"
+                then
+                    table.insert(found, {
+                        name = row.DisplayName,
+                        rarity = if type(row.Rarity) == "string" then row.Rarity else nil,
+                        damage = row.Damage,
+                        takedowns = if type(row.Takedowns) == "number" then row.Takedowns else 0,
+                        spent = if type(row.YenSpent) == "number" then row.YenSpent else nil,
+                        placements = if type(row.PlacementCount) == "number" then row.PlacementCount else 1,
+                        deployed = if type(row.TimeDeployed) == "number" then row.TimeDeployed else nil,
+                    })
+                end
+            end
+            return
+        end
+        for _, child in node do
+            visit(child, depth + 1)
+        end
+    end
+    visit(summary, 0)
+    table.sort(found, function(a: any, b: any): boolean
+        return a.damage > b.damage
+    end)
+    return found
+end
+
 --- Creates the webhook controller; injected dependencies support isolated tests.
 function Runtime.new(injected: any?): any
     local self: any = {
@@ -763,11 +810,16 @@ function Runtime.new(injected: any?): any
         return earnings, rows, gains
     end
 
-    --- Records the game's own end-of-match summary status ("Finished" / "Failed"); the most reliable result source.
-    function self.onEndSummary(status: any)
+    --- Records the game's own end-of-match summary: status ("Finished" / "Failed") and, when present, the per-unit
+    --- contribution rows the game shows on its Summary page.
+    function self.onEndSummary(status: any, summary: any)
         local result = if type(status) == "string" then WEBHOOK.resultStatus[status] else nil
         if result then
             self.endStatus = { result = result, at = clock() }
+        end
+        local units = Runtime.contributionRows(summary)
+        if #units > 0 then
+            self.endUnits = { rows = units, at = clock() }
         end
     end
 
@@ -822,6 +874,11 @@ function Runtime.new(injected: any?): any
             end
             info.result = summaryResult() or argumentResult or info.result
             self.endStatus = nil
+            local unitEntry = self.endUnits
+            if unitEntry and clock() - unitEntry.at < 60 then
+                info.units = unitEntry.rows
+            end
+            self.endUnits = nil
             if wave then
                 info.wave = wave
                 info.maxWave = maxWave
@@ -1013,7 +1070,7 @@ function Runtime.new(injected: any?): any
                     end,
                     ownedUnitsModule = ownedUnits,
                     -- Subscribes to the game's end-screen broadcast; returns a disconnect function or nil.
-                    onEndSummary = function(callback: (any) -> ()): any
+                    onEndSummary = function(callback: (any, any) -> ()): any
                         local event = endScreenClient and endScreenClient[config.remoteNames.showEndScreen]
                         local decode = endScreenCodec and endScreenCodec.DecodeMatchEndSummary
                         if
@@ -1026,7 +1083,7 @@ function Runtime.new(injected: any?): any
                         local ok, disconnect = pcall(event.On, function(payload: any)
                             local okDecode, summary = pcall(decode, payload)
                             if okDecode and type(summary) == "table" and summary.IsFakeEndScreen ~= true then
-                                callback(summary.Status)
+                                callback(summary.Status, summary)
                             end
                         end)
                         return if ok then disconnect else nil
@@ -1122,8 +1179,8 @@ function Runtime.new(injected: any?): any
             end
         end
         self.unitReadyAt = clock() + THRESHOLDS.webhookUnitIgnoreSeconds
-        local endDisconnect: any = call("onEndSummary", function(status: any)
-            self.onEndSummary(status)
+        local endDisconnect: any = call("onEndSummary", function(status: any, summary: any)
+            self.onEndSummary(status, summary)
         end)
         if endDisconnect then
             table.insert(self.connections, endDisconnect)

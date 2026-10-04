@@ -9,6 +9,9 @@ Dependencies: Embed
 local Embed = require("./Embed")
 local Events = {}
 
+local UNIT_ROWS = 6
+local SHARE_BAR = 10
+
 local GREEN = 0x2ECC71
 local RED = 0xE74C3C
 local BLUE = 0x3498DB
@@ -254,23 +257,53 @@ function Events.build(kind: string, data: any, ctx: any, config: any): (Embed.Sp
         if info.takedowns then
             table.insert(extra, "☠️ **Takedowns**: `" .. tostring(info.takedowns) .. "`")
         end
-        -- The game does not tell the client which unit dealt damage, so these are player totals per time.
-        local seconds = tonumber(info.duration)
-        if seconds and seconds >= 1 then
-            local damage = Embed.parseAmount(info.damage)
-            local kills = Embed.parseAmount(info.takedowns)
-            if damage then
-                table.insert(extra, "⚡ **DPS**: `" .. Embed.number(damage / seconds) .. "`")
-            end
-            if kills then
-                table.insert(extra, string.format("🎯 **Kills/min**: `%.1f`", kills / seconds * 60))
-            end
-        end
         if #extra > 0 then
             table.insert(lines, "> " .. table.concat(extra, " • "))
         end
         if #lines > 0 then
             spec.description = table.concat(lines, "\n")
+        end
+
+        -- Unit Contribution (the game's Summary page): damage share bar, damage, DPS while deployed and takedowns.
+        local unitRows: { any } = if type(info.units) == "table" then info.units else {}
+        if #unitRows > 0 then
+            local total = 0
+            for _, row in unitRows do
+                total += row.damage
+            end
+            local contribution: { string } = {}
+            for index, row in unitRows do
+                if index > UNIT_ROWS then
+                    break
+                end
+                local share = if total > 0 then row.damage / total else 0
+                local filled = math.clamp(math.floor(share * SHARE_BAR + 0.5), 0, SHARE_BAR)
+                local style = config.rarityStyle[row.rarity or ""]
+                local badge = if index == 1 then "👑" elseif style then style.emoji else "▫️"
+                local count = if row.placements and row.placements > 1
+                    then string.format(" `x%d`", row.placements)
+                    else ""
+                local dps = if row.deployed and row.deployed > 0
+                    then " • ⚡ `" .. Embed.number(row.damage / row.deployed) .. "/s`"
+                    else ""
+                table.insert(
+                    contribution,
+                    string.format(
+                        "%s **%s**%s\n`%s%s` **%.1f%%** • 💥 `%s`%s • ☠️ `%s`",
+                        tostring(badge),
+                        tostring(row.name),
+                        tostring(count),
+                        string.rep("▰", filled),
+                        string.rep("▱", SHARE_BAR - filled),
+                        share * 100,
+                        Embed.number(row.damage),
+                        tostring(dps),
+                        Embed.commas(row.takedowns)
+                    )
+                )
+            end
+            table.insert(contribution, "**Match total** • 💥 `" .. Embed.number(total) .. "`")
+            addField(fields, "⚔️ Unit Contribution", table.concat(contribution, "\n"), false)
         end
 
         local earned: { string } = {}
