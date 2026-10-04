@@ -8591,9 +8591,144 @@ do
     end
     do
         local function __modImpl()
+            local Listen = {}
+
+            local function registryOf(onFn)
+                local env = getfenv()
+                local debugLib = env.debug
+                local getUpvalue = if type(debugLib) == 'table'then debugLib.getupvalue else nil
+
+                if type(getUpvalue) ~= 'function' then
+                    return nil
+                end
+
+                for index = 1, 8 do
+                    local ok, a, b = pcall(getUpvalue, onFn, index)
+
+                    if not ok then
+                        break
+                    end
+
+                    local value = if b ~= nil then b else a
+
+                    if type(value) == 'table' and type(value.Reliable) == 'table' then
+                        return value
+                    end
+                end
+
+                return nil
+            end
+
+            function Listen.chain(entry, handler)
+                if type(entry) ~= 'table' or type(entry.On) ~= 'function' then
+                    return nil
+                end
+
+                local onFn = entry.On
+                local registry = registryOf(onFn)
+
+                if registry == nil then
+                    local ok, undo = pcall(onFn, handler)
+
+                    return {
+                        check = function() end,
+                        undo = function()
+                            if ok and type(undo) == 'function' then
+                                pcall(undo)
+                            end
+                        end,
+                    }
+                end
+
+                local before = {}
+
+                for kind, slots in registry do
+                    if type(slots) == 'table' then
+                        before[kind] = table.clone(slots)
+                    end
+                end
+
+                local function probe() end
+
+                pcall(onFn, probe)
+
+                local slotKind, slotId = nil, nil
+
+                for kind, slots in registry do
+                    if type(slots) == 'table' then
+                        for id, value in slots do
+                            if value == probe then
+                                slotKind, slotId = kind, id
+                            end
+                        end
+                    end
+                end
+
+                if slotKind == nil then
+                    local ok, undo = pcall(onFn, handler)
+
+                    return {
+                        check = function() end,
+                        undo = function()
+                            if ok and type(undo) == 'function' then
+                                pcall(undo)
+                            end
+                        end,
+                    }
+                end
+
+                local slots = registry[slotKind]
+                local previous = before[slotKind] and before[slotKind][slotId]
+
+                local function wrapper(...)
+                    if type(previous) == 'function' then
+                        pcall(previous, ...)
+                    end
+
+                    handler(...)
+                end
+
+                slots[slotId] = wrapper
+
+                return {
+                    check = function()
+                        local current = slots[slotId]
+
+                        if current ~= wrapper then
+                            previous = current
+                            slots[slotId] = wrapper
+                        end
+                    end,
+                    undo = function()
+                        if slots[slotId] == wrapper then
+                            slots[slotId] = previous
+                        end
+                    end,
+                }
+            end
+
+            return Listen
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.B()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.B
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.B = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Detect = __DARKLUA_BUNDLE_MODULES.u()
             local Choice = __DARKLUA_BUNDLE_MODULES.A()
+            local Listen = __DARKLUA_BUNDLE_MODULES.B()
             local Runtime = {}
             local PICK_DELAY_SECONDS = (config).thresholds.adventurePickDelaySeconds
             local REPEAT_SECONDS = (config).thresholds.adventureRepeatSeconds
@@ -9010,6 +9145,7 @@ do
                 }
                 local deps = injected
                 local disconnects = {}
+                local subscriptions = {}
                 local lastKey = ''
                 local lastAt = -math.huge
                 local snapshot = nil
@@ -9766,6 +9902,10 @@ do
                         return
                     end
 
+                    for _, sub in subscriptions do
+                        pcall(sub.check)
+                    end
+
                     local seedOf = deps.runSeed
                     local seed = if type(seedOf) == 'function'then(seedOf)()else nil
 
@@ -9934,16 +10074,25 @@ do
                         return false
                     end
 
-                    local onFn = entry.On
-                    local ok, undo = pcall(onFn, guarded('card offer', onBasicOffer))
+                    subscriptions = {}
 
-                    if not ok then
+                    local function listen(target, handler)
+                        local sub = Listen.chain(target, handler)
+
+                        if sub == nil then
+                            return false
+                        end
+
+                        table.insert(subscriptions, sub)
+                        table.insert(disconnects, sub.undo)
+
+                        return true
+                    end
+
+                    if not listen(entry, guarded('card offer', onBasicOffer)) then
                         setStatus('Auto Basic Card: could not subscribe')
 
                         return false
-                    end
-                    if type(undo) == 'function' then
-                        table.insert(disconnects, undo)
                     end
 
                     local extras = {
@@ -9975,14 +10124,7 @@ do
                     for eventName, handler in extras do
                         local extra = events[eventName]
 
-                        if type(extra) == 'table' and type(extra.On) == 'function' then
-                            local extraOn = extra.On
-                            local okExtra, undoExtra = pcall(extraOn, guarded(eventName, handler))
-
-                            if okExtra and type(undoExtra) == 'function' then
-                                table.insert(disconnects, undoExtra)
-                            end
-                        end
+                        listen(extra, guarded(eventName, handler))
                     end
 
                     local relay = deps.mapRelay
@@ -10007,14 +10149,7 @@ do
 
                     local roomEntry = if type(events) == 'table'then events.SelectRoomSelectionStarted else nil
 
-                    if type(roomEntry) == 'table' and type(roomEntry.On) == 'function' then
-                        local roomOn = roomEntry.On
-                        local okRoom, undoRoom = pcall(roomOn, guarded('room offer', onRoomOffer))
-
-                        if okRoom and type(undoRoom) == 'function' then
-                            table.insert(disconnects, undoRoom)
-                        end
-                    end
+                    listen(roomEntry, guarded('room offer', onRoomOffer))
 
                     guardedRetry = function(offer)
                         guarded('room offer', function(payload)
@@ -10131,14 +10266,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.B()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.B
+        function __DARKLUA_BUNDLE_MODULES.C()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.C
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.B = v
+                __DARKLUA_BUNDLE_MODULES.cache.C = v
             end
 
             return v.c
@@ -10579,14 +10714,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.C()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.C
+        function __DARKLUA_BUNDLE_MODULES.D()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.D
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.C = v
+                __DARKLUA_BUNDLE_MODULES.cache.D = v
             end
 
             return v.c
@@ -11437,14 +11572,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.D()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.D
+        function __DARKLUA_BUNDLE_MODULES.E()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.E
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.D = v
+                __DARKLUA_BUNDLE_MODULES.cache.E = v
             end
 
             return v.c
@@ -11453,7 +11588,7 @@ do
     do
         local function __modImpl()
             local Document = __DARKLUA_BUNDLE_MODULES.r()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.D()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.E()
             local Runtime = {}
             local POLL_SECONDS = 0.2
             local ACTION_TIMEOUT = 12
@@ -12512,14 +12647,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.E()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.E
+        function __DARKLUA_BUNDLE_MODULES.F()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.F
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.E = v
+                __DARKLUA_BUNDLE_MODULES.cache.F = v
             end
 
             return v.c
@@ -12659,14 +12794,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.F()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.F
+        function __DARKLUA_BUNDLE_MODULES.G()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.G
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.F = v
+                __DARKLUA_BUNDLE_MODULES.cache.G = v
             end
 
             return v.c
@@ -13116,14 +13251,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.G()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.G
+        function __DARKLUA_BUNDLE_MODULES.H()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.H
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.G = v
+                __DARKLUA_BUNDLE_MODULES.cache.H = v
             end
 
             return v.c
@@ -13390,14 +13525,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.H()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.H
+        function __DARKLUA_BUNDLE_MODULES.I()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.I
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.H = v
+                __DARKLUA_BUNDLE_MODULES.cache.I = v
             end
 
             return v.c
@@ -13549,14 +13684,14 @@ do
             return Rules
         end
 
-        function __DARKLUA_BUNDLE_MODULES.I()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.I
+        function __DARKLUA_BUNDLE_MODULES.J()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.J
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.I = v
+                __DARKLUA_BUNDLE_MODULES.cache.J = v
             end
 
             return v.c
@@ -13565,7 +13700,7 @@ do
     do
         local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Rules = __DARKLUA_BUNDLE_MODULES.I()
+            local Rules = __DARKLUA_BUNDLE_MODULES.J()
             local Adapter = {}
 
             local function resolve(root, path)
@@ -13990,14 +14125,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.J()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.J
+        function __DARKLUA_BUNDLE_MODULES.K()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.K
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.J = v
+                __DARKLUA_BUNDLE_MODULES.cache.K = v
             end
 
             return v.c
@@ -14007,8 +14142,8 @@ do
         local function __modImpl()
             local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.J()
-            local Rules = __DARKLUA_BUNDLE_MODULES.I()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.K()
+            local Rules = __DARKLUA_BUNDLE_MODULES.J()
             local Runtime = {}
             local STORAGE_KEY = 'AnimeVanguardsAutoPlay'
             local SCHEMA_VERSION = 3
@@ -14595,14 +14730,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.K()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.K
+        function __DARKLUA_BUNDLE_MODULES.L()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.L
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.K = v
+                __DARKLUA_BUNDLE_MODULES.cache.L = v
             end
 
             return v.c
@@ -15060,14 +15195,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.L()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.L
+        function __DARKLUA_BUNDLE_MODULES.M()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.M
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.L = v
+                __DARKLUA_BUNDLE_MODULES.cache.M = v
             end
 
             return v.c
@@ -15237,14 +15372,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.M()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.M
+        function __DARKLUA_BUNDLE_MODULES.N()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.N
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.M = v
+                __DARKLUA_BUNDLE_MODULES.cache.N = v
             end
 
             return v.c
@@ -15537,14 +15672,14 @@ do
             return Embed
         end
 
-        function __DARKLUA_BUNDLE_MODULES.N()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.N
+        function __DARKLUA_BUNDLE_MODULES.O()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.O
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.N = v
+                __DARKLUA_BUNDLE_MODULES.cache.O = v
             end
 
             return v.c
@@ -15552,7 +15687,7 @@ do
     end
     do
         local function __modImpl()
-            local Embed = __DARKLUA_BUNDLE_MODULES.N()
+            local Embed = __DARKLUA_BUNDLE_MODULES.O()
             local Events = {}
             local UNIT_ROWS = 6
             local SHARE_BAR = 10
@@ -16001,14 +16136,14 @@ do
             return Events
         end
 
-        function __DARKLUA_BUNDLE_MODULES.O()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.O
+        function __DARKLUA_BUNDLE_MODULES.P()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.P
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.O = v
+                __DARKLUA_BUNDLE_MODULES.cache.P = v
             end
 
             return v.c
@@ -16017,7 +16152,7 @@ do
     do
         local function __modImpl()
             local Style = __DARKLUA_BUNDLE_MODULES.e()
-            local Events = __DARKLUA_BUNDLE_MODULES.O()
+            local Events = __DARKLUA_BUNDLE_MODULES.P()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Page = {}
             local WEBHOOK = (config).webhook
@@ -16185,14 +16320,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.P()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.P
+        function __DARKLUA_BUNDLE_MODULES.Q()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.Q
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.P = v
+                __DARKLUA_BUNDLE_MODULES.cache.Q = v
             end
 
             return v.c
@@ -16408,14 +16543,14 @@ do
             return Sender
         end
 
-        function __DARKLUA_BUNDLE_MODULES.Q()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.Q
+        function __DARKLUA_BUNDLE_MODULES.R()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.R
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.Q = v
+                __DARKLUA_BUNDLE_MODULES.cache.R = v
             end
 
             return v.c
@@ -16519,14 +16654,14 @@ do
             return Session
         end
 
-        function __DARKLUA_BUNDLE_MODULES.R()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.R
+        function __DARKLUA_BUNDLE_MODULES.S()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.S
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.R = v
+                __DARKLUA_BUNDLE_MODULES.cache.S = v
             end
 
             return v.c
@@ -16537,10 +16672,10 @@ do
             local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local metadata = __DARKLUA_BUNDLE_MODULES.b()
-            local Embed = __DARKLUA_BUNDLE_MODULES.N()
-            local Events = __DARKLUA_BUNDLE_MODULES.O()
-            local Sender = __DARKLUA_BUNDLE_MODULES.Q()
-            local Session = __DARKLUA_BUNDLE_MODULES.R()
+            local Embed = __DARKLUA_BUNDLE_MODULES.O()
+            local Events = __DARKLUA_BUNDLE_MODULES.P()
+            local Sender = __DARKLUA_BUNDLE_MODULES.R()
+            local Session = __DARKLUA_BUNDLE_MODULES.S()
             local Runtime = {}
             local STORAGE_KEY = 'AnimeVanguardsWebhook'
             local SCHEMA_VERSION = 1
@@ -17904,14 +18039,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.S()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.S
+        function __DARKLUA_BUNDLE_MODULES.T()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.T
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.S = v
+                __DARKLUA_BUNDLE_MODULES.cache.T = v
             end
 
             return v.c
@@ -17988,14 +18123,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.T()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.T
+        function __DARKLUA_BUNDLE_MODULES.U()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.U
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.T = v
+                __DARKLUA_BUNDLE_MODULES.cache.U = v
             end
 
             return v.c
@@ -18339,14 +18474,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.U()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.U
+        function __DARKLUA_BUNDLE_MODULES.V()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.V
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.U = v
+                __DARKLUA_BUNDLE_MODULES.cache.V = v
             end
 
             return v.c
@@ -18361,19 +18496,19 @@ local JoinerPage = __DARKLUA_BUNDLE_MODULES.p()
 local JoinerRuntime = __DARKLUA_BUNDLE_MODULES.v()
 local AdventurePage = __DARKLUA_BUNDLE_MODULES.y()
 local AdventureAdapter = __DARKLUA_BUNDLE_MODULES.z()
-local AdventureRuntime = __DARKLUA_BUNDLE_MODULES.B()
-local MacroPage = __DARKLUA_BUNDLE_MODULES.C()
-local MacroRuntime = __DARKLUA_BUNDLE_MODULES.E()
-local GamePage = __DARKLUA_BUNDLE_MODULES.F()
-local GameAdapter = __DARKLUA_BUNDLE_MODULES.G()
-local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.H()
-local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.K()
-local StatusPage = __DARKLUA_BUNDLE_MODULES.L()
-local DashboardPage = __DARKLUA_BUNDLE_MODULES.M()
-local WebhookPage = __DARKLUA_BUNDLE_MODULES.P()
-local WebhookRuntime = __DARKLUA_BUNDLE_MODULES.S()
-local MiscPage = __DARKLUA_BUNDLE_MODULES.T()
-local MiscRuntime = __DARKLUA_BUNDLE_MODULES.U()
+local AdventureRuntime = __DARKLUA_BUNDLE_MODULES.C()
+local MacroPage = __DARKLUA_BUNDLE_MODULES.D()
+local MacroRuntime = __DARKLUA_BUNDLE_MODULES.F()
+local GamePage = __DARKLUA_BUNDLE_MODULES.G()
+local GameAdapter = __DARKLUA_BUNDLE_MODULES.H()
+local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.I()
+local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.L()
+local StatusPage = __DARKLUA_BUNDLE_MODULES.M()
+local DashboardPage = __DARKLUA_BUNDLE_MODULES.N()
+local WebhookPage = __DARKLUA_BUNDLE_MODULES.Q()
+local WebhookRuntime = __DARKLUA_BUNDLE_MODULES.T()
+local MiscPage = __DARKLUA_BUNDLE_MODULES.U()
+local MiscRuntime = __DARKLUA_BUNDLE_MODULES.V()
 local active = false
 local joiner = JoinerRuntime.new()
 local adventure = AdventureAdapter.new()

@@ -10,6 +10,7 @@ Dependencies: Config; Adventure/Detect; Adventure/Choice; Adventure/Adapter (sha
 local config = require("../Config")
 local Detect = require("./Detect")
 local Choice = require("./Choice")
+local Listen = require("./Listen")
 local Runtime = {}
 
 local PICK_DELAY_SECONDS: number = (config :: any).thresholds.adventurePickDelaySeconds
@@ -386,6 +387,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
     }
     local deps: any = injected
     local disconnects: { () -> () } = {}
+    local subscriptions: { any } = {}
     local lastKey = ""
     local lastAt = -math.huge
     local snapshot: any = nil
@@ -1097,6 +1099,10 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         if not self.active or type(taskApi) ~= "table" or type(taskApi.delay) ~= "function" then
             return
         end
+        -- The game re-subscribes its own listeners (a new run, a UI remount): stay attached next to them.
+        for _, sub in subscriptions do
+            pcall(sub.check)
+        end
         -- A new run: subscribe to its events again (stop and start restart this watcher).
         local seedOf: any = deps.runSeed
         local seed: string? = if type(seedOf) == "function" then (seedOf :: any)() else nil
@@ -1267,14 +1273,20 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             setStatus("Idle (not in an Adventure match)")
             return false
         end
-        local onFn: any = entry.On
-        local ok, undo = pcall(onFn, guarded("card offer", onBasicOffer))
-        if not ok then
+        -- The game keeps one listener per event: listen next to it (Listen.chain), never in its place.
+        subscriptions = {}
+        local function listen(target: any, handler: (any) -> ()): boolean
+            local sub = Listen.chain(target, handler)
+            if sub == nil then
+                return false
+            end
+            table.insert(subscriptions, sub)
+            table.insert(disconnects, sub.undo)
+            return true
+        end
+        if not listen(entry, guarded("card offer", onBasicOffer)) then
             setStatus("Auto Basic Card: could not subscribe")
             return false
-        end
-        if type(undo) == "function" then
-            table.insert(disconnects, undo)
         end
         local extras: { [string]: any } = {
             CardPickCharacterOffer = onCharacterOffer,
@@ -1301,13 +1313,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         }
         for eventName, handler in extras do
             local extra = events[eventName]
-            if type(extra) == "table" and type(extra.On) == "function" then
-                local extraOn: any = extra.On
-                local okExtra, undoExtra = pcall(extraOn, guarded(eventName, handler))
-                if okExtra and type(undoExtra) == "function" then
-                    table.insert(disconnects, undoExtra)
-                end
-            end
+            listen(extra, guarded(eventName, handler))
         end
         local relay: any = deps.mapRelay
         if type(relay) == "table" and type(relay.OnSnapshot) == "function" then
@@ -1323,13 +1329,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             end
         end
         local roomEntry = if type(events) == "table" then events.SelectRoomSelectionStarted else nil
-        if type(roomEntry) == "table" and type(roomEntry.On) == "function" then
-            local roomOn: any = roomEntry.On
-            local okRoom, undoRoom = pcall(roomOn, guarded("room offer", onRoomOffer))
-            if okRoom and type(undoRoom) == "function" then
-                table.insert(disconnects, undoRoom)
-            end
-        end
+        listen(roomEntry, guarded("room offer", onRoomOffer))
         guardedRetry = function(offer: any)
             guarded("room offer", function(payload: any)
                 onRoomOffer(payload, true)
