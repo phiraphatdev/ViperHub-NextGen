@@ -254,7 +254,6 @@ test("Adventure page mounts the requested layout and binds every control", funct
     for _, title in
         {
             "Auto Cash Out",
-            "Buy Unit Trait",
             "Memoria",
             "Refresh Inventory",
             "Cash out at floor",

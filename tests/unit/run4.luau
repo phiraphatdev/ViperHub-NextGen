@@ -820,4 +820,238 @@ test(
     end
 )
 
+-- The stock the live game sent (floor 56): basic cards, a unit card, a reroll bundle, traits and Memoria.
+local function liveStock(): any
+    return {
+        {
+            Index = 1,
+            Cost = 10,
+            Purchased = false,
+            Kind = "BasicCard",
+            BasicCardRarity = "Rare",
+            BasicCardName = "Serrated Tips",
+        },
+        {
+            Index = 2,
+            Cost = 10,
+            Purchased = false,
+            Kind = "BasicCard",
+            BasicCardRarity = "Rare",
+            BasicCardName = "Ambush",
+        },
+        {
+            Index = 3,
+            Cost = 60,
+            Purchased = false,
+            Kind = "BasicCard",
+            BasicCardRarity = "Legendary",
+            BasicCardName = "Double Tap",
+        },
+        {
+            Index = 5,
+            Cost = 50,
+            Kind = "UnitCard",
+            Purchased = false,
+            UnitCardInstance = { CharacterName = "Iscanur (Pride)" },
+        },
+        { Index = 6, Cost = 700, Kind = "CardRerollBundle", Purchased = false, CardRerollCount = 3 },
+        {
+            Index = 7,
+            Cost = 100,
+            Kind = "Trait",
+            Purchased = false,
+            TraitName = "Deadeye",
+            TraitRarity = "Mythic",
+            TraitUnitGUID = "guid-main",
+            TraitUnitName = "Iscanur (Pride)",
+        },
+        {
+            Index = 8,
+            Cost = 20,
+            Kind = "Trait",
+            Purchased = false,
+            TraitName = "Swift",
+            TraitIndex = 3,
+            TraitUnitGUID = "guid-other",
+            TraitUnitName = "Wrath (Assault)",
+        },
+        {
+            Index = 10,
+            Cost = 10,
+            Kind = "Memoria",
+            Purchased = false,
+            MemoriaOption = { Name = "Speed Boost I", Rarity = "Rare" },
+        },
+        {
+            Index = 11,
+            Cost = 100,
+            Kind = "Memoria",
+            Purchased = false,
+            MemoriaOption = { Name = "Scrap Metal Master", Rarity = "Mythic" },
+        },
+    }
+end
+
+test("Stitches Shop buys only what is selected, by kind and priority, within the budget", function()
+    local function set(list: { string }): any
+        local result: any = {}
+        for _, name in list do
+            result[name] = true
+        end
+        return result
+    end
+    local wants: any = {
+        basic = set({ "Ambush", "Double Tap", "Serrated Tips" }),
+        starters = {},
+        traits = set({ "Swift III", "Deadeye" }),
+        memoria = set({ "Mythic" }),
+        character = "Iscanur (Pride)",
+        rank = { Ambush = 5, ["Double Tap"] = 9, ["Serrated Tips"] = 1 },
+    }
+    local plan = AdventureChoice.shopPurchases(liveStock(), 4980, wants)
+    local names: { string } = {}
+    for _, entry in plan do
+        table.insert(names, entry.name)
+    end
+    assert(
+        table.concat(names, ",") == "Double Tap,Ambush,Serrated Tips,Deadeye,Swift III,Scrap Metal Master",
+        table.concat(names, ",")
+    )
+    assert(plan[4].guid == "guid-main" and plan[5].guid == "guid-other" and plan[6].guid == "guid-main")
+    local tight = AdventureChoice.shopPurchases(liveStock(), 75, wants)
+    local tightNames: { string } = {}
+    for _, entry in tight do
+        table.insert(tightNames, entry.name)
+    end
+    assert(
+        table.concat(tightNames, ",") == "Double Tap,Ambush",
+        "the budget limits the purchases: " .. table.concat(tightNames, ",")
+    )
+    assert(
+        #AdventureChoice.shopPurchases(
+                liveStock(),
+                4980,
+                { basic = {}, starters = {}, traits = {}, memoria = {}, character = "x", rank = {} }
+            ) == 0
+    )
+    local noMain: any = liveStock()
+    noMain[6] = nil
+    local withoutMain = AdventureChoice.shopPurchases(noMain, 4980, wants)
+    for _, entry in withoutMain do
+        assert(entry.name ~= "Scrap Metal Master", "no main unit GUID: no Memoria")
+    end
+    assert(#AdventureChoice.shopPurchases(nil, 100, wants) == 0)
+    assert(AdventureChoice.traitLabel({ TraitName = "Swift", TraitIndex = 1 }) == "Swift I")
+    assert(
+        AdventureChoice.traitLabel({ TraitName = "Blitz" }) == "Blitz"
+            and AdventureChoice.traitLabel({}) == nil
+    )
+end)
+
+test("Adventure runtime buys the selected shop items, then leaves the shop", function()
+    local settings = AdventureSettings.new(AdventureCatalog.fromModules(nil), {})
+    local box: any = {}
+    local sent: { any } = {}
+    local pending: { any } = {}
+    local runtime = AdventureRuntime.new(function()
+        return settings
+    end, {
+        clock = function()
+            return 500
+        end,
+        task = {
+            delay = function(_seconds: number, callback: any)
+                table.insert(pending, callback)
+            end,
+        },
+        isAdventure = function()
+            return true
+        end,
+        events = {
+            CardPickBasicOffer = { On = function() end },
+            ShopOpened = {
+                On = function(callback: any)
+                    box.opened = callback
+                    return function() end
+                end,
+            },
+            ShopStockUpdated = {
+                On = function(callback: any)
+                    box.updated = callback
+                    return function() end
+                end,
+            },
+            ShopClosed = {
+                On = function(callback: any)
+                    box.closed = callback
+                    return function() end
+                end,
+            },
+            ShopPurchase = {
+                Fire = function(payload: any)
+                    table.insert(
+                        sent,
+                        "buy"
+                            .. payload.StockIndex
+                            .. (if payload.TargetUnitGUID then "@" .. payload.TargetUnitGUID else "")
+                    )
+                end,
+            },
+            ShopClose = {
+                Fire = function()
+                    table.insert(sent, "close")
+                end,
+            },
+        },
+    })
+    local function flush()
+        local batch = pending
+        pending = {}
+        for _, callback in batch do
+            local run: any = callback
+            run()
+        end
+    end
+    assert(runtime.start())
+    local opened: any = box.opened
+    local info: any = { Stock = liveStock(), Budget = 4980, Spent = 0 }
+    opened(info)
+    flush()
+    assert(table.concat(sent, ",") == "close", "Auto Stitches Shop is off: the shop is only left")
+    sent = {}
+    settings.set("autoStitchesShop", true)
+    settings.set("buyBasicCards", { "Ambush", "Double Tap" })
+    settings.set("buyTraits", { "Deadeye" })
+    settings.set("buyMemoria", { "Mythic" })
+    runtime.status = "x"
+    box.opened = box.opened
+    opened({ Stock = liveStock(), Budget = 4979, Spent = 0 })
+    flush()
+    assert(
+        table.concat(sent, ",") == "buy3,buy2,buy7@guid-main,buy11@guid-main,close",
+        table.concat(sent, ",")
+    )
+    assert(runtime.bought == 4 and string.find(runtime.status, "bought 4", 1, true) ~= nil, runtime.status)
+    sent = {}
+    opened({ Stock = liveStock(), Budget = 4979, Spent = 0 })
+    flush()
+    assert(#sent == 0, "the same opening twice is handled once")
+    -- Hub loaded while the shop was already open: the first stock update is handled like an opening, once.
+    local closed: any = box.closed
+    closed({})
+    local updated: any = box.updated
+    updated({ Stock = liveStock(), Budget = 4000, Spent = 0 })
+    flush()
+    assert(sent[#sent] == "close" and #sent >= 2, "a stock update after a close stands in for the opening")
+    sent = {}
+    updated({ Stock = liveStock(), Budget = 3900, Spent = 100 })
+    flush()
+    assert(#sent == 0, "later stock updates (after our own purchases) are ignored")
+    settings.set("leaveShop", false)
+    opened({ Stock = liveStock(), Budget = 100, Spent = 0 })
+    flush()
+    assert(sent[#sent] ~= "close", "Leave Shop Rooms off: the shop stays open for the player")
+    runtime.stop()
+end)
+
 print(string.format("PASS: %d unit scenarios (part 4)", passed))

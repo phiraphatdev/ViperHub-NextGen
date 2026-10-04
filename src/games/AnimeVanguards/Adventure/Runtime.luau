@@ -15,6 +15,7 @@ local Runtime = {}
 local PICK_DELAY_SECONDS: number = (config :: any).thresholds.adventurePickDelaySeconds
 local REPEAT_SECONDS: number = (config :: any).thresholds.adventureRepeatSeconds
 local CHEST_GAP_SECONDS: number = (config :: any).thresholds.adventureChestGapSeconds
+local SHOP_GAP_SECONDS: number = (config :: any).thresholds.adventureShopGapSeconds
 local VOTE_RETRY_SECONDS: number = (config :: any).thresholds.adventureVoteRetrySeconds
 local VOTE_ATTEMPTS: number = (config :: any).thresholds.adventureVoteAttempts
 
@@ -78,7 +79,8 @@ end
 
 --- Creates a stopped controller; getSettings returns the shared Adventure settings (read lazily); deps are injectable.
 function Runtime.new(getSettings: () -> any, injected: any?): any
-    local self: any = { status = "Idle", picked = 0, routed = 0, cards = 0, chests = 0, onStatus = nil }
+    local self: any =
+        { status = "Idle", picked = 0, routed = 0, cards = 0, chests = 0, bought = 0, onStatus = nil }
     local deps: any = injected
     local disconnects: { () -> () } = {}
     local lastKey = ""
@@ -114,6 +116,9 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             end
         end
     end
+    local shopHandled = false
+    local lastShopKey = ""
+    local lastShopAt = -math.huge
     local lastRoomKey = ""
     local lastRoomAt = -math.huge
 
@@ -372,26 +377,98 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
     end
 
     -- A Shop floor ends when the shop is closed; this build never buys, so it closes the shop to keep the run going.
-    local function onShopOpened()
-        if not self.active or getSettings().get("leaveShop") ~= true or not deps.isAdventure() then
+    local function toSet(list: any): { [string]: boolean }
+        local set: { [string]: boolean } = {}
+        if type(list) == "table" then
+            for _, name in list do
+                if type(name) == "string" then
+                    set[name] = true
+                end
+            end
+        end
+        return set
+    end
+
+    local function onShopOpened(info: any)
+        local saved = getSettings()
+        local buying = saved.get("autoStitchesShop") == true
+        if not self.active or not deps.isAdventure() or (not buying and saved.get("leaveShop") ~= true) then
             return
+        end
+        shopHandled = true
+        -- The shop can announce itself more than once: act on one opening at a time.
+        local stock: any = if type(info) == "table" then info.Stock else nil
+        local now = deps.clock()
+        local key = "shop:"
+            .. tostring(if type(info) == "table" then info.Budget else nil)
+            .. ":"
+            .. tostring(type(stock) == "table" and #stock or 0)
+        if key == lastShopKey and now - lastShopAt < REPEAT_SECONDS then
+            return
+        end
+        lastShopKey, lastShopAt = key, now
+        local plan: { any } = {}
+        if buying and type(info) == "table" then
+            plan = Choice.shopPurchases(
+                stock,
+                (if type(info.Budget) == "number" then info.Budget else 0)
+                    - (if type(info.Spent) == "number" then info.Spent else 0),
+                {
+                    basic = toSet(saved.get("buyBasicCards")),
+                    starters = toSet(saved.get("buyStarterCards")),
+                    traits = toSet(saved.get("buyTraits")),
+                    memoria = toSet(saved.get("buyMemoria")),
+                    character = saved.get("character"),
+                    rank = saved.get("cardPriority"),
+                }
+            )
+        end
+        local taskApi: any = deps.task
+        local function later(seconds: number, action: () -> ())
+            if type(taskApi) == "table" and type(taskApi.delay) == "function" then
+                (taskApi.delay :: any)(seconds, action)
+            else
+                action()
+            end
         end
         local function leave()
             local events: any = deps.events
             local entry = if events then events.ShopClose else nil
-            if self.active and type(entry) == "table" and type(entry.Fire) == "function" then
+            if
+                self.active
+                and saved.get("leaveShop") == true
+                and type(entry) == "table"
+                and type(entry.Fire) == "function"
+            then
                 local fireFn: any = entry.Fire
                 if pcall(fireFn) then
-                    setStatus("Left the shop without buying")
+                    setStatus(
+                        if #plan > 0
+                            then "Shop: bought " .. tostring(#plan) .. " item(s), left the shop"
+                            else "Left the shop without buying"
+                    )
                 end
             end
         end
-        local taskApi: any = deps.task
-        if type(taskApi) == "table" and type(taskApi.delay) == "function" then
-            (taskApi.delay :: any)(PICK_DELAY_SECONDS, leave)
-        else
-            leave()
+        for position, item in plan do
+            later(PICK_DELAY_SECONDS + SHOP_GAP_SECONDS * (position - 1), function()
+                local events: any = deps.events
+                local entry = if events then events.ShopPurchase else nil
+                if not self.active or type(entry) ~= "table" or type(entry.Fire) ~= "function" then
+                    return
+                end
+                local payload: any = { StockIndex = item.index }
+                if item.guid then
+                    payload.TargetUnitGUID = item.guid
+                end
+                local fireFn: any = entry.Fire
+                if pcall(fireFn, payload) then
+                    self.bought += 1
+                    setStatus("Shop: bought " .. tostring(item.name) .. " for " .. tostring(item.cost))
+                end
+            end)
         end
+        later(PICK_DELAY_SECONDS + SHOP_GAP_SECONDS * #plan, leave)
     end
 
     -- A Treasure floor ends once the allowed picks are used: open the first unopened chests one by one
@@ -488,6 +565,15 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             CardPickCharacterOffer = onCharacterOffer,
             ShopOpened = onShopOpened,
             TreasureBegin = onTreasureBegin,
+            -- Hub loaded while a shop was already open: its first stock update stands in for the opening.
+            ShopStockUpdated = function(info: any)
+                if not shopHandled then
+                    onShopOpened(info)
+                end
+            end,
+            ShopClosed = function()
+                shopHandled = false
+            end,
             VoteEnded = function()
                 voteOpen = false
                 voteAttempts = 0

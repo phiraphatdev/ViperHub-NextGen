@@ -498,6 +498,7 @@ do
                     adventurePickDelaySeconds = 0.8,
                     adventureRepeatSeconds = 4,
                     adventureChestGapSeconds = 1,
+                    adventureShopGapSeconds = 1.2,
                     adventureVoteRetrySeconds = 20,
                     adventureVoteAttempts = 3,
                 }),
@@ -7503,6 +7504,11 @@ do
                 leaveShop = true,
                 openTreasure = true,
                 closeMap = true,
+                autoStitchesShop = true,
+                buyBasicCards = true,
+                buyStarterCards = true,
+                buyTraits = true,
+                buyMemoria = true,
                 autoStartFloors = true,
                 secondPriorityFloor = true,
                 floorPriority = true,
@@ -8194,6 +8200,130 @@ do
                 return best
             end
 
+            local ROMAN = {
+                'I',
+                'II',
+                'III',
+                'IV',
+                'V',
+            }
+            local MEMORIA_RARITY = {
+                Vanguard = 6,
+                Secret = 5,
+                Mythic = 4,
+                Legendary = 3,
+                Epic = 2,
+                Rare = 1,
+            }
+            local KIND_ORDER = {
+                Power = 1,
+                BasicCard = 2,
+                Trait = 3,
+                Memoria = 4,
+            }
+
+            function Choice.traitLabel(item)
+                if type(item) ~= 'table' or type(item.TraitName) ~= 'string' then
+                    return nil
+                end
+
+                local tier = if type(item.TraitIndex) == 'number'then ROMAN[item.TraitIndex]else nil
+
+                return if tier then item.TraitName .. ' ' .. tier else item.TraitName
+            end
+            function Choice.shopPurchases(stock, budget, wants)
+                local plan = {}
+
+                if type(stock) ~= 'table' or type(budget) ~= 'number' then
+                    return plan
+                end
+
+                local mainGuid = nil
+
+                for _, item in stock do
+                    if type(item) == 'table' and item.Kind == 'Trait' and item.TraitUnitName == wants.character then
+                        if type(item.TraitUnitGUID) == 'string' then
+                            mainGuid = item.TraitUnitGUID
+                        end
+                    end
+                end
+
+                local candidates = {}
+
+                for _, item in stock do
+                    if type(item) == 'table' and item.Purchased ~= true and type(item.Index) == 'number' and type(item.Cost) == 'number' then
+                        local entry = nil
+
+                        if item.Kind == 'BasicCard' and wants.basic[item.BasicCardName] then
+                            entry = {
+                                name = item.BasicCardName,
+                                rank = wants.rank[item.BasicCardName] or 0,
+                            }
+                        elseif item.Kind == 'Power' and wants.starters[item.PowerName or item.Name] then
+                            entry = {
+                                name = item.PowerName or item.Name,
+                                rank = 0,
+                            }
+                        elseif item.Kind == 'Trait' then
+                            local label = Choice.traitLabel(item)
+
+                            if label and wants.traits[label] and type(item.TraitUnitGUID) == 'string' then
+                                entry = {
+                                    name = label,
+                                    rank = 0,
+                                    guid = item.TraitUnitGUID,
+                                }
+                            end
+                        elseif item.Kind == 'Memoria' and type(item.MemoriaOption) == 'table' then
+                            local rarity = item.MemoriaOption.Rarity
+
+                            if type(rarity) == 'string' and wants.memoria[rarity] and mainGuid then
+                                entry = {
+                                    name = tostring(item.MemoriaOption.Name),
+                                    rank = MEMORIA_RARITY[rarity] or 0,
+                                    guid = mainGuid,
+                                }
+                            end
+                        end
+                        if entry then
+                            entry.index = item.Index
+                            entry.cost = item.Cost
+                            entry.order = KIND_ORDER[item.Kind] or 9
+
+                            table.insert(candidates, entry)
+                        end
+                    end
+                end
+
+                table.sort(candidates, function(a, b)
+                    if a.order ~= b.order then
+                        return a.order < b.order
+                    end
+                    if a.rank ~= b.rank then
+                        return a.rank > b.rank
+                    end
+
+                    return a.index < b.index
+                end)
+
+                local left = budget
+
+                for _, entry in candidates do
+                    if entry.cost <= left then
+                        left -= entry.cost
+
+                        table.insert(plan, {
+                            index = entry.index,
+                            cost = entry.cost,
+                            name = entry.name,
+                            guid = entry.guid,
+                        })
+                    end
+                end
+
+                return plan
+            end
+
             return Choice
         end
 
@@ -8219,6 +8349,7 @@ do
             local PICK_DELAY_SECONDS = (config).thresholds.adventurePickDelaySeconds
             local REPEAT_SECONDS = (config).thresholds.adventureRepeatSeconds
             local CHEST_GAP_SECONDS = (config).thresholds.adventureChestGapSeconds
+            local SHOP_GAP_SECONDS = (config).thresholds.adventureShopGapSeconds
             local VOTE_RETRY_SECONDS = (config).thresholds.adventureVoteRetrySeconds
             local VOTE_ATTEMPTS = (config).thresholds.adventureVoteAttempts
 
@@ -8294,6 +8425,7 @@ do
                     routed = 0,
                     cards = 0,
                     chests = 0,
+                    bought = 0,
                     onStatus = nil,
                 }
                 local deps = injected
@@ -8335,6 +8467,9 @@ do
                     end
                 end
 
+                local shopHandled = false
+                local lastShopKey = ''
+                local lastShopAt = -math.huge
                 local lastRoomKey = ''
                 local lastRoomAt = -math.huge
 
@@ -8595,31 +8730,103 @@ do
                         answer()
                     end
                 end
-                local function onShopOpened()
-                    if not self.active or getSettings().get('leaveShop') ~= true or not deps.isAdventure() then
-                        return
-                    end
+                local function toSet(list)
+                    local set = {}
 
-                    local function leave()
-                        local events = deps.events
-                        local entry = if events then events.ShopClose else nil
-
-                        if self.active and type(entry) == 'table' and type(entry.Fire) == 'function' then
-                            local fireFn = entry.Fire
-
-                            if pcall(fireFn) then
-                                setStatus('Left the shop without buying')
+                    if type(list) == 'table' then
+                        for _, name in list do
+                            if type(name) == 'string' then
+                                set[name] = true
                             end
                         end
                     end
 
+                    return set
+                end
+                local function onShopOpened(info)
+                    local saved = getSettings()
+                    local buying = saved.get('autoStitchesShop') == true
+
+                    if not self.active or not deps.isAdventure() or (not buying and saved.get('leaveShop') ~= true) then
+                        return
+                    end
+
+                    shopHandled = true
+
+                    local stock = if type(info) == 'table'then info.Stock else nil
+                    local now = deps.clock()
+                    local key = 'shop:' .. tostring(if type(info) == 'table'then info.Budget else nil) .. ':' .. tostring(type(stock) == 'table' and #stock or 0)
+
+                    if key == lastShopKey and now - lastShopAt < REPEAT_SECONDS then
+                        return
+                    end
+
+                    lastShopKey, lastShopAt = key, now
+
+                    local plan = {}
+
+                    if buying and type(info) == 'table' then
+                        plan = Choice.shopPurchases(stock, (if type(info.Budget) == 'number'then info.Budget else 0) - (if type(info.Spent) == 'number'then info.Spent else 0), {
+                            basic = toSet(saved.get('buyBasicCards')),
+                            starters = toSet(saved.get('buyStarterCards')),
+                            traits = toSet(saved.get('buyTraits')),
+                            memoria = toSet(saved.get('buyMemoria')),
+                            character = saved.get('character'),
+                            rank = saved.get('cardPriority'),
+                        })
+                    end
+
                     local taskApi = deps.task
 
-                    if type(taskApi) == 'table' and type(taskApi.delay) == 'function' then
-                        (taskApi.delay)(PICK_DELAY_SECONDS, leave)
-                    else
-                        leave()
+                    local function later(seconds, action)
+                        if type(taskApi) == 'table' and type(taskApi.delay) == 'function' then
+                            (taskApi.delay)(seconds, action)
+                        else
+                            action()
+                        end
                     end
+                    local function leave()
+                        local events = deps.events
+                        local entry = if events then events.ShopClose else nil
+
+                        if self.active and saved.get('leaveShop') == true and type(entry) == 'table' and type(entry.Fire) == 'function' then
+                            local fireFn = entry.Fire
+
+                            if pcall(fireFn) then
+                                setStatus(if#plan > 0 then'Shop: bought ' .. tostring(#plan) .. ' item(s), left the shop'else'Left the shop without buying')
+                            end
+                        end
+                    end
+
+                    for position, item in plan do
+                        later(PICK_DELAY_SECONDS + SHOP_GAP_SECONDS * (position - 1), function(
+                        )
+                            local events = deps.events
+                            local entry = if events then events.ShopPurchase else nil
+
+                            if not self.active or type(entry) ~= 'table' or type(entry.Fire) ~= 'function' then
+                                return
+                            end
+
+                            local payload = {
+                                StockIndex = item.index,
+                            }
+
+                            if item.guid then
+                                payload.TargetUnitGUID = item.guid
+                            end
+
+                            local fireFn = entry.Fire
+
+                            if pcall(fireFn, payload) then
+                                self.bought += 1
+
+                                setStatus('Shop: bought ' .. tostring(item.name) .. ' for ' .. tostring(item.cost))
+                            end
+                        end)
+                    end
+
+                    later(PICK_DELAY_SECONDS + SHOP_GAP_SECONDS * #plan, leave)
                 end
                 local function onTreasureBegin(info)
                     if not self.active or type(info) ~= 'table' then
@@ -8730,6 +8937,14 @@ do
                         CardPickCharacterOffer = onCharacterOffer,
                         ShopOpened = onShopOpened,
                         TreasureBegin = onTreasureBegin,
+                        ShopStockUpdated = function(info)
+                            if not shopHandled then
+                                onShopOpened(info)
+                            end
+                        end,
+                        ShopClosed = function()
+                            shopHandled = false
+                        end,
                         VoteEnded = function()
                             voteOpen = false
                             voteAttempts = 0

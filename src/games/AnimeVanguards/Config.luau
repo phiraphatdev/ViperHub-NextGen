@@ -350,6 +350,8 @@ return table.freeze({
         adventureRepeatSeconds = 4,
         -- Between two treasure chest openings.
         adventureChestGapSeconds = 1,
+        -- Between two Stitches Shop purchases.
+        adventureShopGapSeconds = 1.2,
         -- A room vote still open after this long is cast again, at most this many times.
         adventureVoteRetrySeconds = 20,
         adventureVoteAttempts = 3,

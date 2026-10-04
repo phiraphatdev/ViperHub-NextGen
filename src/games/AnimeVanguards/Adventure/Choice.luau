@@ -89,4 +89,93 @@ function Choice.pickCharacterCard(options: any): number?
     return best
 end
 
+local ROMAN = { "I", "II", "III", "IV", "V" }
+local MEMORIA_RARITY = { Vanguard = 6, Secret = 5, Mythic = 4, Legendary = 3, Epic = 2, Rare = 1 }
+local KIND_ORDER = { Power = 1, BasicCard = 2, Trait = 3, Memoria = 4 }
+
+--- The display name of a shop trait as listed in settings ("Swift III"; tierless traits keep their name).
+function Choice.traitLabel(item: any): string?
+    if type(item) ~= "table" or type(item.TraitName) ~= "string" then
+        return nil
+    end
+    local tier = if type(item.TraitIndex) == "number" then ROMAN[item.TraitIndex] else nil
+    return if tier then item.TraitName .. " " .. tier else item.TraitName
+end
+
+--- Chooses what to buy from a Stitches Shop stock ({Index, Cost, Purchased, Kind, ...}, observed live). Wants:
+--- basic (set of basic card names), starters (set of power names), traits (set of trait labels), memoria (set of
+--- rarities), character (the run's character; a Memoria needs that unit's GUID, found on a trait offered for it) and
+--- rank (basic card name -> priority number). Items are bought by kind (powers, basic cards by rank, traits, Memoria
+--- by rarity) while the budget lasts. Returns { {index, cost, name, guid?} } in buying order.
+function Choice.shopPurchases(stock: any, budget: number, wants: any): { any }
+    local plan: { any } = {}
+    if type(stock) ~= "table" or type(budget) ~= "number" then
+        return plan
+    end
+    local mainGuid: string? = nil
+    for _, item in stock do
+        if type(item) == "table" and item.Kind == "Trait" and item.TraitUnitName == wants.character then
+            if type(item.TraitUnitGUID) == "string" then
+                mainGuid = item.TraitUnitGUID
+            end
+        end
+    end
+    local candidates: { any } = {}
+    for _, item in stock do
+        if
+            type(item) == "table"
+            and item.Purchased ~= true
+            and type(item.Index) == "number"
+            and type(item.Cost) == "number"
+        then
+            local entry: any = nil
+            if item.Kind == "BasicCard" and wants.basic[item.BasicCardName] then
+                entry = { name = item.BasicCardName, rank = wants.rank[item.BasicCardName] or 0 }
+            elseif item.Kind == "Power" and wants.starters[item.PowerName or item.Name] then
+                entry = { name = item.PowerName or item.Name, rank = 0 }
+            elseif item.Kind == "Trait" then
+                local label = Choice.traitLabel(item)
+                if label and wants.traits[label] and type(item.TraitUnitGUID) == "string" then
+                    entry = { name = label, rank = 0, guid = item.TraitUnitGUID }
+                end
+            elseif item.Kind == "Memoria" and type(item.MemoriaOption) == "table" then
+                local rarity = item.MemoriaOption.Rarity
+                if type(rarity) == "string" and wants.memoria[rarity] and mainGuid then
+                    entry = {
+                        name = tostring(item.MemoriaOption.Name),
+                        rank = MEMORIA_RARITY[rarity] or 0,
+                        guid = mainGuid,
+                    }
+                end
+            end
+            if entry then
+                entry.index = item.Index
+                entry.cost = item.Cost
+                entry.order = KIND_ORDER[item.Kind] or 9
+                table.insert(candidates, entry)
+            end
+        end
+    end
+    table.sort(candidates, function(a: any, b: any): boolean
+        if a.order ~= b.order then
+            return a.order < b.order
+        end
+        if a.rank ~= b.rank then
+            return a.rank > b.rank
+        end
+        return a.index < b.index
+    end)
+    local left = budget
+    for _, entry in candidates do
+        if entry.cost <= left then
+            left -= entry.cost
+            table.insert(
+                plan,
+                { index = entry.index, cost = entry.cost, name = entry.name, guid = entry.guid }
+            )
+        end
+    end
+    return plan
+end
+
 return Choice

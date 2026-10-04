@@ -1,5 +1,11 @@
 # Updates
 
+## Local: Auto Stitches Shop — verified live
+
+- On a Shop floor the runtime reads the shop (`ShopOpened` / `ShopStockUpdated` payload: `Stock[] {Index, Cost, Purchased, Kind, ...}`, `Budget`, `Spent`) and buys what the Auto Stitches Shop switch and its four lists select: basic cards (`BasicCardName`), starter cards (Kind Power, by name), traits (`TraitName` + tier I/II/III from `TraitIndex`, target `TraitUnitGUID`) and Memoria (by rarity, target the run character's unit GUID, found on a trait offered for it). Order: powers, basic cards by Card Priority, traits, Memoria by rarity, while the budget lasts; the purchase is `ShopPurchase({StockIndex, TargetUnitGUID?})`, one per 1.2 s, then the shop is left when Leave Shop Rooms is on. A shop that was already open when the hub loaded is handled from its first stock update.
+- Live: with Ambush, Serrated Tips and Slayer Rounds selected the hub bought all three (10 coins each) and left the shop; the coin event confirmed the charge (4,980 before, -30, +50 battle reward = 5,000).
+- Not seen live yet: Trait, Memoria and Starter card purchases (covered by tests only); rerolls and the Card Reroll Bundle are never bought. This spends the run's Odyssey Coins, so it is off by default and the lists start empty.
+
 ## Local: Close Map After Voting
 
 - The game opens the Route Atlas for every room vote and leaves it open. New setting "Close Map After Voting" (default on, under Auto Route Atlas): about 1.5 s after the hub's vote and again when the vote ends, the runtime hides `AdventureHUD.AdventureMapRoot` (a client-side window only; the run state is untouched). Live: after a hub vote the window was hidden.
