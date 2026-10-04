@@ -420,6 +420,7 @@ return table.freeze({
         -- The shop watcher checks the room this often and asks for the shop state at most this often.
         adventureShopWatchSeconds = 2,
         adventureShopAskSeconds = 6,
+        adventureShopUiGraceSeconds = 2,
         -- A room vote still open after this long is cast again, at most this many times.
         adventureVoteRetrySeconds = 20,
         adventureVoteAttempts = 3,

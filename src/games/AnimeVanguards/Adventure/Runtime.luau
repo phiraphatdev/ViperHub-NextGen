@@ -20,6 +20,7 @@ local CHEST_GAP_SECONDS: number = (config :: any).thresholds.adventureChestGapSe
 local SHOP_GAP_SECONDS: number = (config :: any).thresholds.adventureShopGapSeconds
 local SHOP_WATCH_SECONDS: number = (config :: any).thresholds.adventureShopWatchSeconds
 local SHOP_ASK_SECONDS: number = (config :: any).thresholds.adventureShopAskSeconds
+local SHOP_UI_GRACE_SECONDS: number = (config :: any).thresholds.adventureShopUiGraceSeconds
 local VOTE_RETRY_SECONDS: number = (config :: any).thresholds.adventureVoteRetrySeconds
 local VOTE_ATTEMPTS: number = (config :: any).thresholds.adventureVoteAttempts
 
@@ -106,6 +107,41 @@ local function liveDependencies(): any
                     end)
                 end
             end
+        end,
+        -- Hides the Stitches' Shop window if it is still on screen: the game leaves it open after the shop is
+        -- closed and the next room cannot be chosen until it is gone. Returns true when a window was closed.
+        closeShopUi = function(): boolean
+            local players: any = env.game:GetService("Players")
+            local gui: any = players.LocalPlayer and players.LocalPlayer:FindFirstChild("PlayerGui")
+            local hud: any = gui and gui:FindFirstChild("AdventureHUD")
+            if not hud then
+                return false
+            end
+            local closed = false
+            for _, object in hud:GetDescendants() do
+                local item: any = object
+                if
+                    string.find(item.Name, "Shop_Export", 1, true) ~= nil
+                    and item:IsA("GuiObject")
+                    and item.Visible
+                    and item.AbsoluteSize.X > 0
+                then
+                    local closeBtn: any = item:FindFirstChild("Close", true)
+                    local firesignal: any = (getfenv() :: any).firesignal
+                    local activated: any = if closeBtn and closeBtn:IsA("GuiButton")
+                        then closeBtn.Activated
+                        else nil
+                    if activated and firesignal then
+                        pcall(firesignal, activated)
+                    end
+                    -- Still visible (the game's close did nothing): hide it directly.
+                    if item.Visible then
+                        item.Visible = false
+                    end
+                    closed = true
+                end
+            end
+            return closed
         end,
         roomKind = function(): string?
             local data = if handler then handler.GameData else nil
@@ -315,6 +351,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         end
     end
     local shopHandled = false
+    local shopClosedAt = -math.huge
     local lastShopKey = ""
     local lastShopAt = -math.huge
     local lastRoomKey = ""
@@ -668,6 +705,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                 and type(entry.Fire) == "function"
             then
                 local fireFn: any = entry.Fire
+                shopClosedAt = deps.clock()
                 if pcall(fireFn) then
                     setStatus(
                         if #plan > 0
@@ -931,6 +969,16 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                     pcall(askFire)
                 end
             end
+            -- The shop window can stay on screen after the shop closed; it blocks the next room vote.
+            local closeShopFn: any = deps.closeShopUi
+            if wanted and type(closeShopFn) == "function" and deps.isAdventure() then
+                local inShop = type(roomKindOf) == "function" and (roomKindOf :: any)() == "Shop"
+                local closedLongAgo = shopClosedAt > -math.huge
+                    and now - shopClosedAt >= SHOP_UI_GRACE_SECONDS
+                if (not inShop or closedLongAgo) and (closeShopFn :: any)() == true then
+                    setStatus("Closed the Stitches' Shop window left open")
+                end
+            end
             if saved.get("openTreasure") == true and not treasureHandling and deps.isAdventure() then
                 local kind = if type(roomKindOf) == "function" then (roomKindOf :: any)() else nil
                 local getChestsFn: any = deps.getUnopenedChests
@@ -995,6 +1043,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             end,
             ShopClosed = function()
                 shopHandled = false
+                shopClosedAt = deps.clock()
             end,
             VoteEnded = function()
                 voteOpen = false

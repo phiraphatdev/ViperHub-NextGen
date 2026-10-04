@@ -558,6 +558,7 @@ do
                     adventureShopGapSeconds = 1.2,
                     adventureShopWatchSeconds = 2,
                     adventureShopAskSeconds = 6,
+                    adventureShopUiGraceSeconds = 2,
                     adventureVoteRetrySeconds = 20,
                     adventureVoteAttempts = 3,
                 }),
@@ -8537,6 +8538,7 @@ do
             local SHOP_GAP_SECONDS = (config).thresholds.adventureShopGapSeconds
             local SHOP_WATCH_SECONDS = (config).thresholds.adventureShopWatchSeconds
             local SHOP_ASK_SECONDS = (config).thresholds.adventureShopAskSeconds
+            local SHOP_UI_GRACE_SECONDS = (config).thresholds.adventureShopUiGraceSeconds
             local VOTE_RETRY_SECONDS = (config).thresholds.adventureVoteRetrySeconds
             local VOTE_ATTEMPTS = (config).thresholds.adventureVoteAttempts
 
@@ -8645,6 +8647,38 @@ do
                                 end)
                             end
                         end
+                    end,
+                    closeShopUi = function()
+                        local players = env.game:GetService('Players')
+                        local gui = players.LocalPlayer and players.LocalPlayer:FindFirstChild('PlayerGui')
+                        local hud = gui and gui:FindFirstChild('AdventureHUD')
+
+                        if not hud then
+                            return false
+                        end
+
+                        local closed = false
+
+                        for _, object in hud:GetDescendants()do
+                            local item = object
+
+                            if string.find(item.Name, 'Shop_Export', 1, true) ~= nil and item:IsA('GuiObject') and item.Visible and item.AbsoluteSize.X > 0 then
+                                local closeBtn = item:FindFirstChild('Close', true)
+                                local firesignal = ((getfenv())).firesignal
+                                local activated = if closeBtn and closeBtn:IsA('GuiButton')then closeBtn.Activated else nil
+
+                                if activated and firesignal then
+                                    pcall(firesignal, activated)
+                                end
+                                if item.Visible then
+                                    item.Visible = false
+                                end
+
+                                closed = true
+                            end
+                        end
+
+                        return closed
                     end,
                     roomKind = function()
                         local data = if handler then handler.GameData else nil
@@ -8889,6 +8923,7 @@ do
                 end
 
                 local shopHandled = false
+                local shopClosedAt = -math.huge
                 local lastShopKey = ''
                 local lastShopAt = -math.huge
                 local lastRoomKey = ''
@@ -9244,6 +9279,8 @@ do
                         if self.active and saved.get('leaveShop') == true and type(entry) == 'table' and type(entry.Fire) == 'function' then
                             local fireFn = entry.Fire
 
+                            shopClosedAt = deps.clock()
+
                             if pcall(fireFn) then
                                 setStatus(if#plan > 0 then'Shop: bought ' .. tostring(#plan) .. ' item(s), left the shop'else'Left the shop without buying')
                             end
@@ -9524,6 +9561,17 @@ do
                                 pcall(askFire)
                             end
                         end
+
+                        local closeShopFn = deps.closeShopUi
+
+                        if wanted and type(closeShopFn) == 'function' and deps.isAdventure() then
+                            local inShop = type(roomKindOf) == 'function' and (roomKindOf)() == 'Shop'
+                            local closedLongAgo = shopClosedAt > -math.huge and now - shopClosedAt >= SHOP_UI_GRACE_SECONDS
+
+                            if (not inShop or closedLongAgo) and (closeShopFn)() == true then
+                                setStatus("Closed the Stitches' Shop window left open")
+                            end
+                        end
                         if saved.get('openTreasure') == true and not treasureHandling and deps.isAdventure() then
                             local kind = if type(roomKindOf) == 'function'then(roomKindOf)()else nil
                             local getChestsFn = deps.getUnopenedChests
@@ -9596,6 +9644,7 @@ do
                         end,
                         ShopClosed = function()
                             shopHandled = false
+                            shopClosedAt = deps.clock()
                         end,
                         VoteEnded = function()
                             voteOpen = false

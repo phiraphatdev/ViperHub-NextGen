@@ -1208,6 +1208,83 @@ test("The shop watcher asks for the shop when a Shop room is current and the ope
     runtime.stop()
 end)
 
+test(
+    "A Stitches' Shop window left open after the shop closed is hidden so the next room can be chosen",
+    function()
+        local settings = AdventureSettings.new(AdventureCatalog.fromModules(nil), {})
+        local box: any = { kind = "Shop", floor = 5, now = 0, windowOpen = true, closes = 0 }
+        local pending: { any } = {}
+        local runtime = AdventureRuntime.new(function()
+            return settings
+        end, {
+            clock = function()
+                return box.now
+            end,
+            task = {
+                delay = function(_seconds: number, callback: any)
+                    table.insert(pending, callback)
+                end,
+            },
+            isAdventure = function()
+                return true
+            end,
+            roomKind = function()
+                return box.kind
+            end,
+            floor = function()
+                return box.floor
+            end,
+            closeShopUi = function()
+                if box.windowOpen then
+                    box.windowOpen = false
+                    box.closes += 1
+                    return true
+                end
+                return false
+            end,
+            events = {
+                CardPickBasicOffer = { On = function() end },
+                ShopClosed = {
+                    On = function(callback: any)
+                        box.closed = callback
+                        return function() end
+                    end,
+                },
+                ShopRequestState = { Fire = function() end },
+                ShopClose = { Fire = function() end },
+            },
+        })
+        local function tick(seconds: number)
+            box.now += seconds
+            local batch = pending
+            pending = {}
+            for _, callback in batch do
+                local run: any = callback
+                run()
+            end
+        end
+        assert(runtime.start())
+        tick(2)
+        assert(box.closes == 0, "an open window in a current Shop room is the shop in use: left alone")
+        local closed: any = box.closed
+        closed()
+        tick(1)
+        assert(box.closes == 0, "just closed: the game gets a moment to hide the window itself")
+        tick(2)
+        assert(box.closes == 1 and string.find(runtime.status, "Stitches", 1, true) ~= nil, runtime.status)
+        box.windowOpen = true
+        box.kind = "Battle"
+        tick(2)
+        assert(box.closes == 2, "the window is closed on any room that is not a Shop")
+        settings.set("leaveShop", false)
+        settings.set("autoStitchesShop", false)
+        box.windowOpen = true
+        tick(2)
+        assert(box.closes == 2, "with both shop features off the hub leaves the window alone")
+        runtime.stop()
+    end
+)
+
 test("Adventure picks a reward unit after an Elite floor", function()
     assert(AdventureChoice.pickUnitReward({
         Options = { { Rarity = "Rare" }, { Rarity = "Exclusive" }, { Rarity = "Mythic" } },

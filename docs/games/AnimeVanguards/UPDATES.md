@@ -1,5 +1,10 @@
 # Updates
 
+## Local: hide a Stitches' Shop window the game leaves open
+
+- Reported by the user: after the shop is closed (even by the hub's ShopClose) the Stitches' Shop window can stay on screen, and the next room cannot be chosen until it is closed. The hub now hides any visible `*Shop_Export` window under `AdventureHUD` (its Close button first, then `Visible = false`) from the shop watcher: at once when the current room is not a Shop, or 2 s after the shop closed. Only while Leave Shop Rooms or Auto Stitches Shop is on.
+- Mock-tested only; the window name and the Close button are from a live UI scan (`Stiches' Shop_Export` under `AdventureHUD`). Live verification pending until a client is connected.
+
 ## Local: unattended run from Floor 1 and Auto Choose Unit Reward
 
 - Found live: the first Elite floor of a new run (team of one) shows "CLAIM YOUR REWARDS: choose one unit from your starting loadout" (UnitRewardEvent "Offer"; the server answers a pick with "Close") and the run waits for it, so without Auto Choose Unit Reward a fresh run stalls at its first Elite. Added Auto Choose Unit Reward: on an Offer it picks the highest-rarity unit (rarity read from `Rarity`/`UnitRarity`, else the first) with `FireServer("Pick", index)`. The offer's data shape is not yet observed (mock tests only); a mouse click on Choose did unblock the run.
