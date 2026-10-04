@@ -4946,6 +4946,7 @@ do
             local CHANGE_STAGE_ATTEMPTS = (config).thresholds.changeStageAttempts
             local SWITCHABLE_STAGE_TYPES = (config).switchableStageTypes
             local START_TIMEOUT_SECONDS = 15
+            local ADVENTURE_HOST_WAIT_SECONDS = 60
             local MODES = {
                 Stage = 'Story',
                 ['Legend Stage'] = 'LegendStage',
@@ -6033,7 +6034,7 @@ do
                             return
                         end
                         if not deps.lobby.IsHosting then
-                            if now - confirmed.confirmedAt >= ACK_TIMEOUT_SECONDS then
+                            if now - confirmed.confirmedAt >= (confirmed.hostWaitSeconds or ACK_TIMEOUT_SECONDS) then
                                 self.confirmed = nil
 
                                 setStatus(confirmed.name .. ': host state not ready')
@@ -6204,12 +6205,12 @@ do
                                         name = name,
                                         mode = 'OdysseyAdventure',
                                         confirmedAt = now,
-                                        startSent = now,
+                                        hostWaitSeconds = ADVENTURE_HOST_WAIT_SECONDS,
                                     }
                                     self.lastAttempt = now
 
                                     if adventure.start(plan) then
-                                        setStatus(name .. ': start sent (' .. plan.character .. '); waiting for teleport')
+                                        setStatus(name .. ': room requested (' .. plan.character .. '); waiting for the host room')
                                     else
                                         self.confirmed = nil
 

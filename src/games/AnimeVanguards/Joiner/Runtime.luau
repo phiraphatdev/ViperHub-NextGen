@@ -36,6 +36,8 @@ local CHANGE_STAGE_ATTEMPTS: number = (config :: any).thresholds.changeStageAtte
 -- Only these match types may be switched to another joiner target before Vote Start.
 local SWITCHABLE_STAGE_TYPES: any = (config :: any).switchableStageTypes
 local START_TIMEOUT_SECONDS = 15
+-- The hosted Adventure room can take a while to appear after the request.
+local ADVENTURE_HOST_WAIT_SECONDS = 60
 local MODES = { Stage = "Story", ["Legend Stage"] = "LegendStage", Raid = "Raid", Dungeon = "Dungeon" }
 local CHALLENGES = {
     ["Regular Challenge"] = "Regular",
@@ -1106,7 +1108,7 @@ function Runtime.new(dependencies: any?): any
                 return
             end
             if not deps.lobby.IsHosting then
-                if now - confirmed.confirmedAt >= ACK_TIMEOUT_SECONDS then
+                if now - confirmed.confirmedAt >= (confirmed.hostWaitSeconds or ACK_TIMEOUT_SECONDS) then
                     self.confirmed = nil
                     setStatus(confirmed.name .. ": host state not ready")
                 end
@@ -1283,15 +1285,22 @@ function Runtime.new(dependencies: any?): any
                         for _, extra in plan.notes do
                             note(name, extra)
                         end
+                        -- Observed live: the request creates the hosted Adventure room (Start / Leave / Invite); the
+                        -- existing confirmed flow then waits for IsHosting and presses Start like the stage modes.
                         self.confirmed = {
                             name = name,
                             mode = "OdysseyAdventure",
                             confirmedAt = now,
-                            startSent = now,
+                            hostWaitSeconds = ADVENTURE_HOST_WAIT_SECONDS,
                         }
                         self.lastAttempt = now
                         if adventure.start(plan) then
-                            setStatus(name .. ": start sent (" .. plan.character .. "); waiting for teleport")
+                            setStatus(
+                                name
+                                    .. ": room requested ("
+                                    .. plan.character
+                                    .. "); waiting for the host room"
+                            )
                         else
                             self.confirmed = nil
                             setStatus(name .. ": start request failed")

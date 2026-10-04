@@ -171,6 +171,8 @@ test("Joiner starts Odyssey Adventure from the lobby through the adapter and res
     local fx = fixture()
     fx.adapter.connect()
     fx.push({ ISCANUR })
+    local pressed: { any } = {}
+    local hosting: any = { IsHosting = false, IsInLobby = false }
     local runtime = JoinerRuntime.new({
         game = lobbyGame(),
         task = { spawn = function() end, wait = function() end },
@@ -178,7 +180,14 @@ test("Joiner starts Odyssey Adventure from the lobby through the adapter and res
             return 100
         end,
         userId = 42,
-        lobby = { IsHosting = false, IsInLobby = false },
+        lobby = hosting,
+        network = {
+            StartMatch = {
+                Fire = function()
+                    table.insert(pressed, true)
+                end,
+            },
+        },
     })
     runtime.setAdventure(fx.adapter)
     for _, name in { "Rift", "Boss Bounties", "Stage" } do
@@ -197,10 +206,18 @@ test("Joiner starts Odyssey Adventure from the lobby through the adapter and res
     runtime.step(100)
     assert(count(fx, "StartOdysseyAdventure") == 1, runtime.status)
     assert(runtime.confirmed ~= nil and runtime.confirmed.mode == "OdysseyAdventure")
-    assert(string.find(runtime.status, "Odyssey Adventure: start sent", 1, true) ~= nil, runtime.status)
+    assert(string.find(runtime.status, "Odyssey Adventure: room requested", 1, true) ~= nil, runtime.status)
+    assert(runtime.confirmed.startSent == nil, "Start is pressed only once the host room exists")
 
     runtime.step(101)
     assert(count(fx, "StartOdysseyAdventure") == 1, "no second start while the first is in flight")
+    runtime.step(130)
+    assert(runtime.confirmed ~= nil, "still waiting for the host room after 30 s")
+    assert(#pressed == 0, "Start is not pressed before the room exists")
+    hosting.IsHosting = true
+    runtime.step(131)
+    assert(#pressed == 1 and runtime.confirmed.startSent ~= nil, "Start is pressed once the room exists")
+    assert(string.find(runtime.status, "Start sent", 1, true) ~= nil, runtime.status)
 
     runtime.stop()
     runtime.setEnabled("Odyssey Adventure", false)
