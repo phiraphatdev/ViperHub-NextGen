@@ -107,7 +107,7 @@ function WindUIAdapter.create(
     })
     local BASE_DISPLAY_ORDER = 100
     if library.ScreenGui then
-        pcall(HoverGlow.attach, library.ScreenGui, context.cleanup)
+        pcall(HoverGlow.attach, library, context.cleanup)
         pcall(Dither.attach, library.ScreenGui, context.cleanup)
     end
     if library.ScreenGui then

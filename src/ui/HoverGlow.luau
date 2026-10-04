@@ -1,7 +1,7 @@
 --!strict
 --[[
 Purpose: A soft glow that follows the mouse over hub cards and buttons (dynamic hover feedback)
-Input: The library's ScreenGui, a brand color, and the context cleanup list; all optional outside Roblox
+Input: The library (ScreenGui, current Theme), and the context cleanup list; all optional outside Roblox
 Output: attach() returns nothing; every connection and glow instance is removed by the cleanup
 Dependencies: Theme
 ]]
@@ -12,9 +12,11 @@ local ENV: { [string]: any } = getfenv()
 local MIN_WIDTH = 110
 local MIN_HEIGHT = 26
 local GLOW_NAME = "ViperGlow"
-local GLOW_ALPHA = 0.84
+local GLOW_ALPHA = 0.8
 local FADE_SECONDS = 0.18
-local CORNER_RADIUS = 10
+local CORNER_RADIUS = 14
+local GLOW_INSET = 0
+local EDGE_FADE = 0.55 -- gradient transparency at the card edges: the whole card tints, the cursor spot is brighter
 
 local HoverGlow = {}
 
@@ -27,7 +29,8 @@ local function buildGlow(card: any, color: any): any
     local create = ENV.Instance
     local glow = create.new("Frame")
     glow.Name = GLOW_NAME
-    glow.Size = ENV.UDim2.fromScale(1, 1)
+    glow.Size = ENV.UDim2.new(1, -GLOW_INSET * 2, 1, -GLOW_INSET * 2)
+    glow.Position = ENV.UDim2.fromOffset(GLOW_INSET, GLOW_INSET)
     glow.BackgroundColor3 = color
     glow.BackgroundTransparency = 1
     glow.BorderSizePixel = 0
@@ -38,18 +41,29 @@ local function buildGlow(card: any, color: any): any
     corner.Parent = glow
     local gradient = create.new("UIGradient")
     gradient.Transparency = ENV.NumberSequence.new({
-        ENV.NumberSequenceKeypoint.new(0, 1),
+        ENV.NumberSequenceKeypoint.new(0, EDGE_FADE),
         ENV.NumberSequenceKeypoint.new(0.5, 0),
-        ENV.NumberSequenceKeypoint.new(1, 1),
+        ENV.NumberSequenceKeypoint.new(1, EDGE_FADE),
     })
     gradient.Parent = glow
     glow.Parent = card
     return glow
 end
 
---- Starts glowing every sizeable button under gui when the mouse is over it.
-function HoverGlow.attach(gui: any, cleanup: { add: (() -> ()) -> () })
-    local color = Theme.color("primary")
+-- The active theme's accent (WindUI's `library.Theme.Outline`), so the glow follows theme changes.
+local function themeColor(library: any): any
+    local theme: any = if type(library) == "table" then library.Theme else nil
+    local value: any = if type(theme) == "table" then theme.Outline else nil
+    if typeof(value) == "Color3" then
+        return value
+    end
+    return Theme.color("primary")
+end
+
+--- Starts glowing every sizeable button under library.ScreenGui when the mouse is over it.
+function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
+    local gui: any = if type(library) == "table" then library.ScreenGui else nil
+    local color = themeColor(library)
     if gui == nil or color == nil or ENV.Instance == nil or ENV.UDim2 == nil or ENV.NumberSequence == nil then
         return
     end
@@ -110,6 +124,7 @@ function HoverGlow.attach(gui: any, cleanup: { add: (() -> ()) -> () })
                     glow = buildGlow(card(), color)
                     table.insert(glows, glow)
                 end
+                glow.BackgroundColor3 = themeColor(library)
                 follow()
                 fade(glow, GLOW_ALPHA)
             end) :: any

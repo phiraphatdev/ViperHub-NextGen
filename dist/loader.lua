@@ -1517,9 +1517,11 @@ do
             local MIN_WIDTH = 110
             local MIN_HEIGHT = 26
             local GLOW_NAME = 'ViperGlow'
-            local GLOW_ALPHA = 0.84
+            local GLOW_ALPHA = 0.8
             local FADE_SECONDS = 0.18
-            local CORNER_RADIUS = 10
+            local CORNER_RADIUS = 14
+            local GLOW_INSET = 0
+            local EDGE_FADE = 0.55
             local HoverGlow = {}
 
             local function isButton(object)
@@ -1530,7 +1532,8 @@ do
                 local glow = create.new('Frame')
 
                 glow.Name = GLOW_NAME
-                glow.Size = ENV.UDim2.fromScale(1, 1)
+                glow.Size = ENV.UDim2.new(1, -GLOW_INSET * 2, 1, -GLOW_INSET * 2)
+                glow.Position = ENV.UDim2.fromOffset(GLOW_INSET, GLOW_INSET)
                 glow.BackgroundColor3 = color
                 glow.BackgroundTransparency = 1
                 glow.BorderSizePixel = 0
@@ -1545,18 +1548,29 @@ do
                 local gradient = create.new('UIGradient')
 
                 gradient.Transparency = ENV.NumberSequence.new({
-                    ENV.NumberSequenceKeypoint.new(0, 1),
+                    ENV.NumberSequenceKeypoint.new(0, EDGE_FADE),
                     ENV.NumberSequenceKeypoint.new(0.5, 0),
-                    ENV.NumberSequenceKeypoint.new(1, 1),
+                    ENV.NumberSequenceKeypoint.new(1, EDGE_FADE),
                 })
                 gradient.Parent = glow
                 glow.Parent = card
 
                 return glow
             end
+            local function themeColor(library)
+                local theme = if type(library) == 'table'then library.Theme else nil
+                local value = if type(theme) == 'table'then theme.Outline else nil
 
-            function HoverGlow.attach(gui, cleanup)
-                local color = Theme.color('primary')
+                if typeof(value) == 'Color3' then
+                    return value
+                end
+
+                return Theme.color('primary')
+            end
+
+            function HoverGlow.attach(library, cleanup)
+                local gui = if type(library) == 'table'then library.ScreenGui else nil
+                local color = themeColor(library)
 
                 if gui == nil or color == nil or ENV.Instance == nil or ENV.UDim2 == nil or ENV.NumberSequence == nil then
                     return
@@ -1626,6 +1640,8 @@ do
                             table.insert(glows, glow)
                         end
 
+                        glow.BackgroundColor3 = themeColor(library)
+
                         follow()
                         fade(glow, GLOW_ALPHA)
                     end)))
@@ -1688,7 +1704,7 @@ do
         local function __modImpl()
             local ENV = getfenv()
             local TILE = 128
-            local MAX_ALPHA = 7
+            local MAX_ALPHA = 3
             local CORNER_RADIUS = 14
             local LAYER_NAME = 'ViperDither'
             local SEED = 20261004
@@ -1907,7 +1923,7 @@ do
                 local BASE_DISPLAY_ORDER = 100
 
                 if library.ScreenGui then
-                    pcall(HoverGlow.attach, library.ScreenGui, context.cleanup)
+                    pcall(HoverGlow.attach, library, context.cleanup)
                     pcall(Dither.attach, library.ScreenGui, context.cleanup)
                 end
                 if library.ScreenGui then

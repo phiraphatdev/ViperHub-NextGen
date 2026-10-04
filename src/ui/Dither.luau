@@ -9,7 +9,7 @@ Dependencies: None
 local ENV: { [string]: any } = getfenv()
 
 local TILE = 128
-local MAX_ALPHA = 7 -- per-pixel noise strength out of 255: about one color level either way
+local MAX_ALPHA = 3 -- per-pixel noise strength out of 255: under one color level, enough to hide the bands
 local CORNER_RADIUS = 14
 local LAYER_NAME = "ViperDither"
 local SEED = 20261004
