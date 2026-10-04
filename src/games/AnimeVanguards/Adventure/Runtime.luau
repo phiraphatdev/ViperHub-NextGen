@@ -69,6 +69,23 @@ local function liveDependencies(): any
                 root.Visible = false
             end
         end,
+        placedUnitGuid = function(name: any): string?
+            local handler = optionalModule(env.game:GetService("StarterPlayer"), paths.clientUnitHandler)
+            if type(handler) ~= "table" or type(handler.GetAllPlacedUnits) ~= "function" then
+                return nil
+            end
+            local listPlaced: any = handler.GetAllPlacedUnits
+            for _, unit in listPlaced() do
+                if
+                    type(unit) == "table"
+                    and unit.Name == name
+                    and type(unit.UniqueIdentifier) == "string"
+                then
+                    return unit.UniqueIdentifier
+                end
+            end
+            return nil
+        end,
         mapRelay = optionalModule(env.game:GetService("StarterPlayer"), paths.adventureMapRelay),
         events = optionalModule(replicated, paths.gameOdysseyClient),
         isAdventure = function(): boolean
@@ -389,6 +406,16 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         return set
     end
 
+    -- A placed unit of the run character (its GUID), used for a Memoria when the shop offers no trait for that unit.
+    local function placedGuid(name: any): string?
+        local lookup: any = deps.placedUnitGuid
+        if type(lookup) ~= "function" then
+            return nil
+        end
+        local ok, guid = pcall(lookup, name)
+        return if ok and type(guid) == "string" then guid else nil
+    end
+
     local function onShopOpened(info: any)
         local saved = getSettings()
         local buying = saved.get("autoStitchesShop") == true
@@ -419,6 +446,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                     traits = toSet(saved.get("buyTraits")),
                     memoria = toSet(saved.get("buyMemoria")),
                     character = saved.get("character"),
+                    fallbackGuid = placedGuid(saved.get("character")),
                     rank = saved.get("cardPriority"),
                 }
             )

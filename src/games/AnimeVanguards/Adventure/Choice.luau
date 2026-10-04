@@ -104,7 +104,8 @@ end
 
 --- Chooses what to buy from a Stitches Shop stock ({Index, Cost, Purchased, Kind, ...}, observed live). Wants:
 --- basic (set of basic card names), starters (set of power names), traits (set of trait labels), memoria (set of
---- rarities), character (the run's character; a Memoria needs that unit's GUID, found on a trait offered for it) and
+--- rarities), character (the run's character; a Memoria needs that unit's GUID, found on a trait offered for it, else
+--- fallbackGuid, a placed unit of that character) and
 --- rank (basic card name -> priority number). Items are bought by kind (powers, basic cards by rank, traits, Memoria
 --- by rarity) while the budget lasts. Returns { {index, cost, name, guid?} } in buying order.
 function Choice.shopPurchases(stock: any, budget: number, wants: any): { any }
@@ -112,7 +113,7 @@ function Choice.shopPurchases(stock: any, budget: number, wants: any): { any }
     if type(stock) ~= "table" or type(budget) ~= "number" then
         return plan
     end
-    local mainGuid: string? = nil
+    local mainGuid: string? = if type(wants.fallbackGuid) == "string" then wants.fallbackGuid else nil
     for _, item in stock do
         if type(item) == "table" and item.Kind == "Trait" and item.TraitUnitName == wants.character then
             if type(item.TraitUnitGUID) == "string" then

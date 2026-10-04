@@ -8238,7 +8238,7 @@ do
                     return plan
                 end
 
-                local mainGuid = nil
+                local mainGuid = if type(wants.fallbackGuid) == 'string'then wants.fallbackGuid else nil
 
                 for _, item in stock do
                     if type(item) == 'table' and item.Kind == 'Trait' and item.TraitUnitName == wants.character then
@@ -8409,6 +8409,23 @@ do
                         if root and root.Visible then
                             root.Visible = false
                         end
+                    end,
+                    placedUnitGuid = function(name)
+                        local handler = optionalModule(env.game:GetService('StarterPlayer'), paths.clientUnitHandler)
+
+                        if type(handler) ~= 'table' or type(handler.GetAllPlacedUnits) ~= 'function' then
+                            return nil
+                        end
+
+                        local listPlaced = handler.GetAllPlacedUnits
+
+                        for _, unit in listPlaced()do
+                            if type(unit) == 'table' and unit.Name == name and type(unit.UniqueIdentifier) == 'string' then
+                                return unit.UniqueIdentifier
+                            end
+                        end
+
+                        return nil
                     end,
                     mapRelay = optionalModule(env.game:GetService('StarterPlayer'), paths.adventureMapRelay),
                     events = optionalModule(replicated, paths.gameOdysseyClient),
@@ -8743,6 +8760,17 @@ do
 
                     return set
                 end
+                local function placedGuid(name)
+                    local lookup = deps.placedUnitGuid
+
+                    if type(lookup) ~= 'function' then
+                        return nil
+                    end
+
+                    local ok, guid = pcall(lookup, name)
+
+                    return if ok and type(guid) == 'string'then guid else nil
+                end
                 local function onShopOpened(info)
                     local saved = getSettings()
                     local buying = saved.get('autoStitchesShop') == true
@@ -8772,6 +8800,7 @@ do
                             traits = toSet(saved.get('buyTraits')),
                             memoria = toSet(saved.get('buyMemoria')),
                             character = saved.get('character'),
+                            fallbackGuid = placedGuid(saved.get('character')),
                             rank = saved.get('cardPriority'),
                         })
                     end

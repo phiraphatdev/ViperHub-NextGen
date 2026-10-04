@@ -940,6 +940,16 @@ test("Stitches Shop buys only what is selected, by kind and priority, within the
     for _, entry in withoutMain do
         assert(entry.name ~= "Scrap Metal Master", "no main unit GUID: no Memoria")
     end
+    wants.fallbackGuid = "guid-placed"
+    local viaPlaced = AdventureChoice.shopPurchases(noMain, 4980, wants)
+    local memoriaGuid: string? = nil
+    for _, entry in viaPlaced do
+        if entry.name == "Scrap Metal Master" then
+            memoriaGuid = entry.guid
+        end
+    end
+    assert(memoriaGuid == "guid-placed", "no trait for the main unit: a placed unit of the character is used")
+    wants.fallbackGuid = nil
     assert(#AdventureChoice.shopPurchases(nil, 100, wants) == 0)
     assert(AdventureChoice.traitLabel({ TraitName = "Swift", TraitIndex = 1 }) == "Swift I")
     assert(
