@@ -15,7 +15,14 @@ local config = require("../Config")
 local Page = {}
 
 -- Controls whose automation is built and live-verified; every other control stays locked (values stay visible).
-local UNLOCKED: { [string]: boolean } = { autoJoin = true, character = true, slot1 = true, slot2 = true }
+local UNLOCKED: { [string]: boolean } = {
+    autoJoin = true,
+    character = true,
+    slot1 = true,
+    slot2 = true,
+    autoBasicCard = true,
+    cardPriority = true,
+}
 
 local function isLocked(key: string): boolean
     return UNLOCKED[key] ~= true
@@ -24,7 +31,7 @@ end
 local ADVENTURE: any = (config :: any).adventure
 
 local PENDING =
-    "Live: Auto Join with the character and slots. The other controls are locked (Coming soon) until their automation is built."
+    "Live: Auto Join with the character and slots, and Auto Basic Card. The other controls are locked (Coming soon) until their automation is built."
 
 local function setDesc(control: any, text: string)
     if type(control) == "table" and type(control.SetDesc) == "function" then

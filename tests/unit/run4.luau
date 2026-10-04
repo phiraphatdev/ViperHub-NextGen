@@ -4,6 +4,7 @@ local AdventureAdapter = require("../../src/games/AnimeVanguards/Adventure/Adapt
 local AdventureCatalog = require("../../src/games/AnimeVanguards/Adventure/Catalog")
 local AdventureDetect = require("../../src/games/AnimeVanguards/Adventure/Detect")
 local AdventureChoice = require("../../src/games/AnimeVanguards/Adventure/Choice")
+local AdventureRuntime = require("../../src/games/AnimeVanguards/Adventure/Runtime")
 local AdventureSettings = require("../../src/games/AnimeVanguards/Adventure/Settings")
 local JoinerRuntime = require("../../src/games/AnimeVanguards/Joiner/Runtime")
 local JoinerSettings = require("../../src/games/AnimeVanguards/Joiner/Settings")
@@ -294,6 +295,105 @@ test("Adventure picks the offered basic card with the highest priority number", 
         AdventureChoice.pickBasicCard({}, ranks) == nil and AdventureChoice.pickBasicCard(nil, ranks) == nil
     )
     assert(AdventureChoice.pickBasicCard({ "bad", { CardName = 5 }, { CardName = "Ambush" } }, ranks) == 3)
+end)
+
+test("Adventure runtime picks the basic card only in Adventure matches with the switch on", function()
+    local catalog = AdventureCatalog.fromModules(nil)
+    local settings = AdventureSettings.new(catalog, {})
+    local now = 100
+    local inAdventure = true
+    local box: any = {}
+    local function call(offerPayload: any)
+        local callback: any = box.handler
+        callback(offerPayload)
+    end
+    local picks: { any } = {}
+    local delayed: { any } = {}
+    local disconnected = 0
+    local runtime = AdventureRuntime.new(function()
+        return settings
+    end, {
+        clock = function()
+            return now
+        end,
+        task = {
+            delay = function(_seconds: number, callback: any)
+                table.insert(delayed, callback)
+            end,
+        },
+        isAdventure = function()
+            return inAdventure
+        end,
+        events = {
+            CardPickBasicOffer = {
+                On = function(callback: any)
+                    box.handler = callback
+                    return function()
+                        disconnected += 1
+                    end
+                end,
+            },
+            CardPickPick = {
+                Fire = function(payload: any)
+                    table.insert(picks, payload)
+                end,
+            },
+        },
+    })
+    local function run()
+        for _, callback in delayed do
+            local pending: any = callback
+            pending()
+        end
+        delayed = {}
+    end
+    local offer: any = {
+        Options = {
+            { CardName = "Slayer Rounds", Rarity = "Rare" },
+            { CardName = "Adrenaline Shot", Rarity = "Rare" },
+            { CardName = "Boxing Gloves", Rarity = "Rare" },
+        },
+    }
+    assert(runtime.start() and box.handler ~= nil)
+
+    call(offer)
+    run()
+    assert(#picks == 0, "switch is off: the player picks")
+    settings.set("autoBasicCard", true)
+    inAdventure = false
+    call(offer)
+    run()
+    assert(#picks == 0, "outside an Adventure match nothing is picked")
+    inAdventure = true
+    call(offer)
+    assert(#picks == 0, "the pick waits a moment first")
+    run()
+    assert(#picks == 1 and picks[1].Choice == 2, "default priority: Adrenaline Shot")
+    assert(
+        runtime.picked == 1 and string.find(runtime.status, "picked Adrenaline Shot", 1, true) ~= nil,
+        runtime.status
+    )
+
+    call(offer)
+    run()
+    assert(#picks == 1, "an identical offer right away is ignored")
+    now = 110
+    settings.swap("cardPriority", "Boxing Gloves", "Adrenaline Shot")
+    call(offer)
+    run()
+    assert(#picks == 2 and picks[2].Choice == 3, "later offers follow the saved priority")
+    call({ Options = {} })
+    assert(string.find(runtime.status, "no valid card", 1, true) ~= nil)
+
+    runtime.stop()
+    runtime.stop()
+    assert(disconnected == 1)
+    call(offer)
+    run()
+    assert(#picks == 2, "stopped: nothing is picked")
+    assert(not AdventureRuntime.new(function()
+        return settings
+    end, { events = {} }).start(), "no match events (lobby): not started")
 end)
 
 print(string.format("PASS: %d unit scenarios (part 4)", passed))

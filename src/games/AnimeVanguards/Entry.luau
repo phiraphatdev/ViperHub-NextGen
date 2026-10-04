@@ -13,6 +13,7 @@ local JoinerPage = require("./Joiner/Page")
 local JoinerRuntime = require("./Joiner/Runtime")
 local AdventurePage = require("./Adventure/Page")
 local AdventureAdapter = require("./Adventure/Adapter")
+local AdventureRuntime = require("./Adventure/Runtime")
 local MacroPage = require("./Macro/Page")
 local MacroRuntime = require("./Macro/Runtime")
 local GamePage = require("./Game/Page")
@@ -28,6 +29,7 @@ local MiscRuntime = require("./Misc/Runtime")
 local active = false
 local joiner = JoinerRuntime.new()
 local adventure = AdventureAdapter.new()
+local adventureRun = AdventureRuntime.new(adventure.getSettings)
 local macro = MacroRuntime.new()
 local gameSettings = GameAdapter.new()
 local autoPlay = AutoPlayRuntime.new()
@@ -191,6 +193,7 @@ function GameModule.start(context: Types.Context)
         autoPlay.start(context)
         webhook.start(context, { joiner = joiner, autoPlay = autoPlay, macro = macro })
         misc.start(context)
+        adventureRun.start()
         context.log("GAME_STARTED")
     end
 
@@ -208,6 +211,7 @@ function GameModule.stop()
     autoPlay.stop()
     webhook.stop()
     misc.stop()
+    adventureRun.stop()
     active = false
 end
 return GameModule

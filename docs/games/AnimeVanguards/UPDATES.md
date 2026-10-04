@@ -1,5 +1,11 @@
 # Updates
 
+## Local Odyssey Adventure: Auto Basic Card — partly verified live
+
+- `Adventure/Runtime.luau` listens to the match's `CardPickBasicOffer` and, when Auto Basic Card is on and the match is an Adventure match, answers after 0.8 s with `CardPickPick({Choice = index})` using `Choice.pickBasicCard` (highest Card Priority number; identical offers within 4 s are ignored). It starts with the hub, does nothing in the lobby and stops with the shared lifecycle. Auto Basic Card and Card Priority are unlocked on the Adventure tab.
+- Live (one pick): the offer {Slayer Rounds, Adrenaline Shot, Boxing Gloves} under the default priority gave "picked Adrenaline Shot (#1)" and the game moved on to its route stage (the Route Atlas opened). NOT yet confirmed: that the card was granted (the next offer should show Adrenaline Shot at level 3); the run stayed on Floor 11 afterwards because the route choice (Auto Route Atlas) is not built, so no second offer came.
+- Mock tests: tests/unit/run4.luau (switch off, outside Adventure, delay, duplicate offers, priority change, stop).
+
 ## Local Odyssey Adventure Phase 1: Auto Join, Character and Slots — runtime pending
 
 - Odyssey Adventure is a new Joiner mode ("Odyssey Adventure", last in Auto Join Priority by default; saved priorities get it appended). The Adventure tab's Auto Join switch and the Joiner use the same enabled value; Select Character, Slot 1 and Slot 2 are unlocked, every other Adventure control stays locked (Coming soon).

@@ -22,6 +22,7 @@ return table.freeze({
         lobbyReturnClient = "NetworkCode.GameTeleportLobbyReturnClient",
         gameHandler = "Modules.Gameplay.GameHandler",
         autoPlayHandler = "Modules.Gameplay.AutoPlay.AutoPlayHandler",
+        gameOdysseyClient = "NetworkCode.GameOdysseyClient",
         autoPlayClient = "NetworkCode.GameAutoPlayClient",
         wavesClient = "NetworkCode.GameWavesClient",
         wavesHud = "Modules.Interface.Loader.HUD.Waves",
@@ -343,6 +344,9 @@ return table.freeze({
         -- Odyssey: Adventure lobby state: re-request after this long without a reply, and treat it as stale after the max.
         adventureStateRetrySeconds = 5,
         adventureStateMaxAgeSeconds = 600,
+        -- In-match Adventure picks: wait before answering an offer, and ignore an identical offer for this long.
+        adventurePickDelaySeconds = 0.8,
+        adventureRepeatSeconds = 4,
     }),
     remoteNames = table.freeze({
         worldlineProgress = "GetWorldlineProgress",

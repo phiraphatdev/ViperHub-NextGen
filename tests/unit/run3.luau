@@ -239,12 +239,21 @@ test("Adventure page mounts the requested layout and binds every control", funct
     end
     assert(AdventurePage.mount(host(""), catalog, settings) == settings)
     assert(string.find(statusText, "Coming soon", 1, true), statusText)
-    for _, title in { "Auto Join Odyssey Adventure", "Select Character", "Slot 1", "Slot 2" } do
+    for _, title in
+        {
+            "Auto Join Odyssey Adventure",
+            "Select Character",
+            "Slot 1",
+            "Slot 2",
+            "Auto Basic Card",
+            "Card Priority",
+        }
+    do
         assert(controls[title].options.Locked ~= true, title .. " is live")
     end
     for _, title in
         {
-            "Auto Basic Card",
+            "Auto Character Card",
             "Auto Cash Out",
             "Buy Unit Trait",
             "Memoria",
