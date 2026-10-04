@@ -8648,38 +8648,53 @@ do
                             end
                         end
                     end,
-                    closeShopUi = function()
-                        local players = env.game:GetService('Players')
-                        local gui = players.LocalPlayer and players.LocalPlayer:FindFirstChild('PlayerGui')
-                        local hud = gui and gui:FindFirstChild('AdventureHUD')
+                    closeShopUi = (function()
+                        local attempts = 0
 
-                        if not hud then
+                        return function()
+                            local players = env.game:GetService('Players')
+                            local gui = players.LocalPlayer and players.LocalPlayer:FindFirstChild('PlayerGui')
+                            local hud = gui and gui:FindFirstChild('AdventureHUD')
+
+                            if not hud then
+                                return false
+                            end
+
+                            for _, object in hud:GetDescendants()do
+                                local item = object
+
+                                if string.find(item.Name, 'Shop_Export', 1, true) ~= nil and item:IsA('GuiObject') and item.Visible and item.AbsoluteSize.X > 0 then
+                                    attempts += 1
+
+                                    local bottom = item:FindFirstChild('BottomFrame', true)
+                                    local leave = bottom and bottom:FindFirstChild('Clickable', true)
+                                    local firesignal = ((getfenv())).firesignal
+
+                                    if attempts == 1 and leave and firesignal then
+                                        pcall(firesignal, leave.Activated)
+                                        pcall(firesignal, leave.MouseButton1Click)
+                                    elseif attempts == 2 and leave and leave.AbsoluteSize.X > 0 then
+                                        local vim = env.game:GetService('VirtualInputManager')
+                                        local inset = env.game:GetService('GuiService'):GetGuiInset()
+                                        local pos = leave.AbsolutePosition + leave.AbsoluteSize / 2 + inset
+
+                                        pcall(function()
+                                            vim:SendMouseButtonEvent(pos.X, pos.Y, 0, true, env.game, 1)
+                                            vim:SendMouseButtonEvent(pos.X, pos.Y, 0, false, env.game, 1)
+                                        end)
+                                    else
+                                        item.Visible = false
+                                    end
+
+                                    return true
+                                end
+                            end
+
+                            attempts = 0
+
                             return false
                         end
-
-                        local closed = false
-
-                        for _, object in hud:GetDescendants()do
-                            local item = object
-
-                            if string.find(item.Name, 'Shop_Export', 1, true) ~= nil and item:IsA('GuiObject') and item.Visible and item.AbsoluteSize.X > 0 then
-                                local closeBtn = item:FindFirstChild('Close', true)
-                                local firesignal = ((getfenv())).firesignal
-                                local activated = if closeBtn and closeBtn:IsA('GuiButton')then closeBtn.Activated else nil
-
-                                if activated and firesignal then
-                                    pcall(firesignal, activated)
-                                end
-                                if item.Visible then
-                                    item.Visible = false
-                                end
-
-                                closed = true
-                            end
-                        end
-
-                        return closed
-                    end,
+                    end)(),
                     roomKind = function()
                         local data = if handler then handler.GameData else nil
 

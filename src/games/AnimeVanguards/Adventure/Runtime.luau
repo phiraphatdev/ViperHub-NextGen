@@ -108,41 +108,51 @@ local function liveDependencies(): any
                 end
             end
         end,
-        -- Hides the Stitches' Shop window if it is still on screen: the game leaves it open after the shop is
-        -- closed and the next room cannot be chosen until it is gone. Returns true when a window was closed.
-        closeShopUi = function(): boolean
-            local players: any = env.game:GetService("Players")
-            local gui: any = players.LocalPlayer and players.LocalPlayer:FindFirstChild("PlayerGui")
-            local hud: any = gui and gui:FindFirstChild("AdventureHUD")
-            if not hud then
+        -- Leaves a Stitches' Shop window that is still on screen: the X only hides it, the floor ends with the
+        -- "Leave Shop" button (observed live). Tries its signals, then a real click, last hides the window.
+        -- Returns true when a window was visible and an attempt was made.
+        closeShopUi = (function(): () -> boolean
+            local attempts = 0
+            return function(): boolean
+                local players: any = env.game:GetService("Players")
+                local gui: any = players.LocalPlayer and players.LocalPlayer:FindFirstChild("PlayerGui")
+                local hud: any = gui and gui:FindFirstChild("AdventureHUD")
+                if not hud then
+                    return false
+                end
+                for _, object in hud:GetDescendants() do
+                    local item: any = object
+                    if
+                        string.find(item.Name, "Shop_Export", 1, true) ~= nil
+                        and item:IsA("GuiObject")
+                        and item.Visible
+                        and item.AbsoluteSize.X > 0
+                    then
+                        attempts += 1
+                        local bottom: any = item:FindFirstChild("BottomFrame", true)
+                        local leave: any = bottom and bottom:FindFirstChild("Clickable", true)
+                        local firesignal: any = (getfenv() :: any).firesignal
+                        if attempts == 1 and leave and firesignal then
+                            pcall(firesignal, leave.Activated)
+                            pcall(firesignal, leave.MouseButton1Click)
+                        elseif attempts == 2 and leave and leave.AbsoluteSize.X > 0 then
+                            local vim: any = env.game:GetService("VirtualInputManager")
+                            local inset: any = env.game:GetService("GuiService"):GetGuiInset()
+                            local pos = leave.AbsolutePosition + leave.AbsoluteSize / 2 + inset
+                            pcall(function()
+                                vim:SendMouseButtonEvent(pos.X, pos.Y, 0, true, env.game, 1)
+                                vim:SendMouseButtonEvent(pos.X, pos.Y, 0, false, env.game, 1)
+                            end)
+                        else
+                            item.Visible = false
+                        end
+                        return true
+                    end
+                end
+                attempts = 0
                 return false
             end
-            local closed = false
-            for _, object in hud:GetDescendants() do
-                local item: any = object
-                if
-                    string.find(item.Name, "Shop_Export", 1, true) ~= nil
-                    and item:IsA("GuiObject")
-                    and item.Visible
-                    and item.AbsoluteSize.X > 0
-                then
-                    local closeBtn: any = item:FindFirstChild("Close", true)
-                    local firesignal: any = (getfenv() :: any).firesignal
-                    local activated: any = if closeBtn and closeBtn:IsA("GuiButton")
-                        then closeBtn.Activated
-                        else nil
-                    if activated and firesignal then
-                        pcall(firesignal, activated)
-                    end
-                    -- Still visible (the game's close did nothing): hide it directly.
-                    if item.Visible then
-                        item.Visible = false
-                    end
-                    closed = true
-                end
-            end
-            return closed
-        end,
+        end)(),
         roomKind = function(): string?
             local data = if handler then handler.GameData else nil
             return if type(data) == "table" and type(data.AdventureRoomKind) == "string"

@@ -2,7 +2,7 @@
 
 ## Local: hide a Stitches' Shop window the game leaves open
 
-- Reported by the user: after the shop is closed (even by the hub's ShopClose) the Stitches' Shop window can stay on screen, and the next room cannot be chosen until it is closed. The hub now hides any visible `*Shop_Export` window under `AdventureHUD` (its Close button first, then `Visible = false`) from the shop watcher: at once when the current room is not a Shop, or 2 s after the shop closed. Only while Leave Shop Rooms or Auto Stitches Shop is on.
+- Reported by the user: after the shop is closed (even by the hub's ShopClose) the Stitches' Shop window can stay on screen, and the next room cannot be chosen until it is closed. The hub now presses the window's "Leave Shop" button (`BottomFrame` > `Clickable`; the X only hides the window, the floor ends with Leave Shop): signals first, then a real click on the next tick, `Visible = false` only as the last resort from the shop watcher: at once when the current room is not a Shop, or 2 s after the shop closed. Only while Leave Shop Rooms or Auto Stitches Shop is on.
 - Mock-tested only; the window name and the Close button are from a live UI scan (`Stiches' Shop_Export` under `AdventureHUD`). Live verification pending until a client is connected.
 
 ## Local: unattended run from Floor 1 and Auto Choose Unit Reward
