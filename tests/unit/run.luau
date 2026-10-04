@@ -6219,4 +6219,17 @@ test("Misc re-run queues the loader line and validates the URL", function()
     assert(saved.rerunOnTeleport and saved.loaderUrl == "https://example.trycloudflare.com/runtime-smoke.lua")
     again.stop()
 end)
+test("Webhook match embed shows player DPS and kills per minute from the end screen", function()
+    assert(WebhookEmbed.parseAmount("19.09M") == 19090000 and WebhookEmbed.parseAmount("48.77K") == 48770)
+    assert(WebhookEmbed.parseAmount("1,234") == 1234 and WebhookEmbed.parseAmount("x") == nil)
+    local ctx = { player = "Tester", showPlayer = false, timestamp = "2026-01-02T03:04:05Z", version = "1" }
+    local spec: any = WebhookEvents.build(
+        "matchEnd",
+        { result = "Victory", damage = "19.09M", takedowns = "239", duration = 100 },
+        ctx,
+        WEBHOOK_CONFIG
+    )
+    assert(string.find(spec.description, "**DPS**: `190.9K`", 1, true) ~= nil, spec.description)
+    assert(string.find(spec.description, "**Kills/min**: `143.4`", 1, true) ~= nil, spec.description)
+end)
 print(string.format("PASS: %d unit scenarios", passed))

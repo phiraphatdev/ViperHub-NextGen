@@ -254,6 +254,18 @@ function Events.build(kind: string, data: any, ctx: any, config: any): (Embed.Sp
         if info.takedowns then
             table.insert(extra, "☠️ **Takedowns**: `" .. tostring(info.takedowns) .. "`")
         end
+        -- The game does not tell the client which unit dealt damage, so these are player totals per time.
+        local seconds = tonumber(info.duration)
+        if seconds and seconds >= 1 then
+            local damage = Embed.parseAmount(info.damage)
+            local kills = Embed.parseAmount(info.takedowns)
+            if damage then
+                table.insert(extra, "⚡ **DPS**: `" .. Embed.number(damage / seconds) .. "`")
+            end
+            if kills then
+                table.insert(extra, string.format("🎯 **Kills/min**: `%.1f`", kills / seconds * 60))
+            end
+        end
         if #extra > 0 then
             table.insert(lines, "> " .. table.concat(extra, " • "))
         end

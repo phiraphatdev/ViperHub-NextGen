@@ -102,6 +102,24 @@ function Embed.number(value: any): string
     return out
 end
 
+--- Reads game number text such as "19.09M", "48.77K", "1,234" or "239"; nil when it is not a number.
+function Embed.parseAmount(value: any): number?
+    if type(value) == "number" then
+        return if value == value and math.abs(value) ~= math.huge then value else nil
+    end
+    if type(value) ~= "string" then
+        return nil
+    end
+    local digits, suffix = string.match(string.gsub(value, ",", ""), "^%s*([%d%.]+)%s*([KkMmBbTt]?)%s*$")
+    local number = tonumber(digits)
+    if not number then
+        return nil
+    end
+    local scale = ({ k = 1e3, m = 1e6, b = 1e9, t = 1e12 } :: { [string]: number })[string.lower(suffix or "")]
+        or 1
+    return number * scale
+end
+
 --- Whole number with thousands separators: 18,486,565.
 function Embed.commas(value: any): string
     local n = tonumber(value)

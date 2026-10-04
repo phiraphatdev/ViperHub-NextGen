@@ -10369,6 +10369,30 @@ do
 
                 return out
             end
+            function Embed.parseAmount(value)
+                if type(value) == 'number' then
+                    return if value == value and math.abs(value) ~= math.huge then value else nil
+                end
+                if type(value) ~= 'string' then
+                    return nil
+                end
+
+                local digits, suffix = string.match(string.gsub(value, ',', ''), '^%s*([%d%.]+)%s*([KkMmBbTt]?)%s*$')
+                local number = tonumber(digits)
+
+                if not number then
+                    return nil
+                end
+
+                local scale = ({
+                    k = 1e3,
+                    m = 1e6,
+                    b = 1e9,
+                    t = 1e12,
+                })[string.lower(suffix or '')] or 1
+
+                return number * scale
+            end
             function Embed.commas(value)
                 local n = tonumber(value)
 
@@ -10823,6 +10847,20 @@ do
                     end
                     if info.takedowns then
                         table.insert(extra, '\u{2620}\u{fe0f} **Takedowns**: `' .. tostring(info.takedowns) .. '`')
+                    end
+
+                    local seconds = tonumber(info.duration)
+
+                    if seconds and seconds >= 1 then
+                        local damage = Embed.parseAmount(info.damage)
+                        local kills = Embed.parseAmount(info.takedowns)
+
+                        if damage then
+                            table.insert(extra, '\u{26a1} **DPS**: `' .. Embed.number(damage / seconds) .. '`')
+                        end
+                        if kills then
+                            table.insert(extra, string.format('\u{1f3af} **Kills/min**: `%.1f`', kills / seconds * 60))
+                        end
                     end
                     if #extra > 0 then
                         table.insert(lines, '> ' .. table.concat(extra, ' \u{2022} '))
