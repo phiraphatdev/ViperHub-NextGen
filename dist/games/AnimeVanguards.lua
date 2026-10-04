@@ -8345,6 +8345,9 @@ do
                 onRoomOffer = function(offer)
                     local saved = getSettings()
 
+                    if self.active and saved.get('autoRoute') == true then
+                        setStatus('Auto Route Atlas: room offer received')
+                    end
                     if not self.active or saved.get('autoRoute') ~= true or not deps.isAdventure() then
                         return
                     end
@@ -8586,6 +8589,15 @@ do
                         end
                     end
                 end
+                local function guarded(name, handler)
+                    return function(payload)
+                        local ok, err = pcall(handler, payload)
+
+                        if not ok then
+                            setStatus('Adventure ' .. name .. ' failed: ' .. string.sub(tostring(err), 1, 90))
+                        end
+                    end
+                end
 
                 function self.start()
                     if self.active then
@@ -8604,7 +8616,7 @@ do
                     end
 
                     local onFn = entry.On
-                    local ok, undo = pcall(onFn, onBasicOffer)
+                    local ok, undo = pcall(onFn, guarded('card offer', onBasicOffer))
 
                     if not ok then
                         setStatus('Auto Basic Card: could not subscribe')
@@ -8626,7 +8638,7 @@ do
 
                         if type(extra) == 'table' and type(extra.On) == 'function' then
                             local extraOn = extra.On
-                            local okExtra, undoExtra = pcall(extraOn, handler)
+                            local okExtra, undoExtra = pcall(extraOn, guarded(eventName, handler))
 
                             if okExtra and type(undoExtra) == 'function' then
                                 table.insert(disconnects, undoExtra)
@@ -8645,7 +8657,7 @@ do
                             local waiting = pendingRooms
 
                             if waiting ~= nil then
-                                onRoomOffer(waiting)
+                                guarded('room offer', onRoomOffer)(waiting)
                             end
                         end)
 
@@ -8658,7 +8670,7 @@ do
 
                     if type(roomEntry) == 'table' and type(roomEntry.On) == 'function' then
                         local roomOn = roomEntry.On
-                        local okRoom, undoRoom = pcall(roomOn, onRoomOffer)
+                        local okRoom, undoRoom = pcall(roomOn, guarded('room offer', onRoomOffer))
 
                         if okRoom and type(undoRoom) == 'function' then
                             table.insert(disconnects, undoRoom)

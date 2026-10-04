@@ -135,6 +135,9 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
     -- A room selection: pick the next room by the floor priorities (the second list from the chosen floor on).
     onRoomOffer = function(offer: any)
         local saved = getSettings()
+        if self.active and saved.get("autoRoute") == true then
+            setStatus("Auto Route Atlas: room offer received")
+        end
         if not self.active or saved.get("autoRoute") ~= true or not deps.isAdventure() then
             return
         end
@@ -375,6 +378,16 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         end
     end
 
+    -- Event handlers run inside the game's signal code, where an error would vanish: report it in the status instead.
+    local function guarded(name: string, handler: (any) -> ()): (any) -> ()
+        return function(payload: any)
+            local ok, err = pcall(handler, payload)
+            if not ok then
+                setStatus("Adventure " .. name .. " failed: " .. string.sub(tostring(err), 1, 90))
+            end
+        end
+    end
+
     --- Starts listening for offers; returns whether the match events exist (false in the lobby). Safe to repeat.
     function self.start(): boolean
         if self.active then
@@ -388,7 +401,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             return false
         end
         local onFn: any = entry.On
-        local ok, undo = pcall(onFn, onBasicOffer)
+        local ok, undo = pcall(onFn, guarded("card offer", onBasicOffer))
         if not ok then
             setStatus("Auto Basic Card: could not subscribe")
             return false
@@ -405,7 +418,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             local extra = events[eventName]
             if type(extra) == "table" and type(extra.On) == "function" then
                 local extraOn: any = extra.On
-                local okExtra, undoExtra = pcall(extraOn, handler)
+                local okExtra, undoExtra = pcall(extraOn, guarded(eventName, handler))
                 if okExtra and type(undoExtra) == "function" then
                     table.insert(disconnects, undoExtra)
                 end
@@ -417,7 +430,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                 snapshot = data
                 local waiting = pendingRooms
                 if waiting ~= nil then
-                    onRoomOffer(waiting)
+                    guarded("room offer", onRoomOffer)(waiting)
                 end
             end)
             if okRelay and type(undoRelay) == "function" then
@@ -427,7 +440,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         local roomEntry = if type(events) == "table" then events.SelectRoomSelectionStarted else nil
         if type(roomEntry) == "table" and type(roomEntry.On) == "function" then
             local roomOn: any = roomEntry.On
-            local okRoom, undoRoom = pcall(roomOn, onRoomOffer)
+            local okRoom, undoRoom = pcall(roomOn, guarded("room offer", onRoomOffer))
             if okRoom and type(undoRoom) == "function" then
                 table.insert(disconnects, undoRoom)
             end
