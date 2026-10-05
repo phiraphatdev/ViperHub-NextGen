@@ -119,9 +119,7 @@ function Ambient.attach(library: any, cleanup: { add: (() -> ()) -> () })
     end)
 end
 
-local HIDE_SCALE = 0.9
-local HIDE_SECONDS = 0.28
-local SHOW_SECONDS = 0.45
+local GHOST_SECONDS = 0.32
 local PILL_HOVER_SCALE = 1.07
 local PILL_POP_FROM = 0.6
 local PILL_HALO_ALPHA = 0.82
@@ -154,7 +152,6 @@ function Ambient.window(window: any, library: any, cleanup: { add: (() -> ()) ->
     local frame: any = if type(elements) == "table" then elements.Main else nil
     local scaleObj: any = frame and frame:FindFirstChildOfClass("UIScale")
     local edge: any = frame and frame:FindFirstChild(EDGE_NAME)
-    local baseScale: number = if scaleObj then scaleObj.Scale else 1
     local originalClose: any = window.Close
     local originalOpen: any = window.Open
     local quint = ENV.Enum.EasingStyle.Quint
@@ -162,26 +159,151 @@ function Ambient.window(window: any, library: any, cleanup: { add: (() -> ()) ->
     local back = ENV.Enum.EasingStyle.Back
     local inDir = ENV.Enum.EasingDirection.In
     local outDir = ENV.Enum.EasingDirection.Out
-    if type(originalClose) == "function" and type(originalOpen) == "function" and scaleObj then
-        window.Close = function(...)
-            if not window.Closed then
-                baseScale = scaleObj.Scale
-                tweenOf(scaleObj, HIDE_SECONDS, { Scale = baseScale * HIDE_SCALE }, quint, inDir)
-                if edge then
-                    tweenOf(edge, HIDE_SECONDS, { Transparency = 1 }, quad, outDir)
-                end
+    -- Hiding and showing move a light "ghost" (a few frames) between the window and the open button, and keep the
+    -- heavy window (thousands of elements) hidden while WindUI animates its size, so nothing re-lays out per frame.
+    local gui: any = if type(library) == "table" then library.ScreenGui else nil
+    local savedSize: any = frame and frame.Size
+    local function pillRect(): (any, any)
+        local openMain: any = window.OpenButtonMain
+        local button: any = if type(openMain) == "table" then openMain.Button else nil
+        if button and button.AbsoluteSize.X > 0 then
+            return button.AbsolutePosition, button.AbsoluteSize
+        end
+        local viewport: any = (ENV.workspace :: any).CurrentCamera.ViewportSize
+        return ENV.Vector2.new(viewport.X / 2 - 60, 74), ENV.Vector2.new(120, 44)
+    end
+    local function makeGhost(position: any, size: any): (any, any, any)
+        local ghost = ENV.Instance.new("Frame")
+        ghost.Name = "ViperGhost"
+        ghost.BorderSizePixel = 0
+        ghost.ZIndex = 500
+        ghost.Active = false
+        ghost.BackgroundColor3 = ENV.Color3.new(1, 1, 1)
+        local origin: any = gui.AbsolutePosition
+        ghost.Position = ENV.UDim2.fromOffset(position.X - origin.X, position.Y - origin.Y)
+        ghost.Size = ENV.UDim2.fromOffset(size.X, size.Y)
+        local cornerItem = ENV.Instance.new("UICorner")
+        cornerItem.CornerRadius = ENV.UDim.new(0, 16)
+        cornerItem.Parent = ghost
+        local backdrop: any = nil
+        for _, object in gui:GetDescendants() do
+            if object.Name == "Background" and object:IsA("ImageLabel") then
+                backdrop = object:FindFirstChildOfClass("UIGradient")
+                break
             end
-            return (originalClose :: any)(...)
+        end
+        local fillGradient = ENV.Instance.new("UIGradient")
+        if backdrop then
+            fillGradient.Color = backdrop.Color
+            fillGradient.Rotation = backdrop.Rotation
+        else
+            fillGradient.Color =
+                ENV.ColorSequence.new(ENV.Color3.fromRGB(8, 14, 12), ENV.Color3.fromRGB(14, 32, 26))
+        end
+        fillGradient.Parent = ghost
+        local ghostStroke = ENV.Instance.new("UIStroke")
+        ghostStroke.ApplyStrokeMode = ENV.Enum.ApplyStrokeMode.Border
+        ghostStroke.Thickness = 1.5
+        ghostStroke.Color = themeColor(library)
+        ghostStroke.Parent = ghost
+        local label = ENV.Instance.new("TextLabel")
+        label.BackgroundTransparency = 1
+        label.Size = ENV.UDim2.fromScale(1, 1)
+        label.Text = "ViperHub"
+        label.TextColor3 = ENV.Color3.new(1, 1, 1)
+        label.TextScaled = true
+        label.Font = ENV.Enum.Font.GothamBold
+        label.ZIndex = 501
+        local limit = ENV.Instance.new("UITextSizeConstraint")
+        limit.MaxTextSize = 22
+        limit.MinTextSize = 8
+        limit.Parent = label
+        label.Parent = ghost
+        ghost.Parent = gui
+        return ghost, ghostStroke, label
+    end
+    local function fly(
+        ghost: any,
+        stroke: any,
+        label: any,
+        position: any,
+        size: any,
+        seconds: number,
+        fadeOut: boolean
+    )
+        local origin: any = gui.AbsolutePosition
+        local goal = {
+            Position = ENV.UDim2.fromOffset(position.X - origin.X, position.Y - origin.Y),
+            Size = ENV.UDim2.fromOffset(size.X, size.Y),
+        }
+        tweenOf(ghost, seconds, goal, quint, ENV.Enum.EasingDirection.InOut)
+        if fadeOut then
+            tweenOf(ghost, seconds, { BackgroundTransparency = 1 }, quad, inDir)
+            tweenOf(stroke, seconds, { Transparency = 1 }, quad, inDir)
+            tweenOf(label, seconds * 0.6, { TextTransparency = 1 }, quad, outDir)
+        end
+    end
+    local busy = false
+    local firstOpen = true
+    if type(originalClose) == "function" and type(originalOpen) == "function" and frame and gui then
+        window.Close = function(...)
+            if window.Closed or busy then
+                return (originalClose :: any)(...)
+            end
+            savedSize = frame.Size
+            local fromPos, fromSize = frame.AbsolutePosition, frame.AbsoluteSize
+            local ghost, ghostStroke, label = makeGhost(fromPos, fromSize)
+            label.TextTransparency = 1
+            local result = (originalClose :: any)(...)
+            frame.Visible = false
+            local toPos, toSize = pillRect()
+            fly(ghost, ghostStroke, label, toPos, toSize, GHOST_SECONDS, true)
+            local taskApi: any = ENV.task
+            taskApi.delay(GHOST_SECONDS + 0.05, function()
+                ghost:Destroy()
+            end)
+            return result
         end
         window.Open = function(...)
-            if window.Closed then
-                scaleObj.Scale = baseScale * HIDE_SCALE
+            -- The first open (right after the window is created) is WindUI's own.
+            if firstOpen or not window.Closed or busy then
+                firstOpen = false
+                return (originalOpen :: any)(...)
             end
-            local result = (originalOpen :: any)(...)
-            tweenOf(scaleObj, SHOW_SECONDS, { Scale = baseScale }, back, outDir)
-            if edge then
-                tweenOf(edge, SHOW_SECONDS, { Transparency = EDGE_ALPHA }, quad, outDir)
-            end
+            busy = true
+            local args = table.pack(...)
+            local fromPos, fromSize = pillRect()
+            local ghost, ghostStroke, label = makeGhost(fromPos, fromSize)
+            ghost.BackgroundTransparency = 0.4
+            ghostStroke.Transparency = 0.2
+            -- Where the window will be: its last place at its full size.
+            local toSize = ENV.Vector2.new(savedSize.X.Offset, savedSize.Y.Offset)
+                * (if scaleObj then scaleObj.Scale else 1)
+            local toPos = frame.AbsolutePosition
+                - ENV.Vector2.new(0, (toSize.Y - frame.AbsoluteSize.Y) * frame.AnchorPoint.Y)
+                - ENV.Vector2.new((toSize.X - frame.AbsoluteSize.X) * frame.AnchorPoint.X, 0)
+            fly(ghost, ghostStroke, label, toPos, toSize, GHOST_SECONDS, false)
+            tweenOf(ghost, GHOST_SECONDS, { BackgroundTransparency = 0 }, quad, outDir)
+            tweenOf(label, GHOST_SECONDS * 0.5, { TextTransparency = 1 }, quad, outDir)
+            local taskApi: any = ENV.task
+            local result: any = nil
+            taskApi.delay(GHOST_SECONDS, function()
+                result = (originalOpen :: any)(table.unpack(args, 1, args.n))
+                -- WindUI grows the window over 0.8 s, re-laying out every element each frame: finish it at once
+                -- (a new tween on the same property cancels WindUI's).
+                taskApi.delay(0.1, function()
+                    tweenOf(frame, 0.05, { Size = savedSize }, quad, outDir)
+                    tweenOf(ghost, 0.18, { BackgroundTransparency = 1 }, quad, outDir)
+                    tweenOf(ghostStroke, 0.18, { Transparency = 1 }, quad, outDir)
+                    if edge then
+                        tweenOf(edge, 0.3, { Transparency = EDGE_ALPHA }, quad, outDir)
+                    end
+                    taskApi.delay(0.2, function()
+                        ghost:Destroy()
+                        busy = false
+                    end)
+                end)
+            end)
             return result
         end
         cleanup.add(function()

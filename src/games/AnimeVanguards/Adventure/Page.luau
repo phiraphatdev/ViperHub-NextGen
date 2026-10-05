@@ -281,32 +281,54 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?, joi
         "Auto Character Card",
         "After an Elite floor, pick the character card by the priority below; with a full hand, swap out the weakest card only for a better one."
     )
+    -- One list for the character being edited (14 lists of 12 rows made the window slow to show and hide).
     local cardPriority = Style.sub(characterCard, "Character Card Priority", "list-ordered", false)
+    local withCards: { string } = {}
     for _, characterName in catalog.characters do
         local cards = catalog.characterCards and catalog.characterCards[characterName]
         if type(cards) == "table" and #cards > 0 then
-            local section = Style.sub(cardPriority, characterName, "user", false)
-            local list = PriorityList.mount(section, {
-                title = characterName,
-                desc = "Top card is preferred. Drag a row onto another to swap them.",
-                order = settings.groupOrder("characterCardPriority", characterName),
-                locked = isLocked("characterCardPriority"),
-                onSwap = function(first: string, second: string): { string }?
-                    return if settings.groupSwap("characterCardPriority", characterName, first, second)
-                        then settings.groupOrder("characterCardPriority", characterName)
-                        else nil
-                end,
-            })
-            section:Button({
-                Title = "Reset " .. characterName,
-                Locked = isLocked("characterCardPriority"),
-                Desc = "Restore the default order (rarest first).",
-                Icon = "rotate-ccw",
-                Callback = function()
-                    list.refresh(settings.groupReset("characterCardPriority", characterName))
-                end,
-            })
+            table.insert(withCards, characterName)
         end
+    end
+    if #withCards > 0 then
+        local selected = settings.get("character")
+        local editing: string = if table.find(withCards, selected) then selected else withCards[1]
+        local list: any = nil
+        cardPriority:Dropdown({
+            Title = "Edit Character",
+            Locked = isLocked("characterCardPriority"),
+            Desc = "Whose card order to edit; each character keeps its own order.",
+            Values = withCards,
+            Value = editing,
+            Callback = function(value: any)
+                if type(value) == "string" and table.find(withCards, value) then
+                    editing = value
+                    if list then
+                        list.refresh(settings.groupOrder("characterCardPriority", editing))
+                    end
+                end
+            end,
+        })
+        list = PriorityList.mount(cardPriority, {
+            title = "Card Order",
+            desc = "Top card is preferred. Drag a row onto another to swap them.",
+            order = settings.groupOrder("characterCardPriority", editing),
+            locked = isLocked("characterCardPriority"),
+            onSwap = function(first: string, second: string): { string }?
+                return if settings.groupSwap("characterCardPriority", editing, first, second)
+                    then settings.groupOrder("characterCardPriority", editing)
+                    else nil
+            end,
+        })
+        cardPriority:Button({
+            Title = "Reset Card Order",
+            Locked = isLocked("characterCardPriority"),
+            Desc = "Restore this character's default order (rarest first).",
+            Icon = "rotate-ccw",
+            Callback = function()
+                list.refresh(settings.groupReset("characterCardPriority", editing))
+            end,
+        })
     end
 
     local basicCard = Style.section(tab, "Auto Basic Card", "layers", false)

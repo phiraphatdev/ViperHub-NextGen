@@ -189,22 +189,25 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
         -- The card's title: the label in its TitleFrame, else its largest visible label. It grows with its own
         -- UIScale (only when WindUI put none there); the card itself never scales.
         local title: any = nil
-        local function titleOf(owner: any): any
-            local frame: any = owner:FindFirstChild("TitleFrame", true)
-            local found: any = frame and frame:FindFirstChildWhichIsA("TextLabel", true)
-            if found then
-                return found
-            end
+        -- Looked up in the button first: a section header's card also holds the (hidden) elements of its body.
+        local function titleIn(root: any): any
             local best: any = nil
-            for _, descendant in owner:GetDescendants() do
+            for _, descendant in root:GetDescendants() do
                 local item: any = descendant
-                if item:IsA("TextLabel") and item.Visible and item.Text ~= "" then
+                if item:IsA("TextLabel") and item.Text ~= "" and item.AbsoluteSize.X > 0 then
+                    local inTitle = item.Parent ~= nil and item.Parent.Name == "TitleFrame"
+                    if inTitle then
+                        return item
+                    end
                     if not best or item.TextSize > best.TextSize then
                         best = item
                     end
                 end
             end
             return best
+        end
+        local function titleOf(owner: any): any
+            return titleIn(button) or titleIn(owner)
         end
         local function grow(target: number)
             local owner: any = glow and glow.Parent
