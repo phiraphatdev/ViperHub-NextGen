@@ -272,9 +272,15 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?, joi
         settings,
         "autoBuyItches",
         "Auto Buy Itches",
-        "When Itches (the Stitches NPC) appears on the map, walk to it and buy with Yen, then come back."
+        "When Itches (the Stitches NPC) appears on the map, walk to it and keep buying basic cards with Yen until it is gone; skipped once every basic card is owned at its cap."
     )
-    slider(misc, settings, "itchesBuys", "Itches Buys", "Purchases per Itches (each one costs more).")
+    slider(
+        misc,
+        settings,
+        "itchesBuys",
+        "Itches Buys",
+        "Most purchases per Itches (each one costs more; 50 = until it is gone)."
+    )
     slider(
         misc,
         settings,

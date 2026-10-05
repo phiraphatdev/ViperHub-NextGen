@@ -536,8 +536,14 @@ do
                     }),
                     itchesBuys = table.freeze({
                         min = 1,
-                        max = 10,
-                        default = 3,
+                        max = 50,
+                        default = 50,
+                    }),
+                    basicCardCaps = table.freeze({
+                        Rare = 4,
+                        Epic = 3,
+                        Legendary = 3,
+                        Mythic = 1,
                     }),
                     itchesMaxCost = table.freeze({
                         min = 100,
@@ -8080,8 +8086,9 @@ do
                 toggle(misc, settings, 'autoBossReward', 'Auto Boss Reward',
 [[After a boss floor, claim the rarest Memoria or Familiar on a placed unit, or skip when none; the next room waits for it.]])
                 toggle(misc, settings, 'autoBuyItches', 'Auto Buy Itches',
-[[When Itches (the Stitches NPC) appears on the map, walk to it and buy with Yen, then come back.]])
-                slider(misc, settings, 'itchesBuys', 'Itches Buys', 'Purchases per Itches (each one costs more).')
+[[When Itches (the Stitches NPC) appears on the map, walk to it and keep buying basic cards with Yen until it is gone; skipped once every basic card is owned at its cap.]])
+                slider(misc, settings, 'itchesBuys', 'Itches Buys',
+[[Most purchases per Itches (each one costs more; 50 = until it is gone).]])
                 slider(misc, settings, 'itchesMaxCost', 'Itches Max Cost (Yen)', 'Never pay more Yen than this for one purchase.')
 
                 local characterCard = Style.section(tab, 'Auto Character Card', 'id-card', false)
@@ -9371,6 +9378,79 @@ do
 
                         return nil
                     end,
+                    allBasicCardsOwned = (function()
+                        local cached = setmetatable({}, {
+                            __mode = 'v',
+                        })
+
+                        return function()
+                            local state = cached.state
+
+                            if type(state) ~= 'table' or type(rawget(state, 'BasicCards')) ~= 'table' then
+                                state = nil
+
+                                local getgc = ((getfenv())).getgc
+
+                                if type(getgc) ~= 'function' then
+                                    return false
+                                end
+
+                                local ok, objects = pcall(getgc, true)
+
+                                if not ok then
+                                    return false
+                                end
+
+                                for _, value in objects do
+                                    if type(value) == 'table' and rawget(value, 'BasicFocusCapacity') and type(rawget(value, 'BasicCards')) == 'table' then
+                                        state = value
+
+                                        break
+                                    end
+                                end
+
+                                cached.state = state
+                            end
+                            if not state then
+                                return false
+                            end
+
+                            local levels = {}
+
+                            for _, listName in {
+                                'BasicCards',
+                                'ReserveBasicCards',
+                            }do
+                                local list = rawget(state, listName)
+
+                                if type(list) == 'table' then
+                                    for _, card in list do
+                                        if type(card) == 'table' and type(card.CardName) == 'string' then
+                                            levels[card.CardName] = (levels[card.CardName] or 0) + (tonumber(card.Level) or 1)
+                                        end
+                                    end
+                                end
+                            end
+
+                            local okCatalog, catalog = pcall(Catalog.read)
+
+                            if not okCatalog or type(catalog) ~= 'table' then
+                                return false
+                            end
+
+                            local caps = (config).adventure.basicCardCaps
+
+                            for _, name in catalog.basicCards do
+                                local cap = caps[catalog.basicCardRarity[name] ] or 1
+
+                                if (levels[name] or 0) < cap then
+                                    return false
+                                end
+                            end
+
+                            return true
+                        end
+                    end)(),
                     rootCFrame = function()
                         local players = env.game:GetService('Players')
                         local character = players.LocalPlayer and players.LocalPlayer.Character
@@ -10496,6 +10576,16 @@ do
 
                     if type(request) ~= 'table' or type(request.Fire) ~= 'function' or type(yenOf) ~= 'function' then
                         return
+                    end
+
+                    local ownedFn = deps.allBasicCardsOwned
+
+                    if type(ownedFn) == 'function' then
+                        local okOwned, owned = pcall(ownedFn)
+
+                        if okOwned and owned == true then
+                            return
+                        end
                     end
 
                     local limit = tonumber(saved.get('itchesBuys')) or 0

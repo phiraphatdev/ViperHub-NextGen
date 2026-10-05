@@ -290,6 +290,63 @@ local function liveDependencies(): any
             end
             return nil
         end,
+        -- True when every basic card of the pool is owned at its level cap (the run's card state, found in memory:
+        -- BasicCards/ReserveBasicCards {CardName, Level, Rarity}).
+        allBasicCardsOwned = (function(): () -> boolean
+            local cached: any = setmetatable({}, { __mode = "v" })
+            return function(): boolean
+                local state: any = cached.state
+                if type(state) ~= "table" or type(rawget(state, "BasicCards")) ~= "table" then
+                    state = nil
+                    local getgc: any = (getfenv() :: any).getgc
+                    if type(getgc) ~= "function" then
+                        return false
+                    end
+                    local ok, objects = pcall(getgc, true)
+                    if not ok then
+                        return false
+                    end
+                    for _, value in objects do
+                        if
+                            type(value) == "table"
+                            and rawget(value, "BasicFocusCapacity")
+                            and type(rawget(value, "BasicCards")) == "table"
+                        then
+                            state = value
+                            break
+                        end
+                    end
+                    cached.state = state
+                end
+                if not state then
+                    return false
+                end
+                local levels: { [string]: number } = {}
+                for _, listName in { "BasicCards", "ReserveBasicCards" } do
+                    local list: any = rawget(state, listName)
+                    if type(list) == "table" then
+                        for _, card in list do
+                            if type(card) == "table" and type(card.CardName) == "string" then
+                                levels[card.CardName] = (levels[card.CardName] or 0)
+                                    + (tonumber(card.Level) or 1)
+                            end
+                        end
+                    end
+                end
+                local okCatalog, catalog = pcall(Catalog.read)
+                if not okCatalog or type(catalog) ~= "table" then
+                    return false
+                end
+                local caps: any = (config :: any).adventure.basicCardCaps
+                for _, name in catalog.basicCards do
+                    local cap = caps[catalog.basicCardRarity[name]] or 1
+                    if (levels[name] or 0) < cap then
+                        return false
+                    end
+                end
+                return true
+            end
+        end)(),
         rootCFrame = function(): any
             local players: any = env.game:GetService("Players")
             local character: any = players.LocalPlayer and players.LocalPlayer.Character
@@ -1343,6 +1400,13 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         local yenOf: any = deps.yen
         if type(request) ~= "table" or type(request.Fire) ~= "function" or type(yenOf) ~= "function" then
             return
+        end
+        local ownedFn: any = deps.allBasicCardsOwned
+        if type(ownedFn) == "function" then
+            local okOwned, owned = pcall(ownedFn)
+            if okOwned and owned == true then
+                return
+            end
         end
         local limit = tonumber(saved.get("itchesBuys")) or 0
         local maxCost = tonumber(saved.get("itchesMaxCost")) or 0
