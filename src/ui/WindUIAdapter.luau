@@ -10,6 +10,7 @@ local Types = require("../types/Context")
 local Theme = require("./Theme")
 local HoverGlow = require("./HoverGlow")
 local Dither = require("./Dither")
+local Ambient = require("./Ambient")
 local ENV: { [string]: any } = getfenv()
 local WINDOW_WIDTH = 600
 local WINDOW_HEIGHT = 400
@@ -109,6 +110,7 @@ function WindUIAdapter.create(
     if library.ScreenGui then
         pcall(HoverGlow.attach, library, context.cleanup)
         pcall(Dither.attach, library.ScreenGui, context.cleanup)
+        pcall(Ambient.attach, library, context.cleanup)
     end
     if library.ScreenGui then
         pcall(function()

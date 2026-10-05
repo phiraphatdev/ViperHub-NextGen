@@ -1,8 +1,9 @@
 --!strict
 --[[
-Purpose: A soft glow that follows the mouse over hub cards and buttons (dynamic hover feedback)
+Purpose: Hover and press effects on hub cards and buttons: a glow that follows the mouse, an accent outline, a light
+         sweep on entry, a slight lift, and a ripple from the click point
 Input: The library (ScreenGui, current Theme), and the context cleanup list; all optional outside Roblox
-Output: attach() returns nothing; every connection and glow instance is removed by the cleanup
+Output: attach() returns nothing; every connection and effect instance is removed by the cleanup
 Dependencies: Theme
 ]]
 
@@ -13,13 +14,22 @@ local MIN_WIDTH = 110
 local MIN_HEIGHT = 26
 local MAX_HEIGHT = 200 -- taller buttons are containers (a card holding a list): hovering a row inside is not hovering the card
 local GLOW_NAME = "ViperGlow"
+local SCALE_NAME = "ViperScale"
 local GLOW_ALPHA = 0.8
 local FADE_SECONDS = 0.18
 local CORNER_RADIUS = 14
-local GLOW_INSET = 0
 local MAX_DEPTH = 8
 local SECTION_RATIO = 1.5
 local EDGE_FADE = 0.55 -- gradient transparency at the card edges: the whole card tints, the cursor spot is brighter
+local STROKE_ALPHA = 0.35 -- accent outline while hovered
+local STROKE_THICKNESS = 1.5
+local SHINE_SECONDS = 0.55
+local SHINE_ALPHA = 0.82 -- the brightest part of the light sweep
+local LIFT_SCALE = 1.012
+local PRESS_SCALE = 0.985
+local LIFT_SECONDS = 0.16
+local RIPPLE_SECONDS = 0.5
+local RIPPLE_ALPHA = 0.65
 
 local HoverGlow = {}
 
@@ -27,8 +37,8 @@ local function isButton(object: any): boolean
     return object:IsA("TextButton") or object:IsA("ImageButton")
 end
 
--- A card's UIPadding shrinks the area its children's scale sizes refer to; cancel it so the glow covers the whole box.
-local function fit(glow: any, card: any)
+-- A card's UIPadding shrinks the area its children's scale sizes refer to; cancel it so the effects cover the box.
+local function fit(frame: any, card: any)
     local pad: any = card:FindFirstChildOfClass("UIPadding")
     local width = card.AbsoluteSize.X
     local height = card.AbsoluteSize.Y
@@ -38,11 +48,17 @@ local function fit(glow: any, card: any)
         top = pad.PaddingTop.Scale * height + pad.PaddingTop.Offset
     end
     -- Fixed pixel size (not scale): a scale size inside an auto-sized card feeds back and grows the card forever.
-    glow.Size = ENV.UDim2.fromOffset(width - GLOW_INSET * 2, height - GLOW_INSET * 2)
-    glow.Position = ENV.UDim2.fromOffset(GLOW_INSET - left, GLOW_INSET - top)
+    frame.Size = ENV.UDim2.fromOffset(width, height)
+    frame.Position = ENV.UDim2.fromOffset(-left, -top)
 end
 
--- Builds the glow once per card: a rounded frame under the content, brightest where the mouse is.
+local function corner(parent: any, radius: any)
+    local item = ENV.Instance.new("UICorner")
+    item.CornerRadius = radius
+    item.Parent = parent
+end
+
+-- Builds the effect layer once per card: the glow fill, the accent outline and the light sweep band.
 local function buildGlow(card: any, color: any): any
     local create = ENV.Instance
     local glow = create.new("Frame")
@@ -52,9 +68,7 @@ local function buildGlow(card: any, color: any): any
     glow.BorderSizePixel = 0
     glow.ZIndex = 1
     glow.Active = false
-    local corner = create.new("UICorner")
-    corner.CornerRadius = ENV.UDim.new(0, CORNER_RADIUS)
-    corner.Parent = glow
+    corner(glow, ENV.UDim.new(0, CORNER_RADIUS))
     local gradient = create.new("UIGradient")
     gradient.Transparency = ENV.NumberSequence.new({
         ENV.NumberSequenceKeypoint.new(0, EDGE_FADE),
@@ -62,12 +76,40 @@ local function buildGlow(card: any, color: any): any
         ENV.NumberSequenceKeypoint.new(1, EDGE_FADE),
     })
     gradient.Parent = glow
+    local stroke = create.new("UIStroke")
+    stroke.Name = "Edge"
+    stroke.ApplyStrokeMode = ENV.Enum.ApplyStrokeMode.Border
+    stroke.Color = color
+    stroke.Thickness = STROKE_THICKNESS
+    stroke.Transparency = 1
+    stroke.Parent = glow
+    local shine = create.new("Frame")
+    shine.Name = "Shine"
+    shine.BackgroundColor3 = ENV.Color3.new(1, 1, 1)
+    shine.BackgroundTransparency = 0
+    shine.BorderSizePixel = 0
+    shine.Size = ENV.UDim2.fromScale(1, 1)
+    shine.Visible = false
+    shine.Active = false
+    corner(shine, ENV.UDim.new(0, CORNER_RADIUS))
+    local band = create.new("UIGradient")
+    band.Rotation = 20
+    band.Transparency = ENV.NumberSequence.new({
+        ENV.NumberSequenceKeypoint.new(0, 1),
+        ENV.NumberSequenceKeypoint.new(0.42, 1),
+        ENV.NumberSequenceKeypoint.new(0.5, SHINE_ALPHA),
+        ENV.NumberSequenceKeypoint.new(0.58, 1),
+        ENV.NumberSequenceKeypoint.new(1, 1),
+    })
+    band.Offset = ENV.Vector2.new(-1, 0)
+    band.Parent = shine
+    shine.Parent = glow
     glow.Parent = card
     fit(glow, card)
     return glow
 end
 
--- The active theme's accent (WindUI's `library.Theme.Outline`), so the glow follows theme changes.
+-- The active theme's accent (WindUI's `library.Theme.Outline`), so the effects follow theme changes.
 local function themeColor(library: any): any
     local theme: any = if type(library) == "table" then library.Theme else nil
     local value: any = if type(theme) == "table" then theme.Outline else nil
@@ -77,7 +119,7 @@ local function themeColor(library: any): any
     return Theme.color("primary")
 end
 
---- Starts glowing every sizeable button under library.ScreenGui when the mouse is over it.
+--- Starts the hover and press effects on every sizeable button under library.ScreenGui.
 function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
     local gui: any = if type(library) == "table" then library.ScreenGui else nil
     local color = themeColor(library)
@@ -85,27 +127,30 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
         return
     end
     local tweenService: any = nil
-    pcall(function()
-        tweenService = (ENV.game :: any):GetService("TweenService")
-    end)
-    local connections: { any } = {}
-    local glows: { any } = {}
-    -- Weak keys: a destroyed button must not be kept alive just because it was wired.
-    local wired: { [any]: boolean } = setmetatable({}, { __mode = "k" }) :: any
     local inputService: any = nil
     pcall(function()
+        tweenService = (ENV.game :: any):GetService("TweenService")
         inputService = (ENV.game :: any):GetService("UserInputService")
     end)
+    local connections: { any } = {}
+    local created: { any } = {}
+    -- Weak keys: a destroyed button must not be kept alive just because it was wired.
+    local wired: { [any]: boolean } = setmetatable({}, { __mode = "k" }) :: any
 
-    local function fade(glow: any, transparency: number)
+    local function tween(object: any, seconds: number, goal: { [string]: any }, style: any?)
         if tweenService then
             pcall(function()
-                tweenService
-                    :Create(glow, ENV.TweenInfo.new(FADE_SECONDS), { BackgroundTransparency = transparency })
-                    :Play()
+                local info = ENV.TweenInfo.new(
+                    seconds,
+                    style or ENV.Enum.EasingStyle.Quad,
+                    ENV.Enum.EasingDirection.Out
+                )
+                tweenService:Create(object, info, goal):Play()
             end)
         else
-            glow.BackgroundTransparency = transparency
+            for key, value in goal do
+                object[key] = value
+            end
         end
     end
 
@@ -115,6 +160,8 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
         end
         wired[button] = true
         local glow: any = nil
+        local scale: any = nil
+        local hovered = false
         -- The card is the nearest ancestor (or the button itself) that is drawn as a card, so a collapsible
         -- section header glows alone, not its whole body. Elements whose card is not a drawn image fall back to
         -- the ancestor sitting directly in the page's scrolling list; else the button itself.
@@ -141,14 +188,20 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
             end
             return button
         end
+        local function eligible(): boolean
+            local owner: any = if glow and glow.Parent then glow.Parent else card()
+            return owner.AutomaticSize == ENV.Enum.AutomaticSize.None
+                and button.AutomaticSize == ENV.Enum.AutomaticSize.None
+                and button.AbsoluteSize.X >= MIN_WIDTH
+                and button.AbsoluteSize.Y >= MIN_HEIGHT
+                and button.AbsoluteSize.Y <= MAX_HEIGHT
+                and button:GetAttribute("NoGlow") ~= true
+        end
         local function follow()
-            if not glow then
+            if not glow or not inputService then
                 return
             end
             local owner: any = glow.Parent
-            if not inputService then
-                return
-            end
             local mouse = inputService:GetMouseLocation()
             local width = math.max(owner.AbsoluteSize.X, 1)
             local fraction = math.clamp((mouse.X - owner.AbsolutePosition.X) / width, 0, 1)
@@ -157,34 +210,120 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
                 gradient.Offset = ENV.Vector2.new(fraction - 0.5, 0)
             end
         end
-        table.insert(
-            connections,
-            button.MouseEnter:Connect(function()
-                local owner: any = glow and glow.Parent or card()
-                if
-                    owner.AutomaticSize ~= ENV.Enum.AutomaticSize.None
-                    or button.AutomaticSize ~= ENV.Enum.AutomaticSize.None
-                then
+        -- The lift uses its own UIScale, and only on cards that have none (WindUI may animate its own).
+        local function lift(target: number)
+            local owner: any = glow and glow.Parent
+            if not owner then
+                return
+            end
+            if not scale or scale.Parent ~= owner then
+                local existing: any = owner:FindFirstChildOfClass("UIScale")
+                if existing and existing.Name ~= SCALE_NAME then
                     return
                 end
-                if
-                    button.AbsoluteSize.X < MIN_WIDTH
-                    or button.AbsoluteSize.Y < MIN_HEIGHT
-                    or button.AbsoluteSize.Y > MAX_HEIGHT
-                    or button:GetAttribute("NoGlow") == true
-                then
-                    return
+                scale = existing or ENV.Instance.new("UIScale")
+                scale.Name = SCALE_NAME
+                scale.Parent = owner
+                table.insert(created, scale)
+            end
+            tween(scale, LIFT_SECONDS, { Scale = target }, ENV.Enum.EasingStyle.Back)
+        end
+        local function sweep()
+            local shine: any = glow and glow:FindFirstChild("Shine")
+            local band: any = shine and shine:FindFirstChildOfClass("UIGradient")
+            if not band then
+                return
+            end
+            band.Offset = ENV.Vector2.new(-1, 0)
+            shine.Visible = true
+            tween(band, SHINE_SECONDS, { Offset = ENV.Vector2.new(1, 0) }, ENV.Enum.EasingStyle.Sine)
+            local taskApi: any = ENV.task
+            if type(taskApi) == "table" and type(taskApi.delay) == "function" then
+                (taskApi.delay :: any)(SHINE_SECONDS, function()
+                    if shine.Parent then
+                        shine.Visible = false
+                    end
+                end)
+            end
+        end
+        -- A circle that grows from the click point and fades, clipped to the rounded card by a CanvasGroup.
+        local function ripple()
+            if not glow or not inputService then
+                return
+            end
+            local create = ENV.Instance
+            local group = create.new("CanvasGroup")
+            group.Name = "Ripple"
+            group.BackgroundTransparency = 1
+            group.Size = ENV.UDim2.fromScale(1, 1)
+            group.Active = false
+            corner(group, ENV.UDim.new(0, CORNER_RADIUS))
+            local mouse = inputService:GetMouseLocation()
+            local inset: any = nil
+            pcall(function()
+                inset = (ENV.game :: any):GetService("GuiService"):GetGuiInset()
+            end)
+            local origin = glow.AbsolutePosition
+            local x = mouse.X - origin.X - (if inset then inset.X else 0)
+            local y = mouse.Y - origin.Y - (if inset then inset.Y else 0)
+            local circle = create.new("Frame")
+            circle.AnchorPoint = ENV.Vector2.new(0.5, 0.5)
+            circle.Position = ENV.UDim2.fromOffset(x, y)
+            circle.Size = ENV.UDim2.fromOffset(0, 0)
+            circle.BackgroundColor3 = themeColor(library)
+            circle.BackgroundTransparency = RIPPLE_ALPHA
+            circle.BorderSizePixel = 0
+            corner(circle, ENV.UDim.new(0.5, 0))
+            circle.Parent = group
+            group.Parent = glow
+            local reach = math.max(glow.AbsoluteSize.X, glow.AbsoluteSize.Y) * 2.2
+            tween(
+                circle,
+                RIPPLE_SECONDS,
+                { Size = ENV.UDim2.fromOffset(reach, reach), BackgroundTransparency = 1 }
+            )
+            local taskApi: any = ENV.task
+            if type(taskApi) == "table" and type(taskApi.delay) == "function" then
+                (taskApi.delay :: any)(RIPPLE_SECONDS + 0.05, function()
+                    group:Destroy()
+                end)
+            end
+        end
+        local function enter()
+            if not eligible() then
+                return
+            end
+            hovered = true
+            if not glow or not glow.Parent then
+                glow = buildGlow(card(), color)
+                table.insert(created, glow)
+            end
+            local accent = themeColor(library)
+            glow.BackgroundColor3 = accent
+            local edge: any = glow:FindFirstChild("Edge")
+            if edge then
+                edge.Color = accent
+                tween(edge, FADE_SECONDS, { Transparency = STROKE_ALPHA })
+            end
+            fit(glow, glow.Parent)
+            follow()
+            tween(glow, FADE_SECONDS, { BackgroundTransparency = GLOW_ALPHA })
+            sweep()
+            lift(LIFT_SCALE)
+        end
+        local function leave()
+            hovered = false
+            if glow then
+                tween(glow, FADE_SECONDS, { BackgroundTransparency = 1 })
+                local edge: any = glow:FindFirstChild("Edge")
+                if edge then
+                    tween(edge, FADE_SECONDS, { Transparency = 1 })
                 end
-                if not glow or not glow.Parent then
-                    glow = buildGlow(card(), color)
-                    table.insert(glows, glow)
-                end
-                glow.BackgroundColor3 = themeColor(library)
-                fit(glow, glow.Parent)
-                follow()
-                fade(glow, GLOW_ALPHA)
-            end) :: any
-        )
+            end
+            lift(1)
+        end
+        table.insert(connections, button.MouseEnter:Connect(enter) :: any)
+        table.insert(connections, button.MouseLeave:Connect(leave) :: any)
         table.insert(
             connections,
             button.MouseMoved:Connect(function()
@@ -193,9 +332,18 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
         )
         table.insert(
             connections,
-            button.MouseLeave:Connect(function()
+            button.MouseButton1Down:Connect(function()
+                if glow and hovered then
+                    lift(PRESS_SCALE)
+                    ripple()
+                end
+            end) :: any
+        )
+        table.insert(
+            connections,
+            button.MouseButton1Up:Connect(function()
                 if glow then
-                    fade(glow, 1)
+                    lift(if hovered then LIFT_SCALE else 1)
                 end
             end) :: any
         )
@@ -220,9 +368,9 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
                 connection:Disconnect()
             end)
         end
-        for _, glow in glows do
+        for _, item in created do
             pcall(function()
-                glow:Destroy()
+                item:Destroy()
             end)
         end
     end)

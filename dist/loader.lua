@@ -1518,19 +1518,28 @@ do
             local MIN_HEIGHT = 26
             local MAX_HEIGHT = 200
             local GLOW_NAME = 'ViperGlow'
+            local SCALE_NAME = 'ViperScale'
             local GLOW_ALPHA = 0.8
             local FADE_SECONDS = 0.18
             local CORNER_RADIUS = 14
-            local GLOW_INSET = 0
             local MAX_DEPTH = 8
             local SECTION_RATIO = 1.5
             local EDGE_FADE = 0.55
+            local STROKE_ALPHA = 0.35
+            local STROKE_THICKNESS = 1.5
+            local SHINE_SECONDS = 0.55
+            local SHINE_ALPHA = 0.82
+            local LIFT_SCALE = 1.012
+            local PRESS_SCALE = 0.985
+            local LIFT_SECONDS = 0.16
+            local RIPPLE_SECONDS = 0.5
+            local RIPPLE_ALPHA = 0.65
             local HoverGlow = {}
 
             local function isButton(object)
                 return object:IsA('TextButton') or object:IsA('ImageButton')
             end
-            local function fit(glow, card)
+            local function fit(frame, card)
                 local pad = card:FindFirstChildOfClass('UIPadding')
                 local width = card.AbsoluteSize.X
                 local height = card.AbsoluteSize.Y
@@ -1541,8 +1550,14 @@ do
                     top = pad.PaddingTop.Scale * height + pad.PaddingTop.Offset
                 end
 
-                glow.Size = ENV.UDim2.fromOffset(width - GLOW_INSET * 2, height - GLOW_INSET * 2)
-                glow.Position = ENV.UDim2.fromOffset(GLOW_INSET - left, GLOW_INSET - top)
+                frame.Size = ENV.UDim2.fromOffset(width, height)
+                frame.Position = ENV.UDim2.fromOffset(-left, -top)
+            end
+            local function corner(parent, radius)
+                local item = ENV.Instance.new('UICorner')
+
+                item.CornerRadius = radius
+                item.Parent = parent
             end
             local function buildGlow(card, color)
                 local create = ENV.Instance
@@ -1555,10 +1570,7 @@ do
                 glow.ZIndex = 1
                 glow.Active = false
 
-                local corner = create.new('UICorner')
-
-                corner.CornerRadius = ENV.UDim.new(0, CORNER_RADIUS)
-                corner.Parent = glow
+                corner(glow, ENV.UDim.new(0, CORNER_RADIUS))
 
                 local gradient = create.new('UIGradient')
 
@@ -1568,6 +1580,41 @@ do
                     ENV.NumberSequenceKeypoint.new(1, EDGE_FADE),
                 })
                 gradient.Parent = glow
+
+                local stroke = create.new('UIStroke')
+
+                stroke.Name = 'Edge'
+                stroke.ApplyStrokeMode = ENV.Enum.ApplyStrokeMode.Border
+                stroke.Color = color
+                stroke.Thickness = STROKE_THICKNESS
+                stroke.Transparency = 1
+                stroke.Parent = glow
+
+                local shine = create.new('Frame')
+
+                shine.Name = 'Shine'
+                shine.BackgroundColor3 = ENV.Color3.new(1, 1, 1)
+                shine.BackgroundTransparency = 0
+                shine.BorderSizePixel = 0
+                shine.Size = ENV.UDim2.fromScale(1, 1)
+                shine.Visible = false
+                shine.Active = false
+
+                corner(shine, ENV.UDim.new(0, CORNER_RADIUS))
+
+                local band = create.new('UIGradient')
+
+                band.Rotation = 20
+                band.Transparency = ENV.NumberSequence.new({
+                    ENV.NumberSequenceKeypoint.new(0, 1),
+                    ENV.NumberSequenceKeypoint.new(0.42, 1),
+                    ENV.NumberSequenceKeypoint.new(0.5, SHINE_ALPHA),
+                    ENV.NumberSequenceKeypoint.new(0.58, 1),
+                    ENV.NumberSequenceKeypoint.new(1, 1),
+                })
+                band.Offset = ENV.Vector2.new(-1, 0)
+                band.Parent = shine
+                shine.Parent = glow
                 glow.Parent = card
 
                 fit(glow, card)
@@ -1594,29 +1641,30 @@ do
                 end
 
                 local tweenService = nil
-
-                pcall(function()
-                    tweenService = (ENV.game):GetService('TweenService')
-                end)
-
-                local connections = {}
-                local glows = {}
-                local wired = (setmetatable({}, {
-                    __mode = 'k',
-                }))
                 local inputService = nil
 
                 pcall(function()
+                    tweenService = (ENV.game):GetService('TweenService')
                     inputService = (ENV.game):GetService('UserInputService')
                 end)
 
-                local function fade(glow, transparency)
+                local connections = {}
+                local created = {}
+                local wired = (setmetatable({}, {
+                    __mode = 'k',
+                }))
+
+                local function tween(object, seconds, goal, style)
                     if tweenService then
                         pcall(function()
-                            tweenService:Create(glow, ENV.TweenInfo.new(FADE_SECONDS), {BackgroundTransparency = transparency}):Play()
+                            local info = ENV.TweenInfo.new(seconds, style or ENV.Enum.EasingStyle.Quad, ENV.Enum.EasingDirection.Out)
+
+                            tweenService:Create(object, info, goal):Play()
                         end)
                     else
-                        glow.BackgroundTransparency = transparency
+                        for key, value in goal do
+                            object[key] = value
+                        end
                     end
                 end
                 local function wire(button)
@@ -1627,6 +1675,8 @@ do
                     wired[button] = true
 
                     local glow = nil
+                    local scale = nil
+                    local hovered = false
 
                     local function card()
                         local node = button
@@ -1653,17 +1703,17 @@ do
 
                         return button
                     end
+                    local function eligible()
+                        local owner = if glow and glow.Parent then glow.Parent else card()
+
+                        return owner.AutomaticSize == ENV.Enum.AutomaticSize.None and button.AutomaticSize == ENV.Enum.AutomaticSize.None and button.AbsoluteSize.X >= MIN_WIDTH and button.AbsoluteSize.Y >= MIN_HEIGHT and button.AbsoluteSize.Y <= MAX_HEIGHT and button:GetAttribute('NoGlow') ~= true
+                    end
                     local function follow()
-                        if not glow then
+                        if not glow or not inputService then
                             return
                         end
 
                         local owner = glow.Parent
-
-                        if not inputService then
-                            return
-                        end
-
                         local mouse = inputService:GetMouseLocation()
                         local width = math.max(owner.AbsoluteSize.X, 1)
                         local fraction = math.clamp((mouse.X - owner.AbsolutePosition.X) / width, 0, 1)
@@ -1673,37 +1723,171 @@ do
                             gradient.Offset = ENV.Vector2.new(fraction - 0.5, 0)
                         end
                     end
+                    local function lift(target)
+                        local owner = glow and glow.Parent
 
-                    table.insert(connections, (button.MouseEnter:Connect(function(
-                    )
-                        local owner = glow and glow.Parent or card()
-
-                        if owner.AutomaticSize ~= ENV.Enum.AutomaticSize.None or button.AutomaticSize ~= ENV.Enum.AutomaticSize.None then
+                        if not owner then
                             return
                         end
-                        if button.AbsoluteSize.X < MIN_WIDTH or button.AbsoluteSize.Y < MIN_HEIGHT or button.AbsoluteSize.Y > MAX_HEIGHT or button:GetAttribute('NoGlow') == true then
+                        if not scale or scale.Parent ~= owner then
+                            local existing = owner:FindFirstChildOfClass('UIScale')
+
+                            if existing and existing.Name ~= SCALE_NAME then
+                                return
+                            end
+
+                            scale = existing or ENV.Instance.new('UIScale')
+                            scale.Name = SCALE_NAME
+                            scale.Parent = owner
+
+                            table.insert(created, scale)
+                        end
+
+                        tween(scale, LIFT_SECONDS, {Scale = target}, ENV.Enum.EasingStyle.Back)
+                    end
+                    local function sweep()
+                        local shine = glow and glow:FindFirstChild('Shine')
+                        local band = shine and shine:FindFirstChildOfClass('UIGradient')
+
+                        if not band then
                             return
                         end
+
+                        band.Offset = ENV.Vector2.new(-1, 0)
+                        shine.Visible = true
+
+                        tween(band, SHINE_SECONDS, {
+                            Offset = ENV.Vector2.new(1, 0),
+                        }, ENV.Enum.EasingStyle.Sine)
+
+                        local taskApi = ENV.task
+
+                        if type(taskApi) == 'table' and type(taskApi.delay) == 'function' then
+                            (taskApi.delay)(SHINE_SECONDS, function()
+                                if shine.Parent then
+                                    shine.Visible = false
+                                end
+                            end)
+                        end
+                    end
+                    local function ripple()
+                        if not glow or not inputService then
+                            return
+                        end
+
+                        local create = ENV.Instance
+                        local group = create.new('CanvasGroup')
+
+                        group.Name = 'Ripple'
+                        group.BackgroundTransparency = 1
+                        group.Size = ENV.UDim2.fromScale(1, 1)
+                        group.Active = false
+
+                        corner(group, ENV.UDim.new(0, CORNER_RADIUS))
+
+                        local mouse = inputService:GetMouseLocation()
+                        local inset = nil
+
+                        pcall(function()
+                            inset = (ENV.game):GetService('GuiService'):GetGuiInset()
+                        end)
+
+                        local origin = glow.AbsolutePosition
+                        local x = mouse.X - origin.X - (if inset then inset.X else 0)
+                        local y = mouse.Y - origin.Y - (if inset then inset.Y else 0)
+                        local circle = create.new('Frame')
+
+                        circle.AnchorPoint = ENV.Vector2.new(0.5, 0.5)
+                        circle.Position = ENV.UDim2.fromOffset(x, y)
+                        circle.Size = ENV.UDim2.fromOffset(0, 0)
+                        circle.BackgroundColor3 = themeColor(library)
+                        circle.BackgroundTransparency = RIPPLE_ALPHA
+                        circle.BorderSizePixel = 0
+
+                        corner(circle, ENV.UDim.new(0.5, 0))
+
+                        circle.Parent = group
+                        group.Parent = glow
+
+                        local reach = math.max(glow.AbsoluteSize.X, glow.AbsoluteSize.Y) * 2.2
+
+                        tween(circle, RIPPLE_SECONDS, {
+                            Size = ENV.UDim2.fromOffset(reach, reach),
+                            BackgroundTransparency = 1,
+                        })
+
+                        local taskApi = ENV.task
+
+                        if type(taskApi) == 'table' and type(taskApi.delay) == 'function' then
+                            (taskApi.delay)(RIPPLE_SECONDS + 0.05, function()
+                                group:Destroy()
+                            end)
+                        end
+                    end
+                    local function enter()
+                        if not eligible() then
+                            return
+                        end
+
+                        hovered = true
+
                         if not glow or not glow.Parent then
                             glow = buildGlow(card(), color)
 
-                            table.insert(glows, glow)
+                            table.insert(created, glow)
                         end
 
-                        glow.BackgroundColor3 = themeColor(library)
+                        local accent = themeColor(library)
+
+                        glow.BackgroundColor3 = accent
+
+                        local edge = glow:FindFirstChild('Edge')
+
+                        if edge then
+                            edge.Color = accent
+
+                            tween(edge, FADE_SECONDS, {Transparency = STROKE_ALPHA})
+                        end
 
                         fit(glow, glow.Parent)
                         follow()
-                        fade(glow, GLOW_ALPHA)
-                    end)))
+                        tween(glow, FADE_SECONDS, {BackgroundTransparency = GLOW_ALPHA})
+                        sweep()
+                        lift(LIFT_SCALE)
+                    end
+                    local function leave()
+                        hovered = false
+
+                        if glow then
+                            tween(glow, FADE_SECONDS, {BackgroundTransparency = 1})
+
+                            local edge = glow:FindFirstChild('Edge')
+
+                            if edge then
+                                tween(edge, FADE_SECONDS, {Transparency = 1})
+                            end
+                        end
+
+                        lift(1)
+                    end
+
+                    table.insert(connections, (button.MouseEnter:Connect(enter)))
+                    table.insert(connections, (button.MouseLeave:Connect(leave)))
                     table.insert(connections, (button.MouseMoved:Connect(function(
                     )
                         follow()
                     end)))
-                    table.insert(connections, (button.MouseLeave:Connect(function(
+                    table.insert(connections, (button.MouseButton1Down:Connect(function(
+                    )
+                        if glow and hovered then
+                            lift(PRESS_SCALE)
+                            ripple()
+                        end
+                    end)))
+                    table.insert(connections, (button.MouseButton1Up:Connect(function(
                     )
                         if glow then
-                            fade(glow, 1)
+                            lift(if hovered then LIFT_SCALE else 1)
                         end
                     end)))
                 end
@@ -1727,9 +1911,9 @@ do
                             connection:Disconnect()
                         end)
                     end
-                    for _, glow in glows do
+                    for _, item in created do
                         pcall(function()
-                            glow:Destroy()
+                            item:Destroy()
                         end)
                     end
                 end)
@@ -1855,10 +2039,152 @@ do
     end
     do
         local function __modImpl()
+            local Theme = __DARKLUA_BUNDLE_MODULES.v()
+            local ENV = getfenv()
+            local EDGE_NAME = 'ViperEdge'
+            local EDGE_THICKNESS = 1.4
+            local EDGE_ALPHA = 0.25
+            local EDGE_DEGREES_PER_SECOND = 40
+            local DRIFT_SECONDS = 9
+            local DRIFT_DEGREES = 18
+            local COLOR_REFRESH_SECONDS = 1
+            local Ambient = {}
+
+            local function themeColor(library)
+                local theme = if type(library) == 'table'then library.Theme else nil
+                local value = if type(theme) == 'table'then theme.Outline else nil
+
+                if type(value) == 'userdata' or type(value) == 'vector' then
+                    return value
+                end
+
+                return Theme.color('primary')
+            end
+            local function edgeColors(accent)
+                local light = accent:Lerp(ENV.Color3.new(1, 1, 1), 0.55)
+
+                return ENV.ColorSequence.new({
+                    ENV.ColorSequenceKeypoint.new(0, accent),
+                    ENV.ColorSequenceKeypoint.new(0.25, light),
+                    ENV.ColorSequenceKeypoint.new(0.5, accent),
+                    ENV.ColorSequenceKeypoint.new(0.75, light),
+                    ENV.ColorSequenceKeypoint.new(1, accent),
+                })
+            end
+
+            function Ambient.attach(library, cleanup)
+                local gui = if type(library) == 'table'then library.ScreenGui else nil
+
+                if gui == nil or ENV.Instance == nil or ENV.ColorSequence == nil then
+                    return
+                end
+
+                local fill = nil
+
+                for _, object in gui:GetDescendants()do
+                    if object.Name == 'Background' and object:IsA('ImageLabel') then
+                        fill = object
+
+                        break
+                    end
+                end
+
+                local window = fill and fill.Parent
+
+                if not window or not window:IsA('GuiObject') or window:FindFirstChild(EDGE_NAME) then
+                    return
+                end
+
+                local accent = themeColor(library)
+                local stroke = ENV.Instance.new('UIStroke')
+
+                stroke.Name = EDGE_NAME
+                stroke.ApplyStrokeMode = ENV.Enum.ApplyStrokeMode.Border
+                stroke.Thickness = EDGE_THICKNESS
+                stroke.Transparency = EDGE_ALPHA
+                stroke.Color = ENV.Color3.new(1, 1, 1)
+
+                local gradient = ENV.Instance.new('UIGradient')
+
+                gradient.Color = edgeColors(accent)
+                gradient.Parent = stroke
+                stroke.Parent = window
+
+                local runService = (ENV.game):GetService('RunService')
+                local lastColorCheck = 0
+                local heartbeat = runService.Heartbeat:Connect(function(delta)
+                    gradient.Rotation = (gradient.Rotation + EDGE_DEGREES_PER_SECOND * delta) % 360
+
+                    lastColorCheck += delta
+
+                    if lastColorCheck >= COLOR_REFRESH_SECONDS then
+                        lastColorCheck = 0
+
+                        local current = themeColor(library)
+
+                        if current ~= accent then
+                            accent = current
+                            gradient.Color = edgeColors(accent)
+                        end
+                    end
+                end)
+                local drift = nil
+                local backdrop = fill:FindFirstChildOfClass('UIGradient')
+
+                if backdrop then
+                    pcall(function()
+                        local tweenService = (ENV.game):GetService('TweenService')
+                        local info = ENV.TweenInfo.new(DRIFT_SECONDS, ENV.Enum.EasingStyle.Sine, ENV.Enum.EasingDirection.InOut,
+-1, true)
+
+                        drift = tweenService:Create(backdrop, info, {
+                            Rotation = backdrop.Rotation + DRIFT_DEGREES,
+                        })
+
+                        drift:Play()
+                    end)
+                end
+
+                cleanup.add(function()
+                    pcall(function()
+                        heartbeat:Disconnect()
+                    end)
+
+                    if drift then
+                        pcall(function()
+                            drift:Cancel()
+                        end)
+                    end
+
+                    pcall(function()
+                        stroke:Destroy()
+                    end)
+                end)
+            end
+
+            return Ambient
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.y()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.y
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.y = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
             local Types = __DARKLUA_BUNDLE_MODULES.i()
             local Theme = __DARKLUA_BUNDLE_MODULES.v()
             local HoverGlow = __DARKLUA_BUNDLE_MODULES.w()
             local Dither = __DARKLUA_BUNDLE_MODULES.x()
+            local Ambient = __DARKLUA_BUNDLE_MODULES.y()
             local ENV = getfenv()
             local WINDOW_WIDTH = 600
             local WINDOW_HEIGHT = 400
@@ -1976,6 +2302,7 @@ do
                 if library.ScreenGui then
                     pcall(HoverGlow.attach, library, context.cleanup)
                     pcall(Dither.attach, library.ScreenGui, context.cleanup)
+                    pcall(Ambient.attach, library, context.cleanup)
                 end
                 if library.ScreenGui then
                     pcall(function()
@@ -2016,14 +2343,14 @@ do
             return WindUIAdapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.y()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.y
+        function __DARKLUA_BUNDLE_MODULES.z()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.z
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.y = v
+                __DARKLUA_BUNDLE_MODULES.cache.z = v
             end
 
             return v.c
@@ -2057,14 +2384,14 @@ do
             return Overview
         end
 
-        function __DARKLUA_BUNDLE_MODULES.z()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.z
+        function __DARKLUA_BUNDLE_MODULES.A()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.A
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.z = v
+                __DARKLUA_BUNDLE_MODULES.cache.A = v
             end
 
             return v.c
@@ -2213,14 +2540,14 @@ do
             return Settings
         end
 
-        function __DARKLUA_BUNDLE_MODULES.A()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.A
+        function __DARKLUA_BUNDLE_MODULES.B()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.B
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.A = v
+                __DARKLUA_BUNDLE_MODULES.cache.B = v
             end
 
             return v.c
@@ -2256,14 +2583,14 @@ do
             return Diagnostics
         end
 
-        function __DARKLUA_BUNDLE_MODULES.B()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.B
+        function __DARKLUA_BUNDLE_MODULES.C()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.C
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.B = v
+                __DARKLUA_BUNDLE_MODULES.cache.C = v
             end
 
             return v.c
@@ -2271,11 +2598,11 @@ do
     end
     do
         local function __modImpl()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.y()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.z()
             local Theme = __DARKLUA_BUNDLE_MODULES.v()
-            local Overview = __DARKLUA_BUNDLE_MODULES.z()
-            local Settings = __DARKLUA_BUNDLE_MODULES.A()
-            local Diagnostics = __DARKLUA_BUNDLE_MODULES.B()
+            local Overview = __DARKLUA_BUNDLE_MODULES.A()
+            local Settings = __DARKLUA_BUNDLE_MODULES.B()
+            local Diagnostics = __DARKLUA_BUNDLE_MODULES.C()
             local App = {}
             local HOME_GROUP = 'Home'
             local SYSTEM_GROUP = 'System'
@@ -2388,14 +2715,14 @@ do
             return App
         end
 
-        function __DARKLUA_BUNDLE_MODULES.C()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.C
+        function __DARKLUA_BUNDLE_MODULES.D()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.D
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.C = v
+                __DARKLUA_BUNDLE_MODULES.cache.D = v
             end
 
             return v.c
@@ -2414,8 +2741,8 @@ local ManifestClient = __DARKLUA_BUNDLE_MODULES.t()
 local ModuleLoader = __DARKLUA_BUNDLE_MODULES.u()
 local Version = __DARKLUA_BUNDLE_MODULES.r()
 local Validation = __DARKLUA_BUNDLE_MODULES.e()
-local App = __DARKLUA_BUNDLE_MODULES.C()
-local UIAdapter = __DARKLUA_BUNDLE_MODULES.y()
+local App = __DARKLUA_BUNDLE_MODULES.D()
+local UIAdapter = __DARKLUA_BUNDLE_MODULES.z()
 local LOADER_VERSION = '0.3.0'
 local TIMEOUT_SECONDS = 15
 local NOTIFY_RETRY_SECONDS = 0.2
