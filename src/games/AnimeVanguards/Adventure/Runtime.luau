@@ -233,6 +233,39 @@ local function liveDependencies(): any
             local adventure = odyssey and odyssey:FindFirstChild("Adventure")
             return adventure and adventure:FindFirstChild("EndRunEvent")
         end)(),
+        -- The character card offer the game's card window is showing (its own offer table, found in memory: Kind
+        -- "Character"/"CharacterReplace", Options, ExistingCards). Used when the hub missed the offer event.
+        readCharacterOffer = function(): any
+            local players: any = env.game and env.game:GetService("Players")
+            local lp: any = players and players.LocalPlayer
+            local pgui: any = lp and lp:FindFirstChild("PlayerGui")
+            local ah: any = pgui and pgui:FindFirstChild("AdventureHUD")
+            local cc: any = ah and ah:FindFirstChild("ChooseCard", true)
+            local getgc: any = (getfenv() :: any).getgc
+            if not cc or not cc.Visible or type(getgc) ~= "function" then
+                return nil
+            end
+            local ok, objects = pcall(getgc, true)
+            if not ok or type(objects) ~= "table" then
+                return nil
+            end
+            for _, value in objects do
+                if type(value) == "table" then
+                    local kind = rawget(value, "Kind")
+                    if
+                        (kind == "CharacterReplace" or kind == "Character")
+                        and type(rawget(value, "Options")) == "table"
+                    then
+                        return {
+                            Options = rawget(value, "Options"),
+                            ExistingCards = rawget(value, "ExistingCards"),
+                            AtCap = kind == "CharacterReplace",
+                        }
+                    end
+                end
+            end
+            return nil
+        end,
         basicCardNames = (function(): any
             local ok, catalog = pcall(Catalog.read)
             if not ok or type(catalog) ~= "table" then
@@ -1221,6 +1254,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
     local lastLobbyAt = -math.huge
     local lastNewRunAt = -math.huge
     local lastMapPoll = -math.huge
+    local lastCharacterUiAt = -math.huge
     local lastEndRunAt = -math.huge
     local function watchShop()
         local taskApi: any = deps.task
@@ -1397,6 +1431,21 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                             if not basicNames[option.CardName] then
                                 allBasic = false
                             end
+                        end
+                    end
+                    if
+                        not allBasic
+                        and saved.get("autoCharacterCard") == true
+                        and floorTasks["character card"] == nil
+                        and deps.clock() - lastCharacterUiAt >= REPEAT_SECONDS * 2
+                    then
+                        local readCharacter: any = deps.readCharacterOffer
+                        local okRead, characterOffer = pcall(readCharacter or function()
+                            return nil
+                        end)
+                        if okRead and type(characterOffer) == "table" then
+                            lastCharacterUiAt = deps.clock()
+                            onCharacterOffer(characterOffer)
                         end
                     end
                     if allBasic and #activeOffer.Options > 0 then

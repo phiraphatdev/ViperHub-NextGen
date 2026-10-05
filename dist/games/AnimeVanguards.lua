@@ -9255,6 +9255,40 @@ do
 
                         return adventure and adventure:FindFirstChild('EndRunEvent')
                     end)(),
+                    readCharacterOffer = function()
+                        local players = env.game and env.game:GetService('Players')
+                        local lp = players and players.LocalPlayer
+                        local pgui = lp and lp:FindFirstChild('PlayerGui')
+                        local ah = pgui and pgui:FindFirstChild('AdventureHUD')
+                        local cc = ah and ah:FindFirstChild('ChooseCard', true)
+                        local getgc = ((getfenv())).getgc
+
+                        if not cc or not cc.Visible or type(getgc) ~= 'function' then
+                            return nil
+                        end
+
+                        local ok, objects = pcall(getgc, true)
+
+                        if not ok or type(objects) ~= 'table' then
+                            return nil
+                        end
+
+                        for _, value in objects do
+                            if type(value) == 'table' then
+                                local kind = rawget(value, 'Kind')
+
+                                if (kind == 'CharacterReplace' or kind == 'Character') and type(rawget(value, 'Options')) == 'table' then
+                                    return {
+                                        Options = rawget(value, 'Options'),
+                                        ExistingCards = rawget(value, 'ExistingCards'),
+                                        AtCap = kind == 'CharacterReplace',
+                                    }
+                                end
+                            end
+                        end
+
+                        return nil
+                    end,
                     basicCardNames = (function()
                         local ok, catalog = pcall(Catalog.read)
 
@@ -10300,6 +10334,7 @@ do
                 local lastLobbyAt = -math.huge
                 local lastNewRunAt = -math.huge
                 local lastMapPoll = -math.huge
+                local lastCharacterUiAt = -math.huge
                 local lastEndRunAt = -math.huge
 
                 local function watchShop()
@@ -10467,6 +10502,19 @@ do
                                         if not basicNames[option.CardName] then
                                             allBasic = false
                                         end
+                                    end
+                                end
+                                if not allBasic and saved.get('autoCharacterCard') == true and floorTasks['character card'] == nil and deps.clock() - lastCharacterUiAt >= REPEAT_SECONDS * 2 then
+                                    local readCharacter = deps.readCharacterOffer
+                                    local okRead, characterOffer = pcall(readCharacter or function(
+                                    )
+                                        return nil
+                                    end)
+
+                                    if okRead and type(characterOffer) == 'table' then
+                                        lastCharacterUiAt = deps.clock()
+
+                                        onCharacterOffer(characterOffer)
                                     end
                                 end
                                 if allBasic and #activeOffer.Options > 0 then
