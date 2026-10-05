@@ -23,7 +23,7 @@ local SHOP_GAP_SECONDS: number = (config :: any).thresholds.adventureShopGapSeco
 local SHOP_WATCH_SECONDS: number = (config :: any).thresholds.adventureShopWatchSeconds
 local SHOP_ASK_SECONDS: number = (config :: any).thresholds.adventureShopAskSeconds
 local SHOP_UI_GRACE_SECONDS: number = (config :: any).thresholds.adventureShopUiGraceSeconds
-local HISTORY_LIMIT = 40
+local HISTORY_LIMIT = 80
 local END_SCREEN_SECONDS = 1
 local LOBBY_RETRY_SECONDS = 20
 local NEW_RUN_FALLBACK_SECONDS = 40
@@ -231,6 +231,17 @@ local function liveDependencies(): any
             local odyssey = networking and networking:FindFirstChild("Odyssey")
             local adventure = odyssey and odyssey:FindFirstChild("Adventure")
             return adventure and adventure:FindFirstChild("EndRunEvent")
+        end)(),
+        basicCardNames = (function(): any
+            local ok, catalog = pcall(Catalog.read)
+            if not ok or type(catalog) ~= "table" then
+                return nil
+            end
+            local set = {}
+            for _, name in catalog.basicCards do
+                set[name] = true
+            end
+            return set
         end)(),
         characterCardName = (function(): any
             local ok, catalog = pcall(function()
@@ -740,8 +751,32 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                 return
             end
             local fireFn: any = entry.Fire
-            local ok = if index then pcall(fireFn, { Choice = index }) else pcall(fireFn)
+            -- A plain pick goes through the open card window (so it closes), named via CardId -> display name.
+            local pickedName: string? = nil
+            if
+                index
+                and not atCap
+                and type(offer.Options) == "table"
+                and type(offer.Options[index]) == "table"
+            then
+                local option: any = offer.Options[index]
+                pickedName = if type(nameOf) == "table" then nameOf[option.CardId] else nil
+            end
+            local ok = false
+            if pickedName then
+                local okClick, clicked = pcall(deps.clickCard or function()
+                    return false
+                end, pickedName)
+                ok = okClick and clicked == true
+            end
+            if not ok then
+                ok = if index then pcall(fireFn, { Choice = index }) else pcall(fireFn)
+            end
             if ok then
+                notify(
+                    "Auto Character Card",
+                    if index then (pickedName or ("option " .. tostring(index))) else "Skipped"
+                )
                 self.cards += 1
                 setStatus(
                     if index
@@ -1290,11 +1325,17 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                 local readOfferFn: any = deps.readActiveCardOffer
                 if type(readOfferFn) == "function" then
                     local activeOffer = (readOfferFn :: any)()
-                    if
-                        type(activeOffer) == "table"
-                        and type(activeOffer.Options) == "table"
-                        and #activeOffer.Options > 0
-                    then
+                    -- The same card window shows character card offers: only an offer of basic cards is a basic pick.
+                    local basicNames: any = deps.basicCardNames
+                    local allBasic = type(activeOffer) == "table" and type(activeOffer.Options) == "table"
+                    if allBasic and type(basicNames) == "table" then
+                        for _, option in activeOffer.Options do
+                            if not basicNames[option.CardName] then
+                                allBasic = false
+                            end
+                        end
+                    end
+                    if allBasic and #activeOffer.Options > 0 then
                         onBasicOffer(activeOffer)
                     end
                 end

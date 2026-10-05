@@ -8983,7 +8983,7 @@ do
             local SHOP_WATCH_SECONDS = (config).thresholds.adventureShopWatchSeconds
             local SHOP_ASK_SECONDS = (config).thresholds.adventureShopAskSeconds
             local SHOP_UI_GRACE_SECONDS = (config).thresholds.adventureShopUiGraceSeconds
-            local HISTORY_LIMIT = 40
+            local HISTORY_LIMIT = 80
             local END_SCREEN_SECONDS = 1
             local LOBBY_RETRY_SECONDS = 20
             local NEW_RUN_FALLBACK_SECONDS = 40
@@ -9201,6 +9201,21 @@ do
                         local adventure = odyssey and odyssey:FindFirstChild('Adventure')
 
                         return adventure and adventure:FindFirstChild('EndRunEvent')
+                    end)(),
+                    basicCardNames = (function()
+                        local ok, catalog = pcall(Catalog.read)
+
+                        if not ok or type(catalog) ~= 'table' then
+                            return nil
+                        end
+
+                        local set = {}
+
+                        for _, name in catalog.basicCards do
+                            set[name] = true
+                        end
+
+                        return set
                     end)(),
                     characterCardName = (function()
                         local ok, catalog = pcall(function()
@@ -9760,9 +9775,30 @@ do
                         end
 
                         local fireFn = entry.Fire
-                        local ok = if index then pcall(fireFn, {Choice = index})else pcall(fireFn)
+                        local pickedName = nil
 
+                        if index and not atCap and type(offer.Options) == 'table' and type(offer.Options[index]) == 'table' then
+                            local option = offer.Options[index]
+
+                            pickedName = if type(nameOf) == 'table'then nameOf[option.CardId]else nil
+                        end
+
+                        local ok = false
+
+                        if pickedName then
+                            local okClick, clicked = pcall(deps.clickCard or function(
+                            )
+                                return false
+                            end, pickedName)
+
+                            ok = okClick and clicked == true
+                        end
+                        if not ok then
+                            ok = if index then pcall(fireFn, {Choice = index})else pcall(fireFn)
+                        end
                         if ok then
+                            notify('Auto Character Card', if index then(pickedName or ('option ' .. tostring(index)))else'Skipped')
+
                             self.cards += 1
 
                             setStatus(if index then(if atCap then'Auto Character Card: swapped in a better card (' .. tostring(index) .. ')'else'Auto Character Card: picked option ' .. tostring(index))else'Auto Character Card: skipped (no better card)')
@@ -10322,8 +10358,17 @@ do
 
                             if type(readOfferFn) == 'function' then
                                 local activeOffer = (readOfferFn)()
+                                local basicNames = deps.basicCardNames
+                                local allBasic = type(activeOffer) == 'table' and type(activeOffer.Options) == 'table'
 
-                                if type(activeOffer) == 'table' and type(activeOffer.Options) == 'table' and #activeOffer.Options > 0 then
+                                if allBasic and type(basicNames) == 'table' then
+                                    for _, option in activeOffer.Options do
+                                        if not basicNames[option.CardName] then
+                                            allBasic = false
+                                        end
+                                    end
+                                end
+                                if allBasic and #activeOffer.Options > 0 then
                                     onBasicOffer(activeOffer)
                                 end
                             end
