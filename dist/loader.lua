@@ -1518,7 +1518,7 @@ do
             local MIN_HEIGHT = 26
             local MAX_HEIGHT = 200
             local GLOW_NAME = 'ViperGlow'
-            local SCALE_NAME = 'ViperScale'
+            local SCALE_NAME = 'ViperTitleScale'
             local GLOW_ALPHA = 0.8
             local FADE_SECONDS = 0.18
             local CORNER_RADIUS = 14
@@ -1527,11 +1527,8 @@ do
             local EDGE_FADE = 0.55
             local STROKE_ALPHA = 0.35
             local STROKE_THICKNESS = 1.5
-            local SHINE_SECONDS = 0.55
-            local SHINE_ALPHA = 0.82
-            local LIFT_SCALE = 1.012
-            local PRESS_SCALE = 0.985
-            local LIFT_SECONDS = 0.16
+            local TITLE_SCALE = 1.06
+            local TITLE_SECONDS = 0.16
             local RIPPLE_SECONDS = 0.5
             local RIPPLE_ALPHA = 0.65
             local HoverGlow = {}
@@ -1589,32 +1586,6 @@ do
                 stroke.Thickness = STROKE_THICKNESS
                 stroke.Transparency = 1
                 stroke.Parent = glow
-
-                local shine = create.new('Frame')
-
-                shine.Name = 'Shine'
-                shine.BackgroundColor3 = ENV.Color3.new(1, 1, 1)
-                shine.BackgroundTransparency = 0
-                shine.BorderSizePixel = 0
-                shine.Size = ENV.UDim2.fromScale(1, 1)
-                shine.Visible = false
-                shine.Active = false
-
-                corner(shine, ENV.UDim.new(0, CORNER_RADIUS))
-
-                local band = create.new('UIGradient')
-
-                band.Rotation = 20
-                band.Transparency = ENV.NumberSequence.new({
-                    ENV.NumberSequenceKeypoint.new(0, 1),
-                    ENV.NumberSequenceKeypoint.new(0.42, 1),
-                    ENV.NumberSequenceKeypoint.new(0.5, SHINE_ALPHA),
-                    ENV.NumberSequenceKeypoint.new(0.58, 1),
-                    ENV.NumberSequenceKeypoint.new(1, 1),
-                })
-                band.Offset = ENV.Vector2.new(-1, 0)
-                band.Parent = shine
-                shine.Parent = glow
                 glow.Parent = card
 
                 fit(glow, card)
@@ -1723,14 +1694,46 @@ do
                             gradient.Offset = ENV.Vector2.new(fraction - 0.5, 0)
                         end
                     end
-                    local function lift(target)
+
+                    local title = nil
+
+                    local function titleOf(owner)
+                        local frame = owner:FindFirstChild('TitleFrame', true)
+                        local found = frame and frame:FindFirstChildWhichIsA('TextLabel', true)
+
+                        if found then
+                            return found
+                        end
+
+                        local best = nil
+
+                        for _, descendant in owner:GetDescendants()do
+                            local item = descendant
+
+                            if item:IsA('TextLabel') and item.Visible and item.Text ~= '' then
+                                if not best or item.TextSize > best.TextSize then
+                                    best = item
+                                end
+                            end
+                        end
+
+                        return best
+                    end
+                    local function grow(target)
                         local owner = glow and glow.Parent
 
                         if not owner then
                             return
                         end
-                        if not scale or scale.Parent ~= owner then
-                            local existing = owner:FindFirstChildOfClass('UIScale')
+                        if not title or not title.Parent then
+                            title = titleOf(owner)
+                            scale = nil
+                        end
+                        if not title then
+                            return
+                        end
+                        if not scale or scale.Parent ~= title then
+                            local existing = title:FindFirstChildOfClass('UIScale')
 
                             if existing and existing.Name ~= SCALE_NAME then
                                 return
@@ -1738,37 +1741,12 @@ do
 
                             scale = existing or ENV.Instance.new('UIScale')
                             scale.Name = SCALE_NAME
-                            scale.Parent = owner
+                            scale.Parent = title
 
                             table.insert(created, scale)
                         end
 
-                        tween(scale, LIFT_SECONDS, {Scale = target}, ENV.Enum.EasingStyle.Back)
-                    end
-                    local function sweep()
-                        local shine = glow and glow:FindFirstChild('Shine')
-                        local band = shine and shine:FindFirstChildOfClass('UIGradient')
-
-                        if not band then
-                            return
-                        end
-
-                        band.Offset = ENV.Vector2.new(-1, 0)
-                        shine.Visible = true
-
-                        tween(band, SHINE_SECONDS, {
-                            Offset = ENV.Vector2.new(1, 0),
-                        }, ENV.Enum.EasingStyle.Sine)
-
-                        local taskApi = ENV.task
-
-                        if type(taskApi) == 'table' and type(taskApi.delay) == 'function' then
-                            (taskApi.delay)(SHINE_SECONDS, function()
-                                if shine.Parent then
-                                    shine.Visible = false
-                                end
-                            end)
-                        end
+                        tween(scale, TITLE_SECONDS, {Scale = target})
                     end
                     local function ripple()
                         if not glow or not inputService then
@@ -1852,8 +1830,7 @@ do
                         fit(glow, glow.Parent)
                         follow()
                         tween(glow, FADE_SECONDS, {BackgroundTransparency = GLOW_ALPHA})
-                        sweep()
-                        lift(LIFT_SCALE)
+                        grow(TITLE_SCALE)
                     end
                     local function leave()
                         hovered = false
@@ -1868,7 +1845,7 @@ do
                             end
                         end
 
-                        lift(1)
+                        grow(1)
                     end
 
                     table.insert(connections, (button.MouseEnter:Connect(enter)))
@@ -1880,14 +1857,7 @@ do
                     table.insert(connections, (button.MouseButton1Down:Connect(function(
                     )
                         if glow and hovered then
-                            lift(PRESS_SCALE)
                             ripple()
-                        end
-                    end)))
-                    table.insert(connections, (button.MouseButton1Up:Connect(function(
-                    )
-                        if glow then
-                            lift(if hovered then LIFT_SCALE else 1)
                         end
                     end)))
                 end
@@ -2162,6 +2132,205 @@ do
                 end)
             end
 
+            local HIDE_SCALE = 0.9
+            local HIDE_SECONDS = 0.28
+            local SHOW_SECONDS = 0.45
+            local PILL_HOVER_SCALE = 1.07
+            local PILL_POP_FROM = 0.6
+            local PILL_HALO_ALPHA = 0.82
+            local PILL_HALO_PULSE_ALPHA = 0.68
+            local PILL_HALO_PULSE_SECONDS = 1.4
+
+            local function tweenOf(object, seconds, goal, style, direction)
+                local ok, result = pcall(function()
+                    local tweenService = (ENV.game):GetService('TweenService')
+
+                    return tweenService:Create(object, ENV.TweenInfo.new(seconds, style, direction), goal)
+                end)
+
+                if ok and result then
+                    result:Play()
+
+                    return result
+                end
+
+                return nil
+            end
+            local function isColor(value)
+                return type(value) == 'userdata' or type(value) == 'vector'
+            end
+
+            function Ambient.window(window, library, cleanup)
+                if type(window) ~= 'table' or ENV.Instance == nil then
+                    return
+                end
+
+                local elements = window.UIElements
+                local frame = if type(elements) == 'table'then elements.Main else nil
+                local scaleObj = frame and frame:FindFirstChildOfClass('UIScale')
+                local edge = frame and frame:FindFirstChild(EDGE_NAME)
+                local baseScale = if scaleObj then scaleObj.Scale else 1
+                local originalClose = window.Close
+                local originalOpen = window.Open
+                local quint = ENV.Enum.EasingStyle.Quint
+                local quad = ENV.Enum.EasingStyle.Quad
+                local back = ENV.Enum.EasingStyle.Back
+                local inDir = ENV.Enum.EasingDirection.In
+                local outDir = ENV.Enum.EasingDirection.Out
+
+                if type(originalClose) == 'function' and type(originalOpen) == 'function' and scaleObj then
+                    window.Close = function(...)
+                        if not window.Closed then
+                            baseScale = scaleObj.Scale
+
+                            tweenOf(scaleObj, HIDE_SECONDS, {
+                                Scale = baseScale * HIDE_SCALE,
+                            }, quint, inDir)
+
+                            if edge then
+                                tweenOf(edge, HIDE_SECONDS, {Transparency = 1}, quad, outDir)
+                            end
+                        end
+
+                        return (originalClose)(...)
+                    end
+                    window.Open = function(...)
+                        if window.Closed then
+                            scaleObj.Scale = baseScale * HIDE_SCALE
+                        end
+
+                        local result = (originalOpen)(...)
+
+                        tweenOf(scaleObj, SHOW_SECONDS, {Scale = baseScale}, back, outDir)
+
+                        if edge then
+                            tweenOf(edge, SHOW_SECONDS, {Transparency = EDGE_ALPHA}, quad, outDir)
+                        end
+
+                        return result
+                    end
+
+                    cleanup.add(function()
+                        window.Close = originalClose
+                        window.Open = originalOpen
+                    end)
+                end
+
+                local openMain = window.OpenButtonMain
+                local pill = if type(openMain) == 'table'then openMain.Button else nil
+                local holder = pill and pill.Parent
+
+                if not pill or not holder then
+                    return
+                end
+
+                local accent = themeColor(library)
+                local theme = if type(library) == 'table'then library.Theme else nil
+                local dark = if type(theme) == 'table' and isColor(theme.Dialog)then theme.Dialog else ENV.Color3.fromRGB(12, 16, 20)
+
+                pill.BackgroundColor3 = dark
+                pill.BackgroundTransparency = 0.06
+
+                local fill = ENV.Instance.new('UIGradient')
+
+                fill.Name = 'ViperFill'
+                fill.Rotation = 90
+                fill.Color = ENV.ColorSequence.new(dark:Lerp(accent, 0.18), dark)
+                fill.Parent = pill
+
+                local ring = pill:FindFirstChildOfClass('UIStroke')
+                local ringGradient = ring and ring:FindFirstChildOfClass('UIGradient')
+
+                if ring then
+                    ring.Thickness = 1.6
+                    ring.Transparency = 0.1
+                end
+                if ringGradient then
+                    ringGradient.Color = edgeColors(accent)
+                end
+
+                local halo = ENV.Instance.new('Frame')
+
+                halo.Name = 'ViperHalo'
+                halo.AnchorPoint = ENV.Vector2.new(0.5, 0.5)
+                halo.Position = ENV.UDim2.fromScale(0.5, 0.5)
+                halo.Size = ENV.UDim2.new(1, 12, 1, 12)
+                halo.BackgroundColor3 = accent
+                halo.BackgroundTransparency = PILL_HALO_ALPHA
+                halo.BorderSizePixel = 0
+                halo.ZIndex = math.max((tonumber(pill.ZIndex) or 1) - 1, 0)
+                halo.Active = false
+
+                local haloCorner = ENV.Instance.new('UICorner')
+
+                haloCorner.CornerRadius = ENV.UDim.new(1, 0)
+                haloCorner.Parent = halo
+                halo.Parent = holder
+
+                local pulse = nil
+
+                pcall(function()
+                    local tweenService = (ENV.game):GetService('TweenService')
+                    local info = ENV.TweenInfo.new(PILL_HALO_PULSE_SECONDS, ENV.Enum.EasingStyle.Sine, ENV.Enum.EasingDirection.InOut,
+-1, true)
+
+                    pulse = tweenService:Create(halo, info, {BackgroundTransparency = PILL_HALO_PULSE_ALPHA})
+
+                    pulse:Play()
+                end)
+
+                local pillScale = pill:FindFirstChildOfClass('UIScale')
+                local connections = {}
+                local button = pill:FindFirstChildWhichIsA('TextButton')
+
+                if pillScale and button then
+                    table.insert(connections, (button.MouseEnter:Connect(function(
+                    )
+                        tweenOf(pillScale, 0.18, {Scale = PILL_HOVER_SCALE}, back, outDir)
+                    end)))
+                    table.insert(connections, (button.MouseLeave:Connect(function(
+                    )
+                        tweenOf(pillScale, 0.18, {Scale = 1}, quad, outDir)
+                    end)))
+                    table.insert(connections, (holder:GetPropertyChangedSignal('Visible'):Connect(function(
+                    )
+                        if holder.Visible then
+                            pillScale.Scale = PILL_POP_FROM
+
+                            tweenOf(pillScale, 0.4, {Scale = 1}, back, outDir)
+                        end
+                    end)))
+                end
+
+                local runService = (ENV.game):GetService('RunService')
+
+                table.insert(connections, (runService.Heartbeat:Connect(function(
+                    delta
+                )
+                    if holder.Visible and ringGradient then
+                        ringGradient.Rotation = (ringGradient.Rotation + EDGE_DEGREES_PER_SECOND * 1.5 * delta) % 360
+                    end
+                end)))
+                cleanup.add(function()
+                    for _, connection in connections do
+                        pcall(function()
+                            connection:Disconnect()
+                        end)
+                    end
+
+                    if pulse then
+                        pcall(function()
+                            pulse:Cancel()
+                        end)
+                    end
+
+                    pcall(function()
+                        halo:Destroy()
+                        fill:Destroy()
+                    end)
+                end)
+            end
+
             return Ambient
         end
 
@@ -2294,6 +2463,7 @@ do
                         Icon = 'zap',
                         Enabled = true,
                         OnlyMobile = false,
+                        Position = if ENV.UDim2 then(ENV.UDim2).new(0.5, 0, 0, 96)else nil,
                         Color = if ENV.ColorSequence and Theme.color('primary')then(ENV.ColorSequence).new(Theme.color('primary'), Theme.color('secondary'))else nil,
                     },
                 })
@@ -2324,6 +2494,9 @@ do
                         (library.NotificationGui).DisplayOrder = BASE_DISPLAY_ORDER + 30
                     end)
                 end
+
+                pcall(Ambient.window, window, library, context.cleanup)
+
                 if window.SetUIScale then
                     (window.SetUIScale)(window, config.uiScale)
                 end

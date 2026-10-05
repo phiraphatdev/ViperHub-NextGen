@@ -20,8 +20,6 @@ return table.freeze({
         riftsData = "Modules.Gameplay.Rifts.RiftsDataHandler",
         challengeAttempts = "Modules.Gameplay.Challenges.ChallengesAttemptsHandler",
         lobbyReturnClient = "NetworkCode.GameTeleportLobbyReturnClient",
-        stageMechanicsClient2 = "NetworkCode.GameStageMechanicsClient",
-        playerYenHandler = "Modules.Gameplay.PlayerYenHandler",
         gameHandler = "Modules.Gameplay.GameHandler",
         autoPlayHandler = "Modules.Gameplay.AutoPlay.AutoPlayHandler",
         gameOdysseyClient = "NetworkCode.GameOdysseyClient",

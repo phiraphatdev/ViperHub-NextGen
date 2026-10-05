@@ -280,7 +280,7 @@ local function liveDependencies(): any
         end,
         -- Itches (observed in OdysseyItchesHandler): GameStageMechanicsClient.ItchesLoaded {Items {Id, CFrame, Cost}},
         -- ItchesCostUpdated {Id, Cost}, ItchesInteractRequest.Fire(id); the prompt works within 8 studs.
-        stageMechanics = optionalModule(replicated, paths.stageMechanicsClient2),
+        stageMechanics = optionalModule(replicated, paths.stageMechanicsClient),
         yen = function(): number?
             local yenHandler: any =
                 optionalModule(env.game:GetService("StarterPlayer"), paths.playerYenHandler)

@@ -101,6 +101,8 @@ function WindUIAdapter.create(
             Icon = "zap",
             Enabled = true,
             OnlyMobile = false,
+            -- Below the game's top bar (the default spot covered event timers); it can still be dragged.
+            Position = if ENV.UDim2 then (ENV.UDim2 :: any).new(0.5, 0, 0, 96) else nil,
             Color = if ENV.ColorSequence and Theme.color("primary")
                 then (ENV.ColorSequence :: any).new(Theme.color("primary"), Theme.color("secondary"))
                 else nil,
@@ -132,6 +134,7 @@ function WindUIAdapter.create(
             (library.NotificationGui :: any).DisplayOrder = BASE_DISPLAY_ORDER + 30
         end)
     end
+    pcall(Ambient.window, window, library, context.cleanup)
     if window.SetUIScale then
         (window.SetUIScale :: any)(window, config.uiScale)
     end

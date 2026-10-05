@@ -68,8 +68,6 @@ do
                     riftsData = 'Modules.Gameplay.Rifts.RiftsDataHandler',
                     challengeAttempts = 'Modules.Gameplay.Challenges.ChallengesAttemptsHandler',
                     lobbyReturnClient = 'NetworkCode.GameTeleportLobbyReturnClient',
-                    stageMechanicsClient2 = 'NetworkCode.GameStageMechanicsClient',
-                    playerYenHandler = 'Modules.Gameplay.PlayerYenHandler',
                     gameHandler = 'Modules.Gameplay.GameHandler',
                     autoPlayHandler = 'Modules.Gameplay.AutoPlay.AutoPlayHandler',
                     gameOdysseyClient = 'NetworkCode.GameOdysseyClient',
@@ -9343,7 +9341,7 @@ do
 
                         return nil
                     end,
-                    stageMechanics = optionalModule(replicated, paths.stageMechanicsClient2),
+                    stageMechanics = optionalModule(replicated, paths.stageMechanicsClient),
                     yen = function()
                         local yenHandler = optionalModule(env.game:GetService('StarterPlayer'), paths.playerYenHandler)
 

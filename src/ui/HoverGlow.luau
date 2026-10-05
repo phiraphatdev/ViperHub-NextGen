@@ -1,7 +1,7 @@
 --!strict
 --[[
-Purpose: Hover and press effects on hub cards and buttons: a glow that follows the mouse, an accent outline, a light
-         sweep on entry, a slight lift, and a ripple from the click point
+Purpose: Hover and press effects on hub cards and buttons: a glow that follows the mouse, an accent outline, the
+         card's title growing a little, and a ripple from the click point
 Input: The library (ScreenGui, current Theme), and the context cleanup list; all optional outside Roblox
 Output: attach() returns nothing; every connection and effect instance is removed by the cleanup
 Dependencies: Theme
@@ -14,7 +14,7 @@ local MIN_WIDTH = 110
 local MIN_HEIGHT = 26
 local MAX_HEIGHT = 200 -- taller buttons are containers (a card holding a list): hovering a row inside is not hovering the card
 local GLOW_NAME = "ViperGlow"
-local SCALE_NAME = "ViperScale"
+local SCALE_NAME = "ViperTitleScale"
 local GLOW_ALPHA = 0.8
 local FADE_SECONDS = 0.18
 local CORNER_RADIUS = 14
@@ -23,11 +23,8 @@ local SECTION_RATIO = 1.5
 local EDGE_FADE = 0.55 -- gradient transparency at the card edges: the whole card tints, the cursor spot is brighter
 local STROKE_ALPHA = 0.35 -- accent outline while hovered
 local STROKE_THICKNESS = 1.5
-local SHINE_SECONDS = 0.55
-local SHINE_ALPHA = 0.82 -- the brightest part of the light sweep
-local LIFT_SCALE = 1.012
-local PRESS_SCALE = 0.985
-local LIFT_SECONDS = 0.16
+local TITLE_SCALE = 1.06 -- the title grows from its left edge; the card itself never scales (scaled text shimmers)
+local TITLE_SECONDS = 0.16
 local RIPPLE_SECONDS = 0.5
 local RIPPLE_ALPHA = 0.65
 
@@ -58,7 +55,7 @@ local function corner(parent: any, radius: any)
     item.Parent = parent
 end
 
--- Builds the effect layer once per card: the glow fill, the accent outline and the light sweep band.
+-- Builds the effect layer once per card: the glow fill and the accent outline.
 local function buildGlow(card: any, color: any): any
     local create = ENV.Instance
     local glow = create.new("Frame")
@@ -83,27 +80,6 @@ local function buildGlow(card: any, color: any): any
     stroke.Thickness = STROKE_THICKNESS
     stroke.Transparency = 1
     stroke.Parent = glow
-    local shine = create.new("Frame")
-    shine.Name = "Shine"
-    shine.BackgroundColor3 = ENV.Color3.new(1, 1, 1)
-    shine.BackgroundTransparency = 0
-    shine.BorderSizePixel = 0
-    shine.Size = ENV.UDim2.fromScale(1, 1)
-    shine.Visible = false
-    shine.Active = false
-    corner(shine, ENV.UDim.new(0, CORNER_RADIUS))
-    local band = create.new("UIGradient")
-    band.Rotation = 20
-    band.Transparency = ENV.NumberSequence.new({
-        ENV.NumberSequenceKeypoint.new(0, 1),
-        ENV.NumberSequenceKeypoint.new(0.42, 1),
-        ENV.NumberSequenceKeypoint.new(0.5, SHINE_ALPHA),
-        ENV.NumberSequenceKeypoint.new(0.58, 1),
-        ENV.NumberSequenceKeypoint.new(1, 1),
-    })
-    band.Offset = ENV.Vector2.new(-1, 0)
-    band.Parent = shine
-    shine.Parent = glow
     glow.Parent = card
     fit(glow, card)
     return glow
@@ -210,41 +186,49 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
                 gradient.Offset = ENV.Vector2.new(fraction - 0.5, 0)
             end
         end
-        -- The lift uses its own UIScale, and only on cards that have none (WindUI may animate its own).
-        local function lift(target: number)
+        -- The card's title: the label in its TitleFrame, else its largest visible label. It grows with its own
+        -- UIScale (only when WindUI put none there); the card itself never scales.
+        local title: any = nil
+        local function titleOf(owner: any): any
+            local frame: any = owner:FindFirstChild("TitleFrame", true)
+            local found: any = frame and frame:FindFirstChildWhichIsA("TextLabel", true)
+            if found then
+                return found
+            end
+            local best: any = nil
+            for _, descendant in owner:GetDescendants() do
+                local item: any = descendant
+                if item:IsA("TextLabel") and item.Visible and item.Text ~= "" then
+                    if not best or item.TextSize > best.TextSize then
+                        best = item
+                    end
+                end
+            end
+            return best
+        end
+        local function grow(target: number)
             local owner: any = glow and glow.Parent
             if not owner then
                 return
             end
-            if not scale or scale.Parent ~= owner then
-                local existing: any = owner:FindFirstChildOfClass("UIScale")
+            if not title or not title.Parent then
+                title = titleOf(owner)
+                scale = nil
+            end
+            if not title then
+                return
+            end
+            if not scale or scale.Parent ~= title then
+                local existing: any = title:FindFirstChildOfClass("UIScale")
                 if existing and existing.Name ~= SCALE_NAME then
                     return
                 end
                 scale = existing or ENV.Instance.new("UIScale")
                 scale.Name = SCALE_NAME
-                scale.Parent = owner
+                scale.Parent = title
                 table.insert(created, scale)
             end
-            tween(scale, LIFT_SECONDS, { Scale = target }, ENV.Enum.EasingStyle.Back)
-        end
-        local function sweep()
-            local shine: any = glow and glow:FindFirstChild("Shine")
-            local band: any = shine and shine:FindFirstChildOfClass("UIGradient")
-            if not band then
-                return
-            end
-            band.Offset = ENV.Vector2.new(-1, 0)
-            shine.Visible = true
-            tween(band, SHINE_SECONDS, { Offset = ENV.Vector2.new(1, 0) }, ENV.Enum.EasingStyle.Sine)
-            local taskApi: any = ENV.task
-            if type(taskApi) == "table" and type(taskApi.delay) == "function" then
-                (taskApi.delay :: any)(SHINE_SECONDS, function()
-                    if shine.Parent then
-                        shine.Visible = false
-                    end
-                end)
-            end
+            tween(scale, TITLE_SECONDS, { Scale = target })
         end
         -- A circle that grows from the click point and fades, clipped to the rounded card by a CanvasGroup.
         local function ripple()
@@ -308,8 +292,7 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
             fit(glow, glow.Parent)
             follow()
             tween(glow, FADE_SECONDS, { BackgroundTransparency = GLOW_ALPHA })
-            sweep()
-            lift(LIFT_SCALE)
+            grow(TITLE_SCALE)
         end
         local function leave()
             hovered = false
@@ -320,7 +303,7 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
                     tween(edge, FADE_SECONDS, { Transparency = 1 })
                 end
             end
-            lift(1)
+            grow(1)
         end
         table.insert(connections, button.MouseEnter:Connect(enter) :: any)
         table.insert(connections, button.MouseLeave:Connect(leave) :: any)
@@ -334,16 +317,7 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
             connections,
             button.MouseButton1Down:Connect(function()
                 if glow and hovered then
-                    lift(PRESS_SCALE)
                     ripple()
-                end
-            end) :: any
-        )
-        table.insert(
-            connections,
-            button.MouseButton1Up:Connect(function()
-                if glow then
-                    lift(if hovered then LIFT_SCALE else 1)
                 end
             end) :: any
         )
