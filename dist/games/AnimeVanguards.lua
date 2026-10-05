@@ -9505,6 +9505,7 @@ do
                 local guardedRetry
                 local shopHandled = false
                 local shopClosedAt = -math.huge
+                local shopBusyUntil = -math.huge
                 local floorTasks = {}
 
                 local function beginTask(name)
@@ -9930,8 +9931,15 @@ do
                     local stock = if type(info) == 'table'then info.Stock else nil
                     local now = deps.clock()
                     local floorOf = deps.floor
-                    local key = 'shop:' .. tostring(if type(floorOf) == 'function'then(floorOf)()else nil) .. ':' .. tostring(if type(info) == 'table'then info.Budget else nil) .. ':' .. tostring(type(stock) == 'table' and #stock or 0)
+                    local key = 'shop:' .. tostring(if type(floorOf) == 'function'then(floorOf)()else nil) .. ':' .. tostring(if type(info) == 'table'then info.Budget else nil) .. ':' .. tostring(type(stock) == 'table' and #stock or 0) .. ':' .. tostring(if type(info) == 'table'then info.Spent else nil)
 
+                    if type(stock) == 'table' then
+                        for _, item in stock do
+                            if type(item) == 'table' and item.Purchased ~= true then
+                                key ..= ':' .. tostring(item.Index) .. tostring(item.BasicCardName or item.TraitName or item.Kind)
+                            end
+                        end
+                    end
                     if key == lastShopKey and now - lastShopAt < REPEAT_SECONDS then
                         return
                     end
@@ -10034,6 +10042,8 @@ do
                             end
                         end)
                     end
+
+                    shopBusyUntil = deps.clock() + PICK_DELAY_SECONDS + SHOP_GAP_SECONDS * (#plan + 1)
 
                     later(PICK_DELAY_SECONDS + SHOP_GAP_SECONDS * #plan, leave)
                 end
@@ -10423,7 +10433,7 @@ do
 
                         local closeShopFn = deps.closeShopUi
 
-                        if wanted and type(closeShopFn) == 'function' and deps.isAdventure() then
+                        if getSettings().get('leaveShop') == true and type(closeShopFn) == 'function' and deps.isAdventure() then
                             local inShop = type(roomKindOf) == 'function' and (roomKindOf)() == 'Shop'
                             local closedLongAgo = shopClosedAt > -math.huge and now - shopClosedAt >= SHOP_UI_GRACE_SECONDS
 
@@ -10516,7 +10526,7 @@ do
                         TreasureBegin = onTreasureBegin,
                         BossRewardOffer = onBossOffer,
                         ShopStockUpdated = function(info)
-                            if not shopHandled then
+                            if not shopHandled or (getSettings().get('autoStitchesShop') == true and deps.clock() >= shopBusyUntil) then
                                 onShopOpened(info)
                             end
                         end,

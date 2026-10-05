@@ -446,6 +446,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
 
     local shopHandled = false
     local shopClosedAt = -math.huge
+    local shopBusyUntil = -math.huge
     -- What the current floor still needs done (shop left, card chosen, unit/character/boss reward answered,
     -- chests opened): name -> when it began. Auto Route Atlas does not vote until all are done (or time out).
     local floorTasks: { [string]: number } = {}
@@ -870,6 +871,17 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             .. tostring(if type(info) == "table" then info.Budget else nil)
             .. ":"
             .. tostring(type(stock) == "table" and #stock or 0)
+            .. ":"
+            .. tostring(if type(info) == "table" then info.Spent else nil)
+        if type(stock) == "table" then
+            for _, item in stock do
+                if type(item) == "table" and item.Purchased ~= true then
+                    key ..= ":" .. tostring(item.Index) .. tostring(
+                        item.BasicCardName or item.TraitName or item.Kind
+                    )
+                end
+            end
+        end
         if key == lastShopKey and now - lastShopAt < REPEAT_SECONDS then
             return
         end
@@ -967,6 +979,8 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                 end
             end)
         end
+        -- Stock updates caused by these purchases are ignored until they are all sent.
+        shopBusyUntil = deps.clock() + PICK_DELAY_SECONDS + SHOP_GAP_SECONDS * (#plan + 1)
         later(PICK_DELAY_SECONDS + SHOP_GAP_SECONDS * #plan, leave)
     end
 
@@ -1348,7 +1362,11 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             end
             -- The shop window can stay on screen after the shop closed; it blocks the next room vote.
             local closeShopFn: any = deps.closeShopUi
-            if wanted and type(closeShopFn) == "function" and deps.isAdventure() then
+            if
+                getSettings().get("leaveShop") == true
+                and type(closeShopFn) == "function"
+                and deps.isAdventure()
+            then
                 local inShop = type(roomKindOf) == "function" and (roomKindOf :: any)() == "Shop"
                 local closedLongAgo = shopClosedAt > -math.huge
                     and now - shopClosedAt >= SHOP_UI_GRACE_SECONDS
@@ -1426,8 +1444,13 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             TreasureBegin = onTreasureBegin,
             BossRewardOffer = onBossOffer,
             -- Hub loaded while a shop was already open: its first stock update stands in for the opening.
+            -- A stock update (hub loaded mid-shop, a reroll, a purchase): plan again once the current purchases are
+            -- done, so rerolled items that are wanted are bought too.
             ShopStockUpdated = function(info: any)
-                if not shopHandled then
+                if
+                    not shopHandled
+                    or (getSettings().get("autoStitchesShop") == true and deps.clock() >= shopBusyUntil)
+                then
                     onShopOpened(info)
                 end
             end,
