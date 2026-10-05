@@ -235,6 +235,16 @@ local function liveDependencies(): any
         end)(),
         -- The character card offer the game's card window is showing (its own offer table, found in memory: Kind
         -- "Character"/"CharacterReplace", Options, ExistingCards). Used when the hub missed the offer event.
+        hideCardWindow = function()
+            local players: any = env.game and env.game:GetService("Players")
+            local lp: any = players and players.LocalPlayer
+            local pgui: any = lp and lp:FindFirstChild("PlayerGui")
+            local ah: any = pgui and pgui:FindFirstChild("AdventureHUD")
+            local cc: any = ah and ah:FindFirstChild("ChooseCard", true)
+            if cc then
+                cc.Visible = false
+            end
+        end,
         readCharacterOffer = function(): any
             local players: any = env.game and env.game:GetService("Players")
             local lp: any = players and players.LocalPlayer
@@ -840,6 +850,14 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             end
             if not ok then
                 ok = if index then pcall(fireFn, { Choice = index }) else pcall(fireFn)
+                -- Answered without the window: the game keeps showing its (now answered) offer; hide that window so
+                -- neither the player nor the route vote waits on it.
+                if ok then
+                    local hideFn: any = deps.hideCardWindow
+                    if type(hideFn) == "function" then
+                        pcall(hideFn)
+                    end
+                end
             end
             if ok then
                 notify(

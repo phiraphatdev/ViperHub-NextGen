@@ -9255,6 +9255,17 @@ do
 
                         return adventure and adventure:FindFirstChild('EndRunEvent')
                     end)(),
+                    hideCardWindow = function()
+                        local players = env.game and env.game:GetService('Players')
+                        local lp = players and players.LocalPlayer
+                        local pgui = lp and lp:FindFirstChild('PlayerGui')
+                        local ah = pgui and pgui:FindFirstChild('AdventureHUD')
+                        local cc = ah and ah:FindFirstChild('ChooseCard', true)
+
+                        if cc then
+                            cc.Visible = false
+                        end
+                    end,
                     readCharacterOffer = function()
                         local players = env.game and env.game:GetService('Players')
                         local lp = players and players.LocalPlayer
@@ -9912,6 +9923,14 @@ do
                         end
                         if not ok then
                             ok = if index then pcall(fireFn, {Choice = index})else pcall(fireFn)
+
+                            if ok then
+                                local hideFn = deps.hideCardWindow
+
+                                if type(hideFn) == 'function' then
+                                    pcall(hideFn)
+                                end
+                            end
                         end
                         if ok then
                             notify('Auto Character Card', if index then(pickedName or ('option ' .. tostring(index)))else'Skipped')
