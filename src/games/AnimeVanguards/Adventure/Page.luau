@@ -24,6 +24,7 @@ local UNLOCKED: { [string]: boolean } = {
     cardPriority = true,
     autoRoute = true,
     autoCharacterCard = true,
+    characterCardPriority = true,
     leaveShop = true,
     openTreasure = true,
     autoStitchesShop = true,
@@ -273,8 +274,35 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?, joi
         settings,
         "autoCharacterCard",
         "Auto Character Card",
-        "After an Elite floor, pick the character (unit) card; skipped when off."
+        "After an Elite floor, pick the character card by the priority below; with a full hand, swap out the weakest card only for a better one."
     )
+    local cardPriority = Style.sub(characterCard, "Character Card Priority", "list-ordered", false)
+    for _, characterName in catalog.characters do
+        local cards = catalog.characterCards and catalog.characterCards[characterName]
+        if type(cards) == "table" and #cards > 0 then
+            local section = Style.sub(cardPriority, characterName, "user", false)
+            local list = PriorityList.mount(section, {
+                title = characterName,
+                desc = "Top card is preferred. Drag a row onto another to swap them.",
+                order = settings.groupOrder("characterCardPriority", characterName),
+                locked = isLocked("characterCardPriority"),
+                onSwap = function(first: string, second: string): { string }?
+                    return if settings.groupSwap("characterCardPriority", characterName, first, second)
+                        then settings.groupOrder("characterCardPriority", characterName)
+                        else nil
+                end,
+            })
+            section:Button({
+                Title = "Reset " .. characterName,
+                Locked = isLocked("characterCardPriority"),
+                Desc = "Restore the default order (rarest first).",
+                Icon = "rotate-ccw",
+                Callback = function()
+                    list.refresh(settings.groupReset("characterCardPriority", characterName))
+                end,
+            })
+        end
+    end
 
     local basicCard = Style.section(tab, "Auto Basic Card", "layers", false)
     toggle(

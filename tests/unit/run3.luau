@@ -261,7 +261,7 @@ test("Adventure page mounts the requested layout and binds every control", funct
     end
     assert(
         table.concat(sections, "|")
-            == "Character|Miscellaneous|Miscellaneous/Auto Route Atlas|Miscellaneous/Auto Route Atlas/Floor Prioritize|Miscellaneous/Auto Route Atlas/Second Floor Prioritize|Auto Character Card|Auto Basic Card|Auto Basic Card/Card Priority|Auto Stitches Shop|Run Completion|Memorized Modifier|Stage Failsafe",
+            == "Character|Miscellaneous|Miscellaneous/Auto Route Atlas|Miscellaneous/Auto Route Atlas/Floor Prioritize|Miscellaneous/Auto Route Atlas/Second Floor Prioritize|Auto Character Card|Auto Character Card/Character Card Priority|Auto Basic Card|Auto Basic Card/Card Priority|Auto Stitches Shop|Run Completion|Memorized Modifier|Stage Failsafe",
         table.concat(sections, "|")
     )
     local expected: { [string]: string } = {

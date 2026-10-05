@@ -11,6 +11,7 @@ local config = require("../Config")
 local Detect = require("./Detect")
 local Choice = require("./Choice")
 local Listen = require("./Listen")
+local Catalog = require("./Catalog")
 local Runtime = {}
 
 local PICK_DELAY_SECONDS: number = (config :: any).thresholds.adventurePickDelaySeconds
@@ -230,6 +231,12 @@ local function liveDependencies(): any
             local odyssey = networking and networking:FindFirstChild("Odyssey")
             local adventure = odyssey and odyssey:FindFirstChild("Adventure")
             return adventure and adventure:FindFirstChild("EndRunEvent")
+        end)(),
+        characterCardName = (function(): any
+            local ok, catalog = pcall(function()
+                return Catalog.read()
+            end)
+            return if ok and type(catalog) == "table" then catalog.characterCardName else nil
         end)(),
         placedUnitGuid = function(name: any): string?
             local handler = optionalModule(env.game:GetService("StarterPlayer"), paths.clientUnitHandler)
@@ -710,9 +717,16 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         if not self.active or getSettings().get("autoCharacterCard") ~= true or not deps.isAdventure() then
             return
         end
-        local options: any = if type(offer) == "table" then offer.Options else nil
         local atCap = type(offer) == "table" and offer.AtCap == true
-        local index = if atCap then nil else Choice.pickCharacterCard(options)
+        local saved: any = getSettings()
+        local character = saved.get("character")
+        local groupOrder: any = saved.groupOrder
+        local order: any = if type(groupOrder) == "function" and type(character) == "string"
+            then (groupOrder :: any)("characterCardPriority", character)
+            else nil
+        local nameOf: any = deps.characterCardName
+        local index =
+            Choice.characterCardChoice(offer, order, if type(nameOf) == "table" then nameOf else nil)
         beginTask("character card")
         local function answer()
             endTask("character card")
@@ -731,8 +745,10 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                 self.cards += 1
                 setStatus(
                     if index
-                        then "Auto Character Card: picked option " .. tostring(index)
-                        else "Auto Character Card: skipped (hand full)"
+                        then (if atCap
+                            then "Auto Character Card: swapped in a better card (" .. tostring(index) .. ")"
+                            else "Auto Character Card: picked option " .. tostring(index))
+                        else "Auto Character Card: skipped (no better card)"
                 )
             end
         end

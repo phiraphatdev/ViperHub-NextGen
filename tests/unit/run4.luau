@@ -1595,6 +1595,29 @@ test("A new Adventure run in the same server gets its events subscribed again", 
     runtime.stop()
 end)
 
+test("Character card choice follows the saved order and swaps only for a better card", function()
+    local order = { "Max Ascended", "King's Court", "Time Slowing" }
+    local nameOf = { A = "Max Ascended", B = "King's Court", C = "Time Slowing", D = "Other" }
+    local offer = { Options = { { CardId = "C", Rarity = "Mythic" }, { CardId = "A", Rarity = "Rare" } } }
+    assert(AdventureChoice.characterCardChoice(offer, order, nameOf) == 2, "the saved order beats rarity")
+    assert(AdventureChoice.characterCardChoice(offer, nil, nameOf) == 1, "without an order the rarest wins")
+    local full = {
+        Options = { { CardId = "A", Rarity = "Rare" } },
+        AtCap = true,
+        ExistingCards = { { CardId = "B" }, { CardId = "C" } },
+    }
+    assert(
+        AdventureChoice.characterCardChoice(full, order, nameOf) == 1 * 100 + 1000 + 2,
+        "replaces the weakest"
+    )
+    local worse = {
+        Options = { { CardId = "C" } },
+        AtCap = true,
+        ExistingCards = { { CardId = "A" }, { CardId = "B" } },
+    }
+    assert(AdventureChoice.characterCardChoice(worse, order, nameOf) == nil, "no better card: skip")
+end)
+
 test("Adventure picks a reward unit after an Elite floor", function()
     assert(AdventureChoice.pickUnitReward({
         Options = { { Rarity = "Rare" }, { Rarity = "Exclusive" }, { Rarity = "Mythic" } },

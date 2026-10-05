@@ -37,6 +37,7 @@ local FIELDS: { [string]: any } = {
     autoBossReward = { kind = "bool", default = false },
     autoBuyItches = { kind = "bool", default = false },
     autoCharacterCard = { kind = "bool", default = false },
+    characterCardPriority = { kind = "orders", list = "characterCards" },
     autoBasicCard = { kind = "bool", default = false },
     cardPriority = { kind = "ranks", list = "basicCards" },
     autoStitchesShop = { kind = "bool", default = false },
@@ -120,6 +121,12 @@ local function defaultValue(spec: any, catalog: any): any
         return {}
     elseif spec.kind == "ranks" then
         return defaultRanks(spec, catalog[spec.list])
+    elseif spec.kind == "orders" then
+        local orders: { [string]: { string } } = {}
+        for group, list in catalog[spec.list] or {} do
+            orders[group] = table.clone(list)
+        end
+        return orders
     end
     return spec.default
 end
@@ -148,6 +155,28 @@ local function validate(spec: any, catalog: any, value: any): any
         return nil
     end
     local list = catalog[spec.list]
+    if spec.kind == "orders" then
+        -- Per group (character) order lists, first = highest: known names kept, missing ones appended.
+        local orders: { [string]: { string } } = {}
+        for group, names in list or {} do
+            local saved: any = value[group]
+            local order: { string } = {}
+            if type(saved) == "table" then
+                for _, name in saved do
+                    if type(name) == "string" and table.find(names, name) and not table.find(order, name) then
+                        table.insert(order, name)
+                    end
+                end
+            end
+            for _, name in names do
+                if not table.find(order, name) then
+                    table.insert(order, name)
+                end
+            end
+            orders[group] = order
+        end
+        return orders
+    end
     if spec.kind == "ranks" then
         local ranks: { [string]: number } = {}
         if value[1] ~= nil then
@@ -328,6 +357,43 @@ function Settings.new(catalog: any, injected: any?): any
             return {}
         end
         return rankedOrder(spec, catalog[spec.list], values[key])
+    end
+
+    --- One group's order of an orders field (character cards), first = highest.
+    function self.groupOrder(key: string, group: string): { string }
+        local value = values[key]
+        local order = if type(value) == "table" then value[group] else nil
+        return if type(order) == "table" then table.clone(order) else {}
+    end
+
+    --- Swaps two names in one group's order; returns true when both exist and differ.
+    function self.groupSwap(key: string, group: string, first: string, second: string): boolean
+        refresh()
+        local value = values[key]
+        local order = if type(value) == "table" then value[group] else nil
+        if type(order) ~= "table" then
+            return false
+        end
+        local a, b = table.find(order, first), table.find(order, second)
+        if not a or not b or a == b then
+            return false
+        end
+        order[a], order[b] = order[b], order[a]
+        save()
+        return true
+    end
+
+    --- Restores one group's default order; returns it.
+    function self.groupReset(key: string, group: string): { string }
+        local spec = FIELDS[key]
+        local value = values[key]
+        local defaults = if spec then catalog[spec.list] else nil
+        if type(value) == "table" and type(defaults) == "table" and type(defaults[group]) == "table" then
+            refresh()
+            value[group] = table.clone(defaults[group])
+            save()
+        end
+        return self.groupOrder(key, group)
     end
 
     --- Restores a ranks field to its default numbers; returns the resulting order.

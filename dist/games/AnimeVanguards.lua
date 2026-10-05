@@ -7049,6 +7049,66 @@ do
 
                 return result
             end
+
+            local CARD_ORDER = {
+                Mythic = 1,
+                Legendary = 2,
+                Epic = 3,
+                Rare = 4,
+            }
+
+            local function readCharacterCards(module, characters, names)
+                local result = {}
+
+                if type(module) ~= 'table' or type(module.GetCharacter) ~= 'function' then
+                    return result
+                end
+
+                for _, character in characters do
+                    local ok, data = pcall(module.GetCharacter, character)
+                    local cards = if ok and type(data) == 'table'then data.Cards else nil
+
+                    if type(cards) == 'table' then
+                        local rows = {}
+
+                        for position, entry in ipairs(cards)do
+                            local card = entry
+
+                            if type(card) == 'table' and validName(card.DisplayName) then
+                                table.insert(rows, {
+                                    name = card.DisplayName,
+                                    rank = CARD_ORDER[card.Rarity] or 9,
+                                    position = position,
+                                })
+
+                                if validName(card.CardId) then
+                                    names[card.CardId] = card.DisplayName
+                                end
+                            end
+                        end
+
+                        table.sort(rows, function(a, b)
+                            if a.rank ~= b.rank then
+                                return a.rank < b.rank
+                            end
+
+                            return a.position < b.position
+                        end)
+
+                        local list = {}
+
+                        for _, row in rows do
+                            table.insert(list, row.name)
+                        end
+
+                        if #list > 0 then
+                            result[character] = list
+                        end
+                    end
+                end
+
+                return result
+            end
             local function pick(live, fallback)
                 return if#live > 0 then live else copy(fallback)
             end
@@ -7108,7 +7168,11 @@ do
                     roomKinds = copy(ADVENTURE.roomKinds),
                     traits = pick(readTraits(m.traits), ADVENTURE.traits),
                     memoriaNames = pick(readMemoria(m.memorias), ADVENTURE.memoriaNames),
+                    characterCards = {},
+                    characterCardName = {},
                 }
+
+                data.characterCards = readCharacterCards(m.characters, characters, data.characterCardName)
 
                 return data
             end
@@ -7255,6 +7319,10 @@ do
                     kind = 'bool',
                     default = false,
                 },
+                characterCardPriority = {
+                    kind = 'orders',
+                    list = 'characterCards',
+                },
                 autoBasicCard = {
                     kind = 'bool',
                     default = false,
@@ -7388,6 +7456,14 @@ do
                     return {}
                 elseif spec.kind == 'ranks' then
                     return defaultRanks(spec, catalog[spec.list])
+                elseif spec.kind == 'orders' then
+                    local orders = {}
+
+                    for group, list in catalog[spec.list] or {}do
+                        orders[group] = table.clone(list)
+                    end
+
+                    return orders
                 end
 
                 return spec.default
@@ -7418,6 +7494,32 @@ do
 
                 local list = catalog[spec.list]
 
+                if spec.kind == 'orders' then
+                    local orders = {}
+
+                    for group, names in list or {}do
+                        local saved = value[group]
+                        local order = {}
+
+                        if type(saved) == 'table' then
+                            for _, name in saved do
+                                if type(name) == 'string' and table.find(names, name) and not table.find(order, name) then
+                                    table.insert(order, name)
+                                end
+                            end
+                        end
+
+                        for _, name in names do
+                            if not table.find(order, name) then
+                                table.insert(order, name)
+                            end
+                        end
+
+                        orders[group] = order
+                    end
+
+                    return orders
+                end
                 if spec.kind == 'ranks' then
                     local ranks = {}
 
@@ -7630,6 +7732,49 @@ do
 
                     return rankedOrder(spec, catalog[spec.list], values[key])
                 end
+                function self.groupOrder(key, group)
+                    local value = values[key]
+                    local order = if type(value) == 'table'then value[group]else nil
+
+                    return if type(order) == 'table'then table.clone(order)else{}
+                end
+                function self.groupSwap(key, group, first, second)
+                    refresh()
+
+                    local value = values[key]
+                    local order = if type(value) == 'table'then value[group]else nil
+
+                    if type(order) ~= 'table' then
+                        return false
+                    end
+
+                    local a, b = table.find(order, first), table.find(order, second)
+
+                    if not a or not b or a == b then
+                        return false
+                    end
+
+                    order[a], order[b] = order[b], order[a]
+
+                    save()
+
+                    return true
+                end
+                function self.groupReset(key, group)
+                    local spec = FIELDS[key]
+                    local value = values[key]
+                    local defaults = if spec then catalog[spec.list]else nil
+
+                    if type(value) == 'table' and type(defaults) == 'table' and type(defaults[group]) == 'table' then
+                        refresh()
+
+                        value[group] = table.clone(defaults[group])
+
+                        save()
+                    end
+
+                    return self.groupOrder(key, group)
+                end
                 function self.resetOrder(key)
                     local spec = FIELDS[key]
 
@@ -7680,6 +7825,7 @@ do
                 cardPriority = true,
                 autoRoute = true,
                 autoCharacterCard = true,
+                characterCardPriority = true,
                 leaveShop = true,
                 openTreasure = true,
                 autoStitchesShop = true,
@@ -7875,7 +8021,37 @@ do
                 local characterCard = Style.section(tab, 'Auto Character Card', 'id-card', false)
 
                 toggle(characterCard, settings, 'autoCharacterCard', 'Auto Character Card',
-[[After an Elite floor, pick the character (unit) card; skipped when off.]])
+[[After an Elite floor, pick the character card by the priority below; with a full hand, swap out the weakest card only for a better one.]])
+
+                local cardPriority = Style.sub(characterCard, 'Character Card Priority', 'list-ordered', false)
+
+                for _, characterName in catalog.characters do
+                    local cards = catalog.characterCards and catalog.characterCards[characterName]
+
+                    if type(cards) == 'table' and #cards > 0 then
+                        local section = Style.sub(cardPriority, characterName, 'user', false)
+                        local list = PriorityList.mount(section, {
+                            title = characterName,
+                            desc =
+[[Top card is preferred. Drag a row onto another to swap them.]],
+                            order = settings.groupOrder('characterCardPriority', characterName),
+                            locked = isLocked('characterCardPriority'),
+                            onSwap = function(first, second)
+                                return if settings.groupSwap('characterCardPriority', characterName, first, second)then settings.groupOrder('characterCardPriority', characterName)else nil
+                            end,
+                        })
+
+                        section:Button({
+                            Title = 'Reset ' .. characterName,
+                            Locked = isLocked('characterCardPriority'),
+                            Desc = 'Restore the default order (rarest first).',
+                            Icon = 'rotate-ccw',
+                            Callback = function()
+                                list.refresh(settings.groupReset('characterCardPriority', characterName))
+                            end,
+                        })
+                    end
+                end
 
                 local basicCard = Style.section(tab, 'Auto Basic Card', 'layers', false)
 
@@ -8361,6 +8537,74 @@ do
                 Rare = 1,
             }
 
+            local function cardScore(card, order, nameOf)
+                if type(card) ~= 'table' then
+                    return -math.huge
+                end
+
+                local name = if nameOf and type(card.CardId) == 'string'then nameOf[card.CardId]else nil
+
+                name = name or card.DisplayName or card.Name
+
+                if order and type(name) == 'string' then
+                    local position = table.find(order, name)
+
+                    if position then
+                        return 100 + #order - position
+                    end
+                end
+
+                return CHARACTER_RARITY[card.Rarity] or 0
+            end
+
+            function Choice.characterCardChoice(offer, order, nameOf)
+                local options = if type(offer) == 'table'then offer.Options else nil
+
+                if type(options) ~= 'table' then
+                    return nil
+                end
+
+                local best = nil
+                local bestScore = -math.huge
+
+                for index = 1, #options do
+                    local score = cardScore(options[index], order, nameOf)
+
+                    if score > bestScore then
+                        best, bestScore = index, score
+                    end
+                end
+
+                if not best then
+                    return nil
+                end
+                if offer.AtCap ~= true then
+                    return best
+                end
+
+                local existing = offer.ExistingCards
+
+                if type(existing) ~= 'table' then
+                    return nil
+                end
+
+                local weakest = nil
+                local weakestScore = math.huge
+
+                for slot = 1, #existing do
+                    local score = cardScore(existing[slot], order, nameOf)
+
+                    if score < weakestScore then
+                        weakest, weakestScore = slot, score
+                    end
+                end
+
+                if weakest and bestScore > weakestScore then
+                    return best * 100 + 1000 + weakest
+                end
+
+                return nil
+            end
             function Choice.pickCharacterCard(options)
                 if type(options) ~= 'table' then
                     return nil
@@ -8729,6 +8973,7 @@ do
             local Detect = __DARKLUA_BUNDLE_MODULES.u()
             local Choice = __DARKLUA_BUNDLE_MODULES.A()
             local Listen = __DARKLUA_BUNDLE_MODULES.B()
+            local Catalog = __DARKLUA_BUNDLE_MODULES.w()
             local Runtime = {}
             local PICK_DELAY_SECONDS = (config).thresholds.adventurePickDelaySeconds
             local REPEAT_SECONDS = (config).thresholds.adventureRepeatSeconds
@@ -8956,6 +9201,13 @@ do
                         local adventure = odyssey and odyssey:FindFirstChild('Adventure')
 
                         return adventure and adventure:FindFirstChild('EndRunEvent')
+                    end)(),
+                    characterCardName = (function()
+                        local ok, catalog = pcall(function()
+                            return Catalog.read()
+                        end)
+
+                        return if ok and type(catalog) == 'table'then catalog.characterCardName else nil
                     end)(),
                     placedUnitGuid = function(name)
                         local handler = optionalModule(env.game:GetService('StarterPlayer'), paths.clientUnitHandler)
@@ -9482,9 +9734,13 @@ do
                         return
                     end
 
-                    local options = if type(offer) == 'table'then offer.Options else nil
                     local atCap = type(offer) == 'table' and offer.AtCap == true
-                    local index = if atCap then nil else Choice.pickCharacterCard(options)
+                    local saved = getSettings()
+                    local character = saved.get('character')
+                    local groupOrder = saved.groupOrder
+                    local order = if type(groupOrder) == 'function' and type(character) == 'string'then(groupOrder)('characterCardPriority', character)else nil
+                    local nameOf = deps.characterCardName
+                    local index = Choice.characterCardChoice(offer, order, if type(nameOf) == 'table'then nameOf else nil)
 
                     beginTask('character card')
 
@@ -9509,7 +9765,7 @@ do
                         if ok then
                             self.cards += 1
 
-                            setStatus(if index then'Auto Character Card: picked option ' .. tostring(index)else'Auto Character Card: skipped (hand full)')
+                            setStatus(if index then(if atCap then'Auto Character Card: swapped in a better card (' .. tostring(index) .. ')'else'Auto Character Card: picked option ' .. tostring(index))else'Auto Character Card: skipped (no better card)')
                         end
                     end
 

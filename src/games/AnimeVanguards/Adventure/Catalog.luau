@@ -24,6 +24,9 @@ export type Data = {
     roomKinds: { string },
     traits: { string },
     memoriaNames: { string },
+    -- Character (unit) cards per character, highest rarity first, and CardId -> display name.
+    characterCards: { [string]: { string } },
+    characterCardName: { [string]: string },
 }
 
 local function validName(value: any): boolean
@@ -174,6 +177,52 @@ local function readMemoria(module: any): { string }
     return result
 end
 
+-- Character cards from CharactersData.GetCharacter(name).Cards ({CardId, DisplayName, Rarity}), rarest first.
+local CARD_ORDER = { Mythic = 1, Legendary = 2, Epic = 3, Rare = 4 }
+local function readCharacterCards(
+    module: any,
+    characters: { string },
+    names: { [string]: string }
+): { [string]: { string } }
+    local result: { [string]: { string } } = {}
+    if type(module) ~= "table" or type(module.GetCharacter) ~= "function" then
+        return result
+    end
+    for _, character in characters do
+        local ok, data = pcall(module.GetCharacter, character)
+        local cards: any = if ok and type(data) == "table" then data.Cards else nil
+        if type(cards) == "table" then
+            local rows = {}
+            for position, entry in ipairs(cards) do
+                local card: any = entry
+                if type(card) == "table" and validName(card.DisplayName) then
+                    table.insert(
+                        rows,
+                        { name = card.DisplayName, rank = CARD_ORDER[card.Rarity] or 9, position = position }
+                    )
+                    if validName(card.CardId) then
+                        names[card.CardId] = card.DisplayName
+                    end
+                end
+            end
+            table.sort(rows, function(a: any, b: any): boolean
+                if a.rank ~= b.rank then
+                    return a.rank < b.rank
+                end
+                return a.position < b.position
+            end)
+            local list = {}
+            for _, row in rows do
+                table.insert(list, row.name)
+            end
+            if #list > 0 then
+                result[character] = list
+            end
+        end
+    end
+    return result
+end
+
 local function pick(live: { string }, fallback: any): { string }
     return if #live > 0 then live else copy(fallback)
 end
@@ -226,7 +275,10 @@ function Catalog.fromModules(modules: any): Data
         roomKinds = copy(ADVENTURE.roomKinds),
         traits = pick(readTraits(m.traits), ADVENTURE.traits),
         memoriaNames = pick(readMemoria(m.memorias), ADVENTURE.memoriaNames),
+        characterCards = {},
+        characterCardName = {},
     }
+    data.characterCards = readCharacterCards(m.characters, characters, data.characterCardName)
     return data
 end
 

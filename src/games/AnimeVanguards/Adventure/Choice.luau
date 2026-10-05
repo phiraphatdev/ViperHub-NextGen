@@ -68,6 +68,62 @@ end
 
 local CHARACTER_RARITY = { Mythic = 4, Legendary = 3, Epic = 2, Rare = 1 }
 
+-- A character card's score: its place in the saved order (highest first), else its rarity below every listed card.
+local function cardScore(card: any, order: { string }?, nameOf: { [string]: string }?): number
+    if type(card) ~= "table" then
+        return -math.huge
+    end
+    local name = if nameOf and type(card.CardId) == "string" then nameOf[card.CardId] else nil
+    name = name or card.DisplayName or card.Name
+    if order and type(name) == "string" then
+        local position = table.find(order, name)
+        if position then
+            return 100 + #order - position
+        end
+    end
+    return CHARACTER_RARITY[card.Rarity] or 0
+end
+
+--- Picks a character card offer by the saved order (CardId -> display name via nameOf), else by rarity. When the
+--- hand is full (AtCap, ExistingCards given) it returns the replacement choice the game's card panel sends
+--- (option * 100 + 1000 + slot) only when the best offered card scores above the weakest held card; nil = skip.
+function Choice.characterCardChoice(offer: any, order: { string }?, nameOf: { [string]: string }?): number?
+    local options: any = if type(offer) == "table" then offer.Options else nil
+    if type(options) ~= "table" then
+        return nil
+    end
+    local best: number? = nil
+    local bestScore = -math.huge
+    for index = 1, #options do
+        local score = cardScore(options[index], order, nameOf)
+        if score > bestScore then
+            best, bestScore = index, score
+        end
+    end
+    if not best then
+        return nil
+    end
+    if offer.AtCap ~= true then
+        return best
+    end
+    local existing: any = offer.ExistingCards
+    if type(existing) ~= "table" then
+        return nil
+    end
+    local weakest: number? = nil
+    local weakestScore = math.huge
+    for slot = 1, #existing do
+        local score = cardScore(existing[slot], order, nameOf)
+        if score < weakestScore then
+            weakest, weakestScore = slot, score
+        end
+    end
+    if weakest and bestScore > weakestScore then
+        return best * 100 + 1000 + weakest
+    end
+    return nil
+end
+
 --- Picks the offered character card of the highest rarity (the first one on a tie). Options are the game's
 --- CardPickCharacterOffer entries ({CharacterName, CardId, Rarity, RankRequirement}, observed live).
 function Choice.pickCharacterCard(options: any): number?
