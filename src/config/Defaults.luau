@@ -12,4 +12,5 @@ return table.freeze({
     uiScale = 1,
     theme = "Viper",
     toggleKey = "RightShift",
+    openButton = true,
 })

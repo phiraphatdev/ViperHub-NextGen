@@ -94,6 +94,30 @@ function Settings.mount(window: any, store: any, library: any, keyCodes: any, co
             connection:Disconnect()
         end)
     end
+    -- The floating ViperHub button shown while the window is hidden. PC players can hide it and use the toggle key;
+    -- on a device without a keyboard it always shows, so the window can always be reopened.
+    local function applyOpenButton(show: boolean)
+        local keyboard = true
+        pcall(function()
+            keyboard = (getfenv() :: any).game:GetService("UserInputService").KeyboardEnabled
+        end)
+        local visible = show or not keyboard
+        window.IsOpenButtonEnabled = visible
+        local openMain: any = window.OpenButtonMain
+        if type(openMain) == "table" and type(openMain.Visible) == "function" then
+            pcall(openMain.Visible, openMain, visible and window.Closed == true)
+        end
+    end
+    applyOpenButton(config.openButton)
+    controls.openButton = tab:Toggle({
+        Title = "Show Open Button",
+        Desc = "The ViperHub button shown while the window is hidden. Off: use the Toggle UI key (always shown without a keyboard).",
+        Value = config.openButton,
+        Callback = function(value: boolean)
+            store.update("openButton", value)
+            applyOpenButton(store.get().openButton)
+        end,
+    })
     controls.save = tab:Button({
         Title = "Save settings",
         Callback = function()

@@ -18,6 +18,7 @@ export type Config = {
     theme: string,
     themeVersion: number,
     toggleKey: string,
+    openButton: boolean,
 }
 local KEYS = {
     RightShift = true,
@@ -49,6 +50,7 @@ function Schema.decode(value: unknown): (Config, boolean)
         theme = Defaults.theme,
         themeVersion = THEME_VERSION,
         toggleKey = Defaults.toggleKey,
+        openButton = Defaults.openButton,
     }
     if type(value) ~= "table" then
         return output, false
@@ -56,6 +58,9 @@ function Schema.decode(value: unknown): (Config, boolean)
     local data = value :: { [string]: any }
     if data.schemaVersion ~= 1 then
         return output, false
+    end
+    if type(data.openButton) == "boolean" then
+        output.openButton = data.openButton
     end
     if type(data.notifications) == "boolean" then
         output.notifications = data.notifications

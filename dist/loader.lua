@@ -558,6 +558,7 @@ do
                 uiScale = 1,
                 theme = 'Viper',
                 toggleKey = 'RightShift',
+                openButton = true,
             })
         end
 
@@ -610,6 +611,7 @@ do
                     theme = Defaults.theme,
                     themeVersion = THEME_VERSION,
                     toggleKey = Defaults.toggleKey,
+                    openButton = Defaults.openButton,
                 }
 
                 if type(value) ~= 'table' then
@@ -620,6 +622,9 @@ do
 
                 if data.schemaVersion ~= 1 then
                     return output, false
+                end
+                if type(data.openButton) == 'boolean' then
+                    output.openButton = data.openButton
                 end
                 if type(data.notifications) == 'boolean' then
                     output.notifications = data.notifications
@@ -2841,6 +2846,36 @@ do
                     end)
                 end
 
+                local function applyOpenButton(show)
+                    local keyboard = true
+
+                    pcall(function()
+                        keyboard = ((getfenv())).game:GetService('UserInputService').KeyboardEnabled
+                    end)
+
+                    local visible = show or not keyboard
+
+                    window.IsOpenButtonEnabled = visible
+
+                    local openMain = window.OpenButtonMain
+
+                    if type(openMain) == 'table' and type(openMain.Visible) == 'function' then
+                        pcall(openMain.Visible, openMain, visible and window.Closed == true)
+                    end
+                end
+
+                applyOpenButton(config.openButton)
+
+                controls.openButton = tab:Toggle({
+                    Title = 'Show Open Button',
+                    Desc =
+[[The ViperHub button shown while the window is hidden. Off: use the Toggle UI key (always shown without a keyboard).]],
+                    Value = config.openButton,
+                    Callback = function(value)
+                        store.update('openButton', value)
+                        applyOpenButton(store.get().openButton)
+                    end,
+                })
                 controls.save = tab:Button({
                     Title = 'Save settings',
                     Callback = function()
