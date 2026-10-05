@@ -29,6 +29,7 @@ local END_SCREEN_SECONDS = 1
 local LOBBY_RETRY_SECONDS = 20
 local NEW_RUN_FALLBACK_SECONDS = 40
 local MAP_POLL_SECONDS = 10
+local SHOP_REROLL_WAIT_SECONDS = 4
 local TASK_WAIT_SECONDS: number = (config :: any).thresholds.adventureTaskWaitSeconds
 local TASK_WAIT_RETRY_SECONDS: number = (config :: any).thresholds.adventureTaskWaitRetrySeconds
 local VOTE_RETRY_SECONDS: number = (config :: any).thresholds.adventureVoteRetrySeconds
@@ -490,6 +491,8 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
     local shopHandled = false
     local shopClosedAt = -math.huge
     local shopBusyUntil = -math.huge
+    local shopRerolls = 0
+    local planSerial = 0
     -- What the current floor still needs done (shop left, card chosen, unit/character/boss reward answered,
     -- chests opened): name -> when it began. Auto Route Atlas does not vote until all are done (or time out).
     local floorTasks: { [string]: number } = {}
@@ -1004,6 +1007,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             end
             shopClosedAt = deps.clock()
             endTask("shop")
+            shopRerolls = 0
             -- The next Shop floor may open with the same budget at once: it must not look like a repeat.
             lastShopKey = ""
             setStatus(
@@ -1032,7 +1036,62 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         end
         -- Stock updates caused by these purchases are ignored until they are all sent.
         shopBusyUntil = deps.clock() + PICK_DELAY_SECONDS + SHOP_GAP_SECONDS * (#plan + 1)
-        later(PICK_DELAY_SECONDS + SHOP_GAP_SECONDS * #plan, leave)
+        planSerial += 1
+        -- Nothing (more) to buy: reroll while rerolls are allowed, else leave. A purchase plan ends with a stock update
+        -- that plans again, so a reroll only happens once everything wanted and affordable was bought.
+        local planAt = planSerial
+        local function finish(afterPurchases: boolean?)
+            -- After purchases the game sends the new stock, which plans again; only without it do we go on here.
+            if #plan > 0 and afterPurchases ~= true then
+                later(SHOP_REROLL_WAIT_SECONDS, function()
+                    if self.active and planSerial == planAt then
+                        finish(true)
+                    end
+                end)
+                return
+            end
+            local sections = toSet(saved.get("shopRerollSections"))
+            local limit = tonumber(saved.get("shopRerollTimes")) or 0
+            if
+                self.active
+                and saved.get("autoStitchesShop") == true
+                and saved.get("shopReroll") == true
+                and shopRerolls < limit
+                and next(sections) ~= nil
+            then
+                local events: any = deps.events
+                local fired = false
+                if sections.All then
+                    local all = if events then events.ShopReroll else nil
+                    if type(all) == "table" and type(all.Fire) == "function" then
+                        fired = (pcall(all.Fire))
+                    end
+                else
+                    local one = if events then events.ShopRerollSection else nil
+                    for _, section in { "Card", "Trait", "Memoria" } do
+                        if sections[section] and type(one) == "table" and type(one.Fire) == "function" then
+                            fired = (pcall(one.Fire, { Section = section })) or fired
+                        end
+                    end
+                end
+                if fired then
+                    shopRerolls += 1
+                    local rerollAt = planSerial
+                    setStatus("Shop: reroll " .. tostring(shopRerolls) .. "/" .. tostring(limit))
+                    -- The new stock plans again; when none comes (not enough coins), leave as usual.
+                    later(SHOP_REROLL_WAIT_SECONDS, function()
+                        if self.active and planSerial == rerollAt then
+                            leave()
+                        end
+                    end)
+                    return
+                end
+            end
+            leave()
+        end
+        later(PICK_DELAY_SECONDS + SHOP_GAP_SECONDS * #plan, function()
+            finish()
+        end)
     end
 
     local treasureHandling = false
@@ -1391,6 +1450,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                 lastFloorSeen = floor
                 shopHandled = false
                 floorTasks = {}
+                shopRerolls = 0
                 treasureHandling = false
             end
             local roomKindOf: any = deps.roomKind

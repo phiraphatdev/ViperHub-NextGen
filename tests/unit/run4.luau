@@ -1230,11 +1230,13 @@ test("Adventure runtime buys the selected shop items, then leaves the shop", fun
         },
     })
     local function flush()
-        local batch = pending
-        pending = {}
-        for _, callback in batch do
-            local run: any = callback
-            run()
+        for _ = 1, 6 do
+            local batch = pending
+            pending = {}
+            for _, callback in batch do
+                local run: any = callback
+                run()
+            end
         end
     end
     assert(runtime.start())
@@ -1616,6 +1618,109 @@ test("Character card choice follows the saved order and swaps only for a better 
         ExistingCards = { { CardId = "A" }, { CardId = "B" } },
     }
     assert(AdventureChoice.characterCardChoice(worse, order, nameOf) == nil, "no better card: skip")
+end)
+
+test("Auto Stitches Shop rerolls only after buying what it can, up to the set count", function()
+    local settings = AdventureSettings.new(AdventureCatalog.fromModules(nil), {})
+    settings.set("autoStitchesShop", true)
+    settings.set("buyBasicCards", { "Ambush" })
+    settings.set("shopReroll", true)
+    settings.set("shopRerollTimes", 2)
+    settings.set("shopRerollSections", { "Card" })
+    local box: any = { now = 0, log = {} }
+    local pending: { any } = {}
+    local runtime = AdventureRuntime.new(function()
+        return settings
+    end, {
+        clock = function()
+            return box.now
+        end,
+        task = {
+            delay = function(_seconds: number, callback: any)
+                table.insert(pending, callback)
+            end,
+        },
+        isAdventure = function()
+            return true
+        end,
+        events = {
+            CardPickBasicOffer = { On = function() end },
+            ShopOpened = {
+                On = function(callback: any)
+                    box.opened = callback
+                    return function() end
+                end,
+            },
+            ShopStockUpdated = {
+                On = function(callback: any)
+                    box.updated = callback
+                    return function() end
+                end,
+            },
+            ShopPurchase = {
+                Fire = function(payload: any)
+                    table.insert(box.log, "buy" .. tostring(payload.StockIndex))
+                end,
+            },
+            ShopRerollSection = {
+                Fire = function(payload: any)
+                    table.insert(box.log, "reroll" .. tostring(payload.Section))
+                end,
+            },
+            ShopClose = {
+                Fire = function()
+                    table.insert(box.log, "close")
+                end,
+            },
+        },
+    })
+    local function tick()
+        box.now += 2
+        local batch = pending
+        pending = {}
+        for _, callback in batch do
+            local run: any = callback
+            run()
+        end
+    end
+    local function stock(index: number, bought: boolean): any
+        return {
+            Stock = {
+                {
+                    Index = index,
+                    Cost = 10,
+                    Kind = "BasicCard",
+                    BasicCardName = "Ambush",
+                    Purchased = bought,
+                },
+            },
+            Budget = 100,
+            Spent = 0,
+        }
+    end
+    assert(runtime.start())
+    box.opened(stock(1, false))
+    tick()
+    assert(table.concat(box.log, ",") == "buy1", "buys first: " .. table.concat(box.log, ","))
+    box.updated(stock(1, true))
+    tick()
+    assert(
+        table.concat(box.log, ",") == "buy1,rerollCard",
+        "nothing left to buy: reroll " .. table.concat(box.log, ",")
+    )
+    box.updated(stock(2, false))
+    tick()
+    box.updated(stock(2, true))
+    tick()
+    box.updated(stock(3, true))
+    for _ = 1, 4 do
+        tick()
+    end
+    assert(
+        table.concat(box.log, ",") == "buy1,rerollCard,buy2,rerollCard,close",
+        "two rerolls then leave: " .. table.concat(box.log, ",")
+    )
+    runtime.stop()
 end)
 
 test("Adventure picks a reward unit after an Elite floor", function()

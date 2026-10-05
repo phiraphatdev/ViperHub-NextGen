@@ -27,6 +27,7 @@ export type Data = {
     -- Character (unit) cards per character, highest rarity first, and CardId -> display name.
     characterCards: { [string]: { string } },
     characterCardName: { [string]: string },
+    shopRerollSections: { string },
 }
 
 local function validName(value: any): boolean
@@ -277,6 +278,7 @@ function Catalog.fromModules(modules: any): Data
         memoriaNames = pick(readMemoria(m.memorias), ADVENTURE.memoriaNames),
         characterCards = {},
         characterCardName = {},
+        shopRerollSections = copy(ADVENTURE.shopRerollSections),
     }
     for _, extra in ADVENTURE.extraTraits or {} do
         if not table.find(data.traits, extra) then

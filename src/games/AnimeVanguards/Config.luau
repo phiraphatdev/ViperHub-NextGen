@@ -380,6 +380,9 @@ return table.freeze({
         secondPriorityFloor = table.freeze({ min = 1, max = 200, default = 30 }),
         cashOutFloor = table.freeze({ min = 1, max = 100, default = 30 }),
         failsafeMinutes = table.freeze({ min = 1, max = 30, default = 10 }),
+        -- Stitches Shop rerolls per shop (observed: ShopReroll() = all, ShopRerollSection({Section}) = Card|Trait|Memoria).
+        shopRerollTimes = table.freeze({ min = 1, max = 20, default = 3 }),
+        shopRerollSections = table.freeze({ "All", "Card", "Trait", "Memoria" }),
     }),
     thresholds = table.freeze({
         activitySnapshotSeconds = 7200,

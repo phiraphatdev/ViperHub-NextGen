@@ -527,6 +527,17 @@ do
                         max = 30,
                         default = 10,
                     }),
+                    shopRerollTimes = table.freeze({
+                        min = 1,
+                        max = 20,
+                        default = 3,
+                    }),
+                    shopRerollSections = table.freeze({
+                        'All',
+                        'Card',
+                        'Trait',
+                        'Memoria',
+                    }),
                 }),
                 thresholds = table.freeze({
                     activitySnapshotSeconds = 7200,
@@ -7173,6 +7184,7 @@ do
                     memoriaNames = pick(readMemoria(m.memorias), ADVENTURE.memoriaNames),
                     characterCards = {},
                     characterCardName = {},
+                    shopRerollSections = copy(ADVENTURE.shopRerollSections),
                 }
 
                 for _, extra in ADVENTURE.extraTraits or {}do
@@ -7351,6 +7363,18 @@ do
                 buyCharacterCards = {
                     kind = 'bool',
                     default = false,
+                },
+                shopReroll = {
+                    kind = 'bool',
+                    default = false,
+                },
+                shopRerollTimes = {
+                    kind = 'number',
+                    range = ADVENTURE.shopRerollTimes,
+                },
+                shopRerollSections = {
+                    kind = 'set',
+                    list = 'shopRerollSections',
                 },
                 buyStarterCards = {
                     kind = 'set',
@@ -7851,6 +7875,9 @@ do
                 failsafeMinutes = true,
                 buyBasicCards = true,
                 buyCharacterCards = true,
+                shopReroll = true,
+                shopRerollTimes = true,
+                shopRerollSections = true,
                 buyStarterCards = true,
                 buyTraits = true,
                 buyMemoria = true,
@@ -8085,6 +8112,11 @@ do
                 multi(shop, settings, 'buyBasicCards', 'Buy Basic Card', 'Basic cards to buy.', catalog.basicCards)
                 multi(shop, settings, 'buyStarterCards', 'Buy Starter Card', 'Power cards to unlock.', catalog.powers)
                 multi(shop, settings, 'buyTraits', 'Buy Unit Trait', 'Traits to buy for a unit without one.', catalog.traits)
+                toggle(shop, settings, 'shopReroll', 'Reroll Shop',
+[[After buying everything wanted that the coins allow, reroll the shop and buy again (up to the count below).]])
+                slider(shop, settings, 'shopRerollTimes', 'Rerolls per Shop', 'How many rerolls to use in one shop.')
+                multi(shop, settings, 'shopRerollSections', 'Reroll Sections',
+[[What to reroll: All (every slot) or Card, Trait, Memoria sections.]], catalog.shopRerollSections)
                 multi(shop, settings, 'buyMemoria', 'Buy Unit Memoria',
 [[Memoria to buy for your first-slot unit, by name (highest rarity first).]], catalog.memoriaNames)
 
@@ -9041,6 +9073,7 @@ do
             local LOBBY_RETRY_SECONDS = 20
             local NEW_RUN_FALLBACK_SECONDS = 40
             local MAP_POLL_SECONDS = 10
+            local SHOP_REROLL_WAIT_SECONDS = 4
             local TASK_WAIT_SECONDS = (config).thresholds.adventureTaskWaitSeconds
             local TASK_WAIT_RETRY_SECONDS = (config).thresholds.adventureTaskWaitRetrySeconds
             local VOTE_RETRY_SECONDS = (config).thresholds.adventureVoteRetrySeconds
@@ -9551,6 +9584,8 @@ do
                 local shopHandled = false
                 local shopClosedAt = -math.huge
                 local shopBusyUntil = -math.huge
+                local shopRerolls = 0
+                local planSerial = 0
                 local floorTasks = {}
 
                 local function beginTask(name)
@@ -10063,6 +10098,7 @@ do
 
                         endTask('shop')
 
+                        shopRerolls = 0
                         lastShopKey = ''
 
                         setStatus(if#plan > 0 then'Shop: bought ' .. tostring(#plan) .. ' item(s), left the shop'else'Left the shop without buying' .. (if sent then''else' (button only)'))
@@ -10098,7 +10134,70 @@ do
 
                     shopBusyUntil = deps.clock() + PICK_DELAY_SECONDS + SHOP_GAP_SECONDS * (#plan + 1)
 
-                    later(PICK_DELAY_SECONDS + SHOP_GAP_SECONDS * #plan, leave)
+                    planSerial += 1
+
+                    local planAt = planSerial
+
+                    local function finish(afterPurchases)
+                        if #plan > 0 and afterPurchases ~= true then
+                            later(SHOP_REROLL_WAIT_SECONDS, function()
+                                if self.active and planSerial == planAt then
+                                    finish(true)
+                                end
+                            end)
+
+                            return
+                        end
+
+                        local sections = toSet(saved.get('shopRerollSections'))
+                        local limit = tonumber(saved.get('shopRerollTimes')) or 0
+
+                        if self.active and saved.get('autoStitchesShop') == true and saved.get('shopReroll') == true and shopRerolls < limit and next(sections) ~= nil then
+                            local events = deps.events
+                            local fired = false
+
+                            if sections.All then
+                                local all = if events then events.ShopReroll else nil
+
+                                if type(all) == 'table' and type(all.Fire) == 'function' then
+                                    fired = (pcall(all.Fire))
+                                end
+                            else
+                                local one = if events then events.ShopRerollSection else nil
+
+                                for _, section in {
+                                    'Card',
+                                    'Trait',
+                                    'Memoria',
+                                }do
+                                    if sections[section] and type(one) == 'table' and type(one.Fire) == 'function' then
+                                        fired = (pcall(one.Fire, {Section = section})) or fired
+                                    end
+                                end
+                            end
+                            if fired then
+                                shopRerolls += 1
+
+                                local rerollAt = planSerial
+
+                                setStatus('Shop: reroll ' .. tostring(shopRerolls) .. '/' .. tostring(limit))
+                                later(SHOP_REROLL_WAIT_SECONDS, function()
+                                    if self.active and planSerial == rerollAt then
+                                        leave()
+                                    end
+                                end)
+
+                                return
+                            end
+                        end
+
+                        leave()
+                    end
+
+                    later(PICK_DELAY_SECONDS + SHOP_GAP_SECONDS * #plan, function(
+                    )
+                        finish()
+                    end)
                 end
 
                 local treasureHandling = false
@@ -10464,6 +10563,7 @@ do
                             lastFloorSeen = floor
                             shopHandled = false
                             floorTasks = {}
+                            shopRerolls = 0
                             treasureHandling = false
                         end
 

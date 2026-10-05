@@ -37,6 +37,9 @@ local UNLOCKED: { [string]: boolean } = {
     failsafeMinutes = true,
     buyBasicCards = true,
     buyCharacterCards = true,
+    shopReroll = true,
+    shopRerollTimes = true,
+    shopRerollSections = true,
     buyStarterCards = true,
     buyTraits = true,
     buyMemoria = true,
@@ -353,6 +356,22 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?, joi
         "Buy Unit Trait",
         "Traits to buy for a unit without one.",
         catalog.traits
+    )
+    toggle(
+        shop,
+        settings,
+        "shopReroll",
+        "Reroll Shop",
+        "After buying everything wanted that the coins allow, reroll the shop and buy again (up to the count below)."
+    )
+    slider(shop, settings, "shopRerollTimes", "Rerolls per Shop", "How many rerolls to use in one shop.")
+    multi(
+        shop,
+        settings,
+        "shopRerollSections",
+        "Reroll Sections",
+        "What to reroll: All (every slot) or Card, Trait, Memoria sections.",
+        catalog.shopRerollSections
     )
     multi(
         shop,
