@@ -39,8 +39,6 @@ local UNLOCKED: { [string]: boolean } = {
     buyCharacterCards = true,
     shopReroll = true,
     autoBuyItches = true,
-    itchesBuys = true,
-    itchesMaxCost = true,
     shopRerollTimes = true,
     shopRerollSections = true,
     buyStarterCards = true,
@@ -273,20 +271,6 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?, joi
         "autoBuyItches",
         "Auto Buy Itches",
         "When Itches (the Stitches NPC) appears on the map, walk to it and keep buying basic cards with Yen until it is gone; skipped once every basic card is owned at its cap."
-    )
-    slider(
-        misc,
-        settings,
-        "itchesBuys",
-        "Itches Buys",
-        "Most purchases per Itches (each one costs more; 50 = until it is gone)."
-    )
-    slider(
-        misc,
-        settings,
-        "itchesMaxCost",
-        "Itches Max Cost (Yen)",
-        "Never pay more Yen than this for one purchase."
     )
 
     local characterCard = Style.section(tab, "Auto Character Card", "id-card", false)

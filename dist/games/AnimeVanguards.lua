@@ -534,21 +534,11 @@ do
                         max = 20,
                         default = 3,
                     }),
-                    itchesBuys = table.freeze({
-                        min = 1,
-                        max = 50,
-                        default = 50,
-                    }),
                     basicCardCaps = table.freeze({
                         Rare = 4,
                         Epic = 3,
                         Legendary = 3,
                         Mythic = 1,
-                    }),
-                    itchesMaxCost = table.freeze({
-                        min = 100,
-                        max = 100000,
-                        default = 5000,
                     }),
                     shopRerollSections = table.freeze({
                         'All',
@@ -7386,14 +7376,6 @@ do
                     kind = 'bool',
                     default = false,
                 },
-                itchesBuys = {
-                    kind = 'number',
-                    range = ADVENTURE.itchesBuys,
-                },
-                itchesMaxCost = {
-                    kind = 'number',
-                    range = ADVENTURE.itchesMaxCost,
-                },
                 shopRerollTimes = {
                     kind = 'number',
                     range = ADVENTURE.shopRerollTimes,
@@ -7903,8 +7885,6 @@ do
                 buyCharacterCards = true,
                 shopReroll = true,
                 autoBuyItches = true,
-                itchesBuys = true,
-                itchesMaxCost = true,
                 shopRerollTimes = true,
                 shopRerollSections = true,
                 buyStarterCards = true,
@@ -8087,9 +8067,6 @@ do
 [[After a boss floor, claim the rarest Memoria or Familiar on a placed unit, or skip when none; the next room waits for it.]])
                 toggle(misc, settings, 'autoBuyItches', 'Auto Buy Itches',
 [[When Itches (the Stitches NPC) appears on the map, walk to it and keep buying basic cards with Yen until it is gone; skipped once every basic card is owned at its cap.]])
-                slider(misc, settings, 'itchesBuys', 'Itches Buys',
-[[Most purchases per Itches (each one costs more; 50 = until it is gone).]])
-                slider(misc, settings, 'itchesMaxCost', 'Itches Max Cost (Yen)', 'Never pay more Yen than this for one purchase.')
 
                 local characterCard = Style.section(tab, 'Auto Character Card', 'id-card', false)
 
@@ -10588,14 +10565,11 @@ do
                         end
                     end
 
-                    local limit = tonumber(saved.get('itchesBuys')) or 0
-                    local maxCost = tonumber(saved.get('itchesMaxCost')) or 0
-
                     for id, entry in itches do
                         local cost = tonumber(entry.Cost) or math.huge
                         local yen = (yenOf)() or 0
 
-                        if (itchesBought[id] or 0) < limit and cost <= maxCost and cost <= yen and entry.CFrame ~= nil then
+                        if cost <= yen and entry.CFrame ~= nil then
                             itchesBusy = true
 
                             local back = if type(deps.rootCFrame) == 'function'then(deps.rootCFrame)()else nil
@@ -10612,7 +10586,7 @@ do
                                     if pcall(request.Fire, id) then
                                         itchesBought[id] = (itchesBought[id] or 0) + 1
 
-                                        setStatus(string.format('Auto Buy Itches: bought for %s Yen (%s/%s)', tostring(cost), tostring(itchesBought[id]), tostring(limit)))
+                                        setStatus(string.format('Auto Buy Itches: bought for %s Yen (#%s)', tostring(cost), tostring(itchesBought[id])))
                                         notify('Auto Buy Itches', 'Bought for ' .. tostring(cost) .. ' Yen')
                                     end
                                 end

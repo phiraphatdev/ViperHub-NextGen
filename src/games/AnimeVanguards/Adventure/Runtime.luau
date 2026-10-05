@@ -1408,17 +1408,11 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                 return
             end
         end
-        local limit = tonumber(saved.get("itchesBuys")) or 0
-        local maxCost = tonumber(saved.get("itchesMaxCost")) or 0
         for id, entry in itches do
             local cost = tonumber(entry.Cost) or math.huge
             local yen = (yenOf :: any)() or 0
-            if
-                (itchesBought[id] or 0) < limit
-                and cost <= maxCost
-                and cost <= yen
-                and entry.CFrame ~= nil
-            then
+            -- Buy whenever the Yen covers it, until the Itches is gone.
+            if cost <= yen and entry.CFrame ~= nil then
                 itchesBusy = true
                 local back: any = if type(deps.rootCFrame) == "function"
                     then (deps.rootCFrame :: any)()
@@ -1434,10 +1428,9 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                             itchesBought[id] = (itchesBought[id] or 0) + 1
                             setStatus(
                                 string.format(
-                                    "Auto Buy Itches: bought for %s Yen (%s/%s)",
+                                    "Auto Buy Itches: bought for %s Yen (#%s)",
                                     tostring(cost),
-                                    tostring(itchesBought[id]),
-                                    tostring(limit)
+                                    tostring(itchesBought[id])
                                 )
                             )
                             notify("Auto Buy Itches", "Bought for " .. tostring(cost) .. " Yen")

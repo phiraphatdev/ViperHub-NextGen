@@ -384,11 +384,8 @@ return table.freeze({
         failsafeMinutes = table.freeze({ min = 1, max = 30, default = 10 }),
         -- Stitches Shop rerolls per shop (observed: ShopReroll() = all, ShopRerollSection({Section}) = Card|Trait|Memoria).
         shopRerollTimes = table.freeze({ min = 1, max = 20, default = 3 }),
-        -- Itches (the Stitches NPC on a floor): buys per Itches, and the highest Yen price paid.
-        itchesBuys = table.freeze({ min = 1, max = 50, default = 50 }),
         -- Basic card level caps by rarity (wiki): Itches is skipped once every basic card is at its cap.
         basicCardCaps = table.freeze({ Rare = 4, Epic = 3, Legendary = 3, Mythic = 1 }),
-        itchesMaxCost = table.freeze({ min = 100, max = 100000, default = 5000 }),
         shopRerollSections = table.freeze({ "All", "Card", "Trait", "Memoria" }),
     }),
     thresholds = table.freeze({
