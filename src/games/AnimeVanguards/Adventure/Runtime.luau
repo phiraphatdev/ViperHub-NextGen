@@ -729,7 +729,11 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         if not self.active or getSettings().get("autoCharacterCard") ~= true or not deps.isAdventure() then
             return
         end
-        local atCap = type(offer) == "table" and offer.AtCap == true
+        local atCap = type(offer) == "table"
+            and (
+                (offer.AtCap ~= nil and offer.AtCap ~= false)
+                or (type(offer.ExistingCards) == "table" and #offer.ExistingCards >= 4)
+            )
         local saved: any = getSettings()
         local character = saved.get("character")
         local groupOrder: any = saved.groupOrder
@@ -737,6 +741,22 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             then (groupOrder :: any)("characterCardPriority", character)
             else nil
         local nameOf: any = deps.characterCardName
+        if type(nameOf) ~= "table" then
+            local okCatalog, catalog = pcall(Catalog.read)
+            nameOf = if okCatalog and type(catalog) == "table" then catalog.characterCardName else nil
+        end
+        -- The order follows the run's own character (a resumed run can differ from the saved choice).
+        local runCharacter: any = nil
+        for _, entry in
+            (if type(offer) == "table" and type(offer.Options) == "table" then offer.Options else {})
+        do
+            if type(entry) == "table" and type(entry.CharacterName) == "string" then
+                runCharacter = entry.CharacterName
+            end
+        end
+        if runCharacter and type(groupOrder) == "function" then
+            order = (groupOrder :: any)("characterCardPriority", runCharacter)
+        end
         local index =
             Choice.characterCardChoice(offer, order, if type(nameOf) == "table" then nameOf else nil)
         local offered: { string } = {}
@@ -900,9 +920,14 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         local function leave()
             local events: any = deps.events
             local entry = if events then events.ShopClose else nil
-            if
-                not self.active or (saved.get("leaveShop") ~= true and saved.get("autoStitchesShop") ~= true)
-            then
+            -- Auto Stitches Shop only buys; leaving is Leave Shop Rooms' job (off: the shop stays open for the player).
+            if not self.active or saved.get("leaveShop") ~= true then
+                endTask("shop")
+                if #plan > 0 then
+                    setStatus(
+                        "Shop: bought " .. tostring(#plan) .. " item(s); Leave Shop Rooms is off, staying"
+                    )
+                end
                 return
             end
             local pressFn: any = deps.closeShopUi

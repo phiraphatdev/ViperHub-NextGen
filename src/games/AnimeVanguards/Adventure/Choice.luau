@@ -123,10 +123,13 @@ function Choice.characterCardChoice(offer: any, order: { string }?, nameOf: { [s
     if not best then
         return nil
     end
-    if offer.AtCap ~= true then
+    local existing: any = offer.ExistingCards
+    -- A full hand (observed live: 4 held cards) is a replacement offer even when AtCap is not a plain true.
+    local atCap = (offer.AtCap ~= nil and offer.AtCap ~= false)
+        or (type(existing) == "table" and #existing >= 4)
+    if not atCap then
         return best
     end
-    local existing: any = offer.ExistingCards
     if type(existing) ~= "table" then
         return nil
     end

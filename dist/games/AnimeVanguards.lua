@@ -419,6 +419,9 @@ do
                         'Solar',
                         'Prodigy',
                     }),
+                    extraTraits = table.freeze({
+                        'Monarch',
+                    }),
                     memoriaNames = table.freeze({
                         'Trust of Others',
                         'Enthusiastic Walks',
@@ -7172,6 +7175,12 @@ do
                     characterCardName = {},
                 }
 
+                for _, extra in ADVENTURE.extraTraits or {}do
+                    if not table.find(data.traits, extra) then
+                        table.insert(data.traits, extra)
+                    end
+                end
+
                 data.characterCards = readCharacterCards(m.characters, characters, data.characterCardName)
 
                 return data
@@ -8609,12 +8618,13 @@ do
                 if not best then
                     return nil
                 end
-                if offer.AtCap ~= true then
-                    return best
-                end
 
                 local existing = offer.ExistingCards
+                local atCap = (offer.AtCap ~= nil and offer.AtCap ~= false) or (type(existing) == 'table' and #existing >= 4)
 
+                if not atCap then
+                    return best
+                end
                 if type(existing) ~= 'table' then
                     return nil
                 end
@@ -9792,12 +9802,31 @@ do
                         return
                     end
 
-                    local atCap = type(offer) == 'table' and offer.AtCap == true
+                    local atCap = type(offer) == 'table' and ((offer.AtCap ~= nil and offer.AtCap ~= false) or (type(offer.ExistingCards) == 'table' and #offer.ExistingCards >= 4))
                     local saved = getSettings()
                     local character = saved.get('character')
                     local groupOrder = saved.groupOrder
                     local order = if type(groupOrder) == 'function' and type(character) == 'string'then(groupOrder)('characterCardPriority', character)else nil
                     local nameOf = deps.characterCardName
+
+                    if type(nameOf) ~= 'table' then
+                        local okCatalog, catalog = pcall(Catalog.read)
+
+                        nameOf = if okCatalog and type(catalog) == 'table'then catalog.characterCardName else nil
+                    end
+
+                    local runCharacter = nil
+
+                    for _, entry in (if type(offer) == 'table' and type(offer.Options) == 'table'then offer.Options else{})do
+                        if type(entry) == 'table' and type(entry.CharacterName) == 'string' then
+                            runCharacter = entry.CharacterName
+                        end
+                    end
+
+                    if runCharacter and type(groupOrder) == 'function' then
+                        order = (groupOrder)('characterCardPriority', runCharacter)
+                    end
+
                     local index = Choice.characterCardChoice(offer, order, if type(nameOf) == 'table'then nameOf else nil)
                     local offered = {}
 
@@ -9945,7 +9974,13 @@ do
                         local events = deps.events
                         local entry = if events then events.ShopClose else nil
 
-                        if not self.active or (saved.get('leaveShop') ~= true and saved.get('autoStitchesShop') ~= true) then
+                        if not self.active or saved.get('leaveShop') ~= true then
+                            endTask('shop')
+
+                            if #plan > 0 then
+                                setStatus('Shop: bought ' .. tostring(#plan) .. ' item(s); Leave Shop Rooms is off, staying')
+                            end
+
                             return
                         end
 

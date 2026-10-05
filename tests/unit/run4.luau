@@ -1284,7 +1284,7 @@ test("Adventure runtime buys the selected shop items, then leaves the shop", fun
     sent = {}
     opened({ Stock = liveStock(), Budget = 100, Spent = 0 })
     flush()
-    assert(sent[#sent] == "close", "Auto Stitches Shop on: it always ends by leaving the shop")
+    assert(sent[#sent] ~= "close", "Leave Shop Rooms off: Auto Stitches Shop buys and stays in the shop")
     settings.set("autoStitchesShop", false)
     sent = {}
     opened({ Stock = liveStock(), Budget = 90, Spent = 0 })

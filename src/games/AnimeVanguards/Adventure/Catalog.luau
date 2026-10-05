@@ -278,6 +278,11 @@ function Catalog.fromModules(modules: any): Data
         characterCards = {},
         characterCardName = {},
     }
+    for _, extra in ADVENTURE.extraTraits or {} do
+        if not table.find(data.traits, extra) then
+            table.insert(data.traits, extra)
+        end
+    end
     data.characterCards = readCharacterCards(m.characters, characters, data.characterCardName)
     return data
 end

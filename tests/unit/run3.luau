@@ -87,7 +87,7 @@ test("Adventure catalog reads live-shaped game modules and ignores malformed ent
     assert(table.concat(catalog.powers, ",") == "Full Deck,Flight")
     assert(table.concat(catalog.basicCards, ",") == "Golden Age,Ambush")
     assert(catalog.basicCardRarity["Golden Age"] == "Mythic" and catalog.basicCardRarity.Ambush == "Rare")
-    assert(table.concat(catalog.traits, ",") == "Vigor I,Vigor II,Vigor III,Blitz")
+    assert(table.concat(catalog.traits, ",") == "Vigor I,Vigor II,Vigor III,Blitz,Monarch")
     local failing = AdventureCatalog.fromModules({
         characters = {
             GetAllCharacters = function(): any

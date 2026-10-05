@@ -301,6 +301,8 @@ return table.freeze({
             "Solar",
             "Prodigy",
         }),
+        -- Traits the wiki lists for the shop but the live OdysseyTraitPool does not (2026-10-05): always offered.
+        extraTraits = table.freeze({ "Monarch" }),
         -- Observed 2026-10-04 (MemoriasData.GetMemoriaNames, first 60 of 74); the live list replaces this one.
         memoriaNames = table.freeze({
             "Trust of Others",
