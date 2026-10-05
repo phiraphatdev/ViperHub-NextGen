@@ -119,7 +119,9 @@ function Ambient.attach(library: any, cleanup: { add: (() -> ()) -> () })
     end)
 end
 
-local GHOST_SECONDS = 0.32
+local GHOST_SECONDS = 0.26
+local GHOST_ALPHA = 0.12 -- the ghost's glass while it flies
+local LAND_SECONDS = 0.14 -- the ghost fades over the real window once it has landed
 local PILL_HOVER_SCALE = 1.07
 local PILL_POP_FROM = 0.6
 local PILL_HALO_ALPHA = 0.82
@@ -176,7 +178,13 @@ function Ambient.window(window: any, library: any, cleanup: { add: (() -> ()) ->
         local size = ENV.Vector2.new(120, 80)
         return origin + area / 2 - size / 2, size
     end
+    -- A light stand-in for the window: dark glass tinted with the accent and an accent outline.
     local function makeGhost(position: any, size: any): (any, any)
+        local accent = themeColor(library)
+        local theme: any = if type(library) == "table" then library.Theme else nil
+        local dark: any = if type(theme) == "table" and isColor(theme.Dialog)
+            then theme.Dialog
+            else ENV.Color3.fromRGB(10, 16, 14)
         local ghost = ENV.Instance.new("Frame")
         ghost.Name = "ViperGhost"
         ghost.BorderSizePixel = 0
@@ -187,60 +195,58 @@ function Ambient.window(window: any, library: any, cleanup: { add: (() -> ()) ->
         ghost.Position = ENV.UDim2.fromOffset(position.X - origin.X, position.Y - origin.Y)
         ghost.Size = ENV.UDim2.fromOffset(size.X, size.Y)
         local cornerItem = ENV.Instance.new("UICorner")
-        cornerItem.CornerRadius = ENV.UDim.new(0, 16)
+        cornerItem.CornerRadius = ENV.UDim.new(0, 14)
         cornerItem.Parent = ghost
-        local backdrop: any = nil
-        for _, object in gui:GetDescendants() do
-            if object.Name == "Background" and object:IsA("ImageLabel") then
-                backdrop = object:FindFirstChildOfClass("UIGradient")
-                break
-            end
-        end
         local fillGradient = ENV.Instance.new("UIGradient")
-        if backdrop then
-            fillGradient.Color = backdrop.Color
-            fillGradient.Rotation = backdrop.Rotation
-        else
-            fillGradient.Color =
-                ENV.ColorSequence.new(ENV.Color3.fromRGB(8, 14, 12), ENV.Color3.fromRGB(14, 32, 26))
-        end
+        fillGradient.Rotation = 90
+        fillGradient.Color = ENV.ColorSequence.new(dark:Lerp(accent, 0.16), dark)
         fillGradient.Parent = ghost
         local ghostStroke = ENV.Instance.new("UIStroke")
         ghostStroke.ApplyStrokeMode = ENV.Enum.ApplyStrokeMode.Border
         ghostStroke.Thickness = 1.5
-        ghostStroke.Color = themeColor(library)
+        ghostStroke.Color = accent
         ghostStroke.Parent = ghost
         ghost.Parent = gui
         return ghost, ghostStroke
     end
-    local function fly(ghost: any, stroke: any, position: any, size: any, seconds: number, fadeOut: boolean)
+    local function place(ghost: any, position: any, size: any, seconds: number, direction: any)
         local origin: any = gui.AbsolutePosition
-        local goal = {
+        tweenOf(ghost, seconds, {
             Position = ENV.UDim2.fromOffset(position.X - origin.X, position.Y - origin.Y),
             Size = ENV.UDim2.fromOffset(size.X, size.Y),
-        }
-        tweenOf(ghost, seconds, goal, quint, ENV.Enum.EasingDirection.InOut)
-        if fadeOut then
-            tweenOf(ghost, seconds, { BackgroundTransparency = 1 }, quad, inDir)
-            tweenOf(stroke, seconds, { Transparency = 1 }, quad, inDir)
-        end
+        }, quint, direction)
     end
     local busy = false
     local firstOpen = true
+    local holdHidden = false
+    -- WindUI shows the window as soon as it starts opening; keep it hidden until the ghost has landed.
+    if frame then
+        local hold = frame:GetPropertyChangedSignal("Visible"):Connect(function()
+            if holdHidden and frame.Visible then
+                frame.Visible = false
+            end
+        end)
+        cleanup.add(function()
+            hold:Disconnect()
+        end)
+    end
     if type(originalClose) == "function" and type(originalOpen) == "function" and frame and gui then
         window.Close = function(...)
             if window.Closed or busy then
                 return (originalClose :: any)(...)
             end
             savedSize = frame.Size
-            local fromPos, fromSize = frame.AbsolutePosition, frame.AbsoluteSize
-            local ghost, ghostStroke = makeGhost(fromPos, fromSize)
+            local ghost, ghostStroke = makeGhost(frame.AbsolutePosition, frame.AbsoluteSize)
+            ghost.BackgroundTransparency = GHOST_ALPHA
+            ghostStroke.Transparency = 0.2
             local result = (originalClose :: any)(...)
             frame.Visible = false
             local toPos, toSize = pillRect()
-            fly(ghost, ghostStroke, toPos, toSize, GHOST_SECONDS, true)
-            local taskApi: any = ENV.task
-            taskApi.delay(GHOST_SECONDS + 0.05, function()
+            -- Slow start, fast finish: the window is drawn into the button; it fades over the second half.
+            place(ghost, toPos, toSize, GHOST_SECONDS, inDir)
+            tweenOf(ghost, GHOST_SECONDS, { BackgroundTransparency = 1 }, quad, inDir)
+            tweenOf(ghostStroke, GHOST_SECONDS, { Transparency = 1 }, quad, inDir)
+            ENV.task.delay(GHOST_SECONDS + 0.05, function()
                 ghost:Destroy()
             end)
             return result
@@ -252,36 +258,41 @@ function Ambient.window(window: any, library: any, cleanup: { add: (() -> ()) ->
                 return (originalOpen :: any)(...)
             end
             busy = true
-            local args = table.pack(...)
             local fromPos, fromSize = pillRect()
-            local ghost, ghostStroke = makeGhost(fromPos, fromSize)
-            ghost.BackgroundTransparency = 0.4
-            ghostStroke.Transparency = 0.2
             -- Where the window will be: its last place at its full size.
-            local toSize = ENV.Vector2.new(savedSize.X.Offset, savedSize.Y.Offset)
-                * (if scaleObj then scaleObj.Scale else 1)
+            local scale = if scaleObj then scaleObj.Scale else 1
+            local toSize = ENV.Vector2.new(savedSize.X.Offset, savedSize.Y.Offset) * scale
+            local current = frame.AbsoluteSize
             local toPos = frame.AbsolutePosition
-                - ENV.Vector2.new(0, (toSize.Y - frame.AbsoluteSize.Y) * frame.AnchorPoint.Y)
-                - ENV.Vector2.new((toSize.X - frame.AbsoluteSize.X) * frame.AnchorPoint.X, 0)
-            fly(ghost, ghostStroke, toPos, toSize, GHOST_SECONDS, false)
-            tweenOf(ghost, GHOST_SECONDS, { BackgroundTransparency = 0 }, quad, outDir)
-            local taskApi: any = ENV.task
-            local result: any = nil
-            taskApi.delay(GHOST_SECONDS, function()
-                result = (originalOpen :: any)(table.unpack(args, 1, args.n))
-                -- WindUI grows the window over 0.8 s, re-laying out every element each frame: finish it at once
-                -- (a new tween on the same property cancels WindUI's).
-                taskApi.delay(0.1, function()
-                    tweenOf(frame, 0.05, { Size = savedSize }, quad, outDir)
-                    tweenOf(ghost, 0.18, { BackgroundTransparency = 1 }, quad, outDir)
-                    tweenOf(ghostStroke, 0.18, { Transparency = 1 }, quad, outDir)
-                    if edge then
-                        tweenOf(edge, 0.3, { Transparency = EDGE_ALPHA }, quad, outDir)
-                    end
-                    taskApi.delay(0.2, function()
-                        ghost:Destroy()
-                        busy = false
-                    end)
+                - ENV.Vector2.new(
+                    (toSize.X - current.X) * frame.AnchorPoint.X,
+                    (toSize.Y - current.Y) * frame.AnchorPoint.Y
+                )
+            local ghost, ghostStroke = makeGhost(fromPos, fromSize)
+            ghost.BackgroundTransparency = 0.6
+            ghostStroke.Transparency = 0.4
+            -- Fast start, soft landing.
+            place(ghost, toPos, toSize, GHOST_SECONDS, outDir)
+            tweenOf(ghost, GHOST_SECONDS * 0.6, { BackgroundTransparency = GHOST_ALPHA }, quad, outDir)
+            tweenOf(ghostStroke, GHOST_SECONDS * 0.6, { Transparency = 0.2 }, quad, outDir)
+            -- Open now, hidden: WindUI's start-up (its background fade, its 0.8 s grow) runs while the ghost flies,
+            -- and the grow is finished at once (a new tween on the same property cancels WindUI's).
+            holdHidden = true
+            local result = (originalOpen :: any)(...)
+            ENV.task.delay(0.1, function()
+                tweenOf(frame, 0.01, { Size = savedSize }, quad, outDir)
+            end)
+            ENV.task.delay(GHOST_SECONDS, function()
+                holdHidden = false
+                frame.Visible = true
+                if edge then
+                    edge.Transparency = EDGE_ALPHA
+                end
+                tweenOf(ghost, LAND_SECONDS, { BackgroundTransparency = 1 }, quad, outDir)
+                tweenOf(ghostStroke, LAND_SECONDS, { Transparency = 1 }, quad, outDir)
+                ENV.task.delay(LAND_SECONDS + 0.02, function()
+                    ghost:Destroy()
+                    busy = false
                 end)
             end)
             return result

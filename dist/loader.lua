@@ -2138,7 +2138,9 @@ do
                 end)
             end
 
-            local GHOST_SECONDS = 0.32
+            local GHOST_SECONDS = 0.26
+            local GHOST_ALPHA = 0.12
+            local LAND_SECONDS = 0.14
             local PILL_HOVER_SCALE = 1.07
             local PILL_POP_FROM = 0.6
             local PILL_HALO_ALPHA = 0.82
@@ -2198,6 +2200,9 @@ do
                     return origin + area / 2 - size / 2, size
                 end
                 local function makeGhost(position, size)
+                    local accent = themeColor(library)
+                    local theme = if type(library) == 'table'then library.Theme else nil
+                    local dark = if type(theme) == 'table' and isColor(theme.Dialog)then theme.Dialog else ENV.Color3.fromRGB(10, 16, 14)
                     local ghost = ENV.Instance.new('Frame')
 
                     ghost.Name = 'ViperGhost'
@@ -2213,65 +2218,50 @@ do
 
                     local cornerItem = ENV.Instance.new('UICorner')
 
-                    cornerItem.CornerRadius = ENV.UDim.new(0, 16)
+                    cornerItem.CornerRadius = ENV.UDim.new(0, 14)
                     cornerItem.Parent = ghost
-
-                    local backdrop = nil
-
-                    for _, object in gui:GetDescendants()do
-                        if object.Name == 'Background' and object:IsA('ImageLabel') then
-                            backdrop = object:FindFirstChildOfClass('UIGradient')
-
-                            break
-                        end
-                    end
 
                     local fillGradient = ENV.Instance.new('UIGradient')
 
-                    if backdrop then
-                        fillGradient.Color = backdrop.Color
-                        fillGradient.Rotation = backdrop.Rotation
-                    else
-                        fillGradient.Color = ENV.ColorSequence.new(ENV.Color3.fromRGB(8, 14, 12), ENV.Color3.fromRGB(14, 32, 26))
-                    end
-
+                    fillGradient.Rotation = 90
+                    fillGradient.Color = ENV.ColorSequence.new(dark:Lerp(accent, 0.16), dark)
                     fillGradient.Parent = ghost
 
                     local ghostStroke = ENV.Instance.new('UIStroke')
 
                     ghostStroke.ApplyStrokeMode = ENV.Enum.ApplyStrokeMode.Border
                     ghostStroke.Thickness = 1.5
-                    ghostStroke.Color = themeColor(library)
+                    ghostStroke.Color = accent
                     ghostStroke.Parent = ghost
                     ghost.Parent = gui
 
                     return ghost, ghostStroke
                 end
-                local function fly(
-                    ghost,
-                    stroke,
-                    position,
-                    size,
-                    seconds,
-                    fadeOut
-                )
+                local function place(ghost, position, size, seconds, direction)
                     local origin = gui.AbsolutePosition
-                    local goal = {
+
+                    tweenOf(ghost, seconds, {
                         Position = ENV.UDim2.fromOffset(position.X - origin.X, position.Y - origin.Y),
                         Size = ENV.UDim2.fromOffset(size.X, size.Y),
-                    }
-
-                    tweenOf(ghost, seconds, goal, quint, ENV.Enum.EasingDirection.InOut)
-
-                    if fadeOut then
-                        tweenOf(ghost, seconds, {BackgroundTransparency = 1}, quad, inDir)
-                        tweenOf(stroke, seconds, {Transparency = 1}, quad, inDir)
-                    end
+                    }, quint, direction)
                 end
 
                 local busy = false
                 local firstOpen = true
+                local holdHidden = false
 
+                if frame then
+                    local hold = frame:GetPropertyChangedSignal('Visible'):Connect(function(
+                    )
+                        if holdHidden and frame.Visible then
+                            frame.Visible = false
+                        end
+                    end)
+
+                    cleanup.add(function()
+                        hold:Disconnect()
+                    end)
+                end
                 if type(originalClose) == 'function' and type(originalOpen) == 'function' and frame and gui then
                     window.Close = function(...)
                         if window.Closed or busy then
@@ -2280,19 +2270,21 @@ do
 
                         savedSize = frame.Size
 
-                        local fromPos, fromSize = frame.AbsolutePosition, frame.AbsoluteSize
-                        local ghost, ghostStroke = makeGhost(fromPos, fromSize)
+                        local ghost, ghostStroke = makeGhost(frame.AbsolutePosition, frame.AbsoluteSize)
+
+                        ghost.BackgroundTransparency = GHOST_ALPHA
+                        ghostStroke.Transparency = 0.2
+
                         local result = (originalClose)(...)
 
                         frame.Visible = false
 
                         local toPos, toSize = pillRect()
 
-                        fly(ghost, ghostStroke, toPos, toSize, GHOST_SECONDS, true)
-
-                        local taskApi = ENV.task
-
-                        taskApi.delay(GHOST_SECONDS + 0.05, function()
+                        place(ghost, toPos, toSize, GHOST_SECONDS, inDir)
+                        tweenOf(ghost, GHOST_SECONDS, {BackgroundTransparency = 1}, quad, inDir)
+                        tweenOf(ghostStroke, GHOST_SECONDS, {Transparency = 1}, quad, inDir)
+                        ENV.task.delay(GHOST_SECONDS + 0.05, function()
                             ghost:Destroy()
                         end)
 
@@ -2307,39 +2299,41 @@ do
 
                         busy = true
 
-                        local args = table.pack(...)
                         local fromPos, fromSize = pillRect()
+                        local scale = if scaleObj then scaleObj.Scale else 1
+                        local toSize = ENV.Vector2.new(savedSize.X.Offset, savedSize.Y.Offset) * scale
+                        local current = frame.AbsoluteSize
+                        local toPos = frame.AbsolutePosition - ENV.Vector2.new((toSize.X - current.X) * frame.AnchorPoint.X, (toSize.Y - current.Y) * frame.AnchorPoint.Y)
                         local ghost, ghostStroke = makeGhost(fromPos, fromSize)
 
-                        ghost.BackgroundTransparency = 0.4
-                        ghostStroke.Transparency = 0.2
+                        ghost.BackgroundTransparency = 0.6
+                        ghostStroke.Transparency = 0.4
 
-                        local toSize = ENV.Vector2.new(savedSize.X.Offset, savedSize.Y.Offset) * (if scaleObj then scaleObj.Scale else 1)
-                        local toPos = frame.AbsolutePosition - ENV.Vector2.new(0, (toSize.Y - frame.AbsoluteSize.Y) * frame.AnchorPoint.Y) - ENV.Vector2.new((toSize.X - frame.AbsoluteSize.X) * frame.AnchorPoint.X, 0)
+                        place(ghost, toPos, toSize, GHOST_SECONDS, outDir)
+                        tweenOf(ghost, GHOST_SECONDS * 0.6, {BackgroundTransparency = GHOST_ALPHA}, quad, outDir)
+                        tweenOf(ghostStroke, GHOST_SECONDS * 0.6, {Transparency = 0.2}, quad, outDir)
 
-                        fly(ghost, ghostStroke, toPos, toSize, GHOST_SECONDS, false)
-                        tweenOf(ghost, GHOST_SECONDS, {BackgroundTransparency = 0}, quad, outDir)
+                        holdHidden = true
 
-                        local taskApi = ENV.task
-                        local result = nil
+                        local result = (originalOpen)(...)
 
-                        taskApi.delay(GHOST_SECONDS, function()
-                            result = (originalOpen)(table.unpack(args, 1, args.n))
+                        ENV.task.delay(0.1, function()
+                            tweenOf(frame, 0.01, {Size = savedSize}, quad, outDir)
+                        end)
+                        ENV.task.delay(GHOST_SECONDS, function()
+                            holdHidden = false
+                            frame.Visible = true
 
-                            taskApi.delay(0.1, function()
-                                tweenOf(frame, 0.05, {Size = savedSize}, quad, outDir)
-                                tweenOf(ghost, 0.18, {BackgroundTransparency = 1}, quad, outDir)
-                                tweenOf(ghostStroke, 0.18, {Transparency = 1}, quad, outDir)
+                            if edge then
+                                edge.Transparency = EDGE_ALPHA
+                            end
 
-                                if edge then
-                                    tweenOf(edge, 0.3, {Transparency = EDGE_ALPHA}, quad, outDir)
-                                end
+                            tweenOf(ghost, LAND_SECONDS, {BackgroundTransparency = 1}, quad, outDir)
+                            tweenOf(ghostStroke, LAND_SECONDS, {Transparency = 1}, quad, outDir)
+                            ENV.task.delay(LAND_SECONDS + 0.02, function()
+                                ghost:Destroy()
 
-                                taskApi.delay(0.2, function()
-                                    ghost:Destroy()
-
-                                    busy = false
-                                end)
+                                busy = false
                             end)
                         end)
 

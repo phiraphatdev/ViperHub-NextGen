@@ -10,8 +10,8 @@
   "artifacts": {
     "loader": {
       "path": "dist/loader.lua",
-      "sha256": "3d4327cc6e05ffaa8cf16cc3fb3e5bc01e5c9b8c080ee982124cde4d03337b13",
-      "bytes": 118415
+      "sha256": "97a3360f3aa67139d79c8bd97c2e5f9e6f2443981948b600825cfa65bb62a358",
+      "bytes": 118515
     },
     "ui": {
       "path": "dist/ui.lua",
