@@ -68,13 +68,33 @@ end
 
 local CHARACTER_RARITY = { Mythic = 4, Legendary = 3, Epic = 2, Rare = 1 }
 
+--- The display name of a character card entry: nameOf[CardId] (also for ids carrying a "Character:" style prefix),
+--- else its own DisplayName or Name.
+function Choice.characterCardName(card: any, nameOf: { [string]: string }?): string?
+    if type(card) ~= "table" then
+        return nil
+    end
+    local id = card.CardId
+    if nameOf and type(id) == "string" then
+        local direct = nameOf[id]
+        if direct then
+            return direct
+        end
+        local tail = string.match(id, "[:/%.]([%w_]+)$")
+        if tail and nameOf[tail] then
+            return nameOf[tail]
+        end
+    end
+    local own = card.DisplayName or card.Name
+    return if type(own) == "string" then own else nil
+end
+
 -- A character card's score: its place in the saved order (highest first), else its rarity below every listed card.
 local function cardScore(card: any, order: { string }?, nameOf: { [string]: string }?): number
     if type(card) ~= "table" then
         return -math.huge
     end
-    local name = if nameOf and type(card.CardId) == "string" then nameOf[card.CardId] else nil
-    name = name or card.DisplayName or card.Name
+    local name = Choice.characterCardName(card, nameOf)
     if order and type(name) == "string" then
         local position = table.find(order, name)
         if position then
@@ -147,7 +167,7 @@ end
 
 local ROMAN = { "I", "II", "III", "IV", "V" }
 local MEMORIA_RARITY = { Vanguard = 6, Secret = 5, Mythic = 4, Legendary = 3, Epic = 2, Rare = 1 }
-local KIND_ORDER = { Power = 1, BasicCard = 2, Trait = 3, Memoria = 4 }
+local KIND_ORDER = { Power = 1, UnitCard = 2, BasicCard = 3, Trait = 4, Memoria = 5 }
 
 --- The display name of a shop trait as listed in settings ("Swift III"; tierless traits keep their name).
 function Choice.traitLabel(item: any): string?
@@ -190,6 +210,13 @@ function Choice.shopPurchases(stock: any, budget: number, wants: any): { any }
                 entry = { name = item.BasicCardName, rank = wants.rank[item.BasicCardName] or 0 }
             elseif item.Kind == "Power" and wants.starters[item.PowerName or item.Name] then
                 entry = { name = item.PowerName or item.Name, rank = 0 }
+            elseif item.Kind == "UnitCard" and type(wants.characterCards) == "table" then
+                -- A character card is bought when it is among the top picks of the character's priority list.
+                local name = Choice.characterCardName(item, wants.characterCardName)
+                local position = if name then table.find(wants.characterCards, name) else nil
+                if position and position <= (wants.characterCardTop or 4) then
+                    entry = { name = name, rank = 100 - position }
+                end
             elseif item.Kind == "Trait" then
                 local label = Choice.traitLabel(item)
                 if label and wants.traits[label] and type(item.TraitUnitGUID) == "string" then

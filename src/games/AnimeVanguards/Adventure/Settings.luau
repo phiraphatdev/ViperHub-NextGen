@@ -42,6 +42,7 @@ local FIELDS: { [string]: any } = {
     cardPriority = { kind = "ranks", list = "basicCards" },
     autoStitchesShop = { kind = "bool", default = false },
     buyBasicCards = { kind = "set", list = "basicCards" },
+    buyCharacterCards = { kind = "bool", default = false },
     buyStarterCards = { kind = "set", list = "powers" },
     buyTraits = { kind = "set", list = "traits" },
     buyMemoria = { kind = "set", list = "memoriaNames" },

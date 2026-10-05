@@ -36,6 +36,7 @@ local UNLOCKED: { [string]: boolean } = {
     failsafe = true,
     failsafeMinutes = true,
     buyBasicCards = true,
+    buyCharacterCards = true,
     buyStarterCards = true,
     buyTraits = true,
     buyMemoria = true,
@@ -335,6 +336,13 @@ function Page.mount(tab: any, catalogOverride: any?, settingsOverride: any?, joi
         "autoStitchesShop",
         "Auto Stitches Shop",
         "On a Shop floor, buy the items selected below with Odyssey Coins; skipped when off."
+    )
+    toggle(
+        shop,
+        settings,
+        "buyCharacterCards",
+        "Buy Character Card",
+        "Buy a character card offered in the shop when it is among the top 4 of your Character Card Priority."
     )
     multi(shop, settings, "buyBasicCards", "Buy Basic Card", "Basic cards to buy.", catalog.basicCards)
     multi(shop, settings, "buyStarterCards", "Buy Starter Card", "Power cards to unlock.", catalog.powers)

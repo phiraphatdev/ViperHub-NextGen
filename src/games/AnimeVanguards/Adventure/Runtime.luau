@@ -24,6 +24,7 @@ local SHOP_WATCH_SECONDS: number = (config :: any).thresholds.adventureShopWatch
 local SHOP_ASK_SECONDS: number = (config :: any).thresholds.adventureShopAskSeconds
 local SHOP_UI_GRACE_SECONDS: number = (config :: any).thresholds.adventureShopUiGraceSeconds
 local HISTORY_LIMIT = 80
+local CHARACTER_CARD_TOP = 4 -- shop character cards are bought only from the top of the priority list
 local END_SCREEN_SECONDS = 1
 local LOBBY_RETRY_SECONDS = 20
 local NEW_RUN_FALLBACK_SECONDS = 40
@@ -738,6 +739,20 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         local nameOf: any = deps.characterCardName
         local index =
             Choice.characterCardChoice(offer, order, if type(nameOf) == "table" then nameOf else nil)
+        local offered: { string } = {}
+        if type(offer) == "table" and type(offer.Options) == "table" then
+            for _, option in offer.Options do
+                if type(option) == "table" then
+                    table.insert(offered, tostring(option.CardId))
+                end
+            end
+        end
+        setStatus(
+            "Auto Character Card: offer ["
+                .. table.concat(offered, ", ")
+                .. "]"
+                .. (if atCap then " (hand full)" else "")
+        )
         beginTask("character card")
         local function answer()
             endTask("character card")
@@ -760,7 +775,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                 and type(offer.Options[index]) == "table"
             then
                 local option: any = offer.Options[index]
-                pickedName = if type(nameOf) == "table" then nameOf[option.CardId] else nil
+                pickedName = Choice.characterCardName(option, if type(nameOf) == "table" then nameOf else nil)
             end
             local ok = false
             if pickedName then
@@ -854,6 +869,12 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
                     traits = toSet(saved.get("buyTraits")),
                     memoria = toSet(saved.get("buyMemoria")),
                     character = saved.get("character"),
+                    characterCards = if saved.get("buyCharacterCards") == true
+                            and type(saved.groupOrder) == "function"
+                        then (saved.groupOrder :: any)("characterCardPriority", saved.get("character"))
+                        else nil,
+                    characterCardName = deps.characterCardName,
+                    characterCardTop = CHARACTER_CARD_TOP,
                     fallbackGuid = placedGuid(saved.get("character")),
                     rank = saved.get("cardPriority"),
                 }
