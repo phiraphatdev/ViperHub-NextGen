@@ -2187,13 +2187,15 @@ do
                     local openMain = window.OpenButtonMain
                     local button = if type(openMain) == 'table'then openMain.Button else nil
 
-                    if button and button.AbsoluteSize.X > 0 then
+                    if window.IsOpenButtonEnabled ~= false and button and button.AbsoluteSize.X > 0 then
                         return button.AbsolutePosition, button.AbsoluteSize
                     end
 
-                    local viewport = (ENV.workspace).CurrentCamera.ViewportSize
+                    local origin = gui.AbsolutePosition
+                    local area = gui.AbsoluteSize
+                    local size = ENV.Vector2.new(120, 80)
 
-                    return ENV.Vector2.new(viewport.X / 2 - 60, 74), ENV.Vector2.new(120, 44)
+                    return origin + area / 2 - size / 2, size
                 end
                 local function makeGhost(position, size)
                     local ghost = ENV.Instance.new('Frame')
@@ -2241,31 +2243,13 @@ do
                     ghostStroke.Thickness = 1.5
                     ghostStroke.Color = themeColor(library)
                     ghostStroke.Parent = ghost
-
-                    local label = ENV.Instance.new('TextLabel')
-
-                    label.BackgroundTransparency = 1
-                    label.Size = ENV.UDim2.fromScale(1, 1)
-                    label.Text = 'ViperHub'
-                    label.TextColor3 = ENV.Color3.new(1, 1, 1)
-                    label.TextScaled = true
-                    label.Font = ENV.Enum.Font.GothamBold
-                    label.ZIndex = 501
-
-                    local limit = ENV.Instance.new('UITextSizeConstraint')
-
-                    limit.MaxTextSize = 22
-                    limit.MinTextSize = 8
-                    limit.Parent = label
-                    label.Parent = ghost
                     ghost.Parent = gui
 
-                    return ghost, ghostStroke, label
+                    return ghost, ghostStroke
                 end
                 local function fly(
                     ghost,
                     stroke,
-                    label,
                     position,
                     size,
                     seconds,
@@ -2282,7 +2266,6 @@ do
                     if fadeOut then
                         tweenOf(ghost, seconds, {BackgroundTransparency = 1}, quad, inDir)
                         tweenOf(stroke, seconds, {Transparency = 1}, quad, inDir)
-                        tweenOf(label, seconds * 0.6, {TextTransparency = 1}, quad, outDir)
                     end
                 end
 
@@ -2298,17 +2281,14 @@ do
                         savedSize = frame.Size
 
                         local fromPos, fromSize = frame.AbsolutePosition, frame.AbsoluteSize
-                        local ghost, ghostStroke, label = makeGhost(fromPos, fromSize)
-
-                        label.TextTransparency = 1
-
+                        local ghost, ghostStroke = makeGhost(fromPos, fromSize)
                         local result = (originalClose)(...)
 
                         frame.Visible = false
 
                         local toPos, toSize = pillRect()
 
-                        fly(ghost, ghostStroke, label, toPos, toSize, GHOST_SECONDS, true)
+                        fly(ghost, ghostStroke, toPos, toSize, GHOST_SECONDS, true)
 
                         local taskApi = ENV.task
 
@@ -2329,7 +2309,7 @@ do
 
                         local args = table.pack(...)
                         local fromPos, fromSize = pillRect()
-                        local ghost, ghostStroke, label = makeGhost(fromPos, fromSize)
+                        local ghost, ghostStroke = makeGhost(fromPos, fromSize)
 
                         ghost.BackgroundTransparency = 0.4
                         ghostStroke.Transparency = 0.2
@@ -2337,9 +2317,8 @@ do
                         local toSize = ENV.Vector2.new(savedSize.X.Offset, savedSize.Y.Offset) * (if scaleObj then scaleObj.Scale else 1)
                         local toPos = frame.AbsolutePosition - ENV.Vector2.new(0, (toSize.Y - frame.AbsoluteSize.Y) * frame.AnchorPoint.Y) - ENV.Vector2.new((toSize.X - frame.AbsoluteSize.X) * frame.AnchorPoint.X, 0)
 
-                        fly(ghost, ghostStroke, label, toPos, toSize, GHOST_SECONDS, false)
+                        fly(ghost, ghostStroke, toPos, toSize, GHOST_SECONDS, false)
                         tweenOf(ghost, GHOST_SECONDS, {BackgroundTransparency = 0}, quad, outDir)
-                        tweenOf(label, GHOST_SECONDS * 0.5, {TextTransparency = 1}, quad, outDir)
 
                         local taskApi = ENV.task
                         local result = nil
