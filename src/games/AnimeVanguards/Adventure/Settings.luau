@@ -44,6 +44,8 @@ local FIELDS: { [string]: any } = {
     buyBasicCards = { kind = "set", list = "basicCards" },
     buyCharacterCards = { kind = "bool", default = false },
     shopReroll = { kind = "bool", default = false },
+    itchesBuys = { kind = "number", range = ADVENTURE.itchesBuys },
+    itchesMaxCost = { kind = "number", range = ADVENTURE.itchesMaxCost },
     shopRerollTimes = { kind = "number", range = ADVENTURE.shopRerollTimes },
     shopRerollSections = { kind = "set", list = "shopRerollSections" },
     buyStarterCards = { kind = "set", list = "powers" },

@@ -20,6 +20,8 @@ return table.freeze({
         riftsData = "Modules.Gameplay.Rifts.RiftsDataHandler",
         challengeAttempts = "Modules.Gameplay.Challenges.ChallengesAttemptsHandler",
         lobbyReturnClient = "NetworkCode.GameTeleportLobbyReturnClient",
+        stageMechanicsClient2 = "NetworkCode.GameStageMechanicsClient",
+        playerYenHandler = "Modules.Gameplay.PlayerYenHandler",
         gameHandler = "Modules.Gameplay.GameHandler",
         autoPlayHandler = "Modules.Gameplay.AutoPlay.AutoPlayHandler",
         gameOdysseyClient = "NetworkCode.GameOdysseyClient",
@@ -382,6 +384,9 @@ return table.freeze({
         failsafeMinutes = table.freeze({ min = 1, max = 30, default = 10 }),
         -- Stitches Shop rerolls per shop (observed: ShopReroll() = all, ShopRerollSection({Section}) = Card|Trait|Memoria).
         shopRerollTimes = table.freeze({ min = 1, max = 20, default = 3 }),
+        -- Itches (the Stitches NPC on a floor): buys per Itches, and the highest Yen price paid.
+        itchesBuys = table.freeze({ min = 1, max = 10, default = 3 }),
+        itchesMaxCost = table.freeze({ min = 100, max = 100000, default = 5000 }),
         shopRerollSections = table.freeze({ "All", "Card", "Trait", "Memoria" }),
     }),
     thresholds = table.freeze({

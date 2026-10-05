@@ -68,6 +68,8 @@ do
                     riftsData = 'Modules.Gameplay.Rifts.RiftsDataHandler',
                     challengeAttempts = 'Modules.Gameplay.Challenges.ChallengesAttemptsHandler',
                     lobbyReturnClient = 'NetworkCode.GameTeleportLobbyReturnClient',
+                    stageMechanicsClient2 = 'NetworkCode.GameStageMechanicsClient',
+                    playerYenHandler = 'Modules.Gameplay.PlayerYenHandler',
                     gameHandler = 'Modules.Gameplay.GameHandler',
                     autoPlayHandler = 'Modules.Gameplay.AutoPlay.AutoPlayHandler',
                     gameOdysseyClient = 'NetworkCode.GameOdysseyClient',
@@ -531,6 +533,16 @@ do
                         min = 1,
                         max = 20,
                         default = 3,
+                    }),
+                    itchesBuys = table.freeze({
+                        min = 1,
+                        max = 10,
+                        default = 3,
+                    }),
+                    itchesMaxCost = table.freeze({
+                        min = 100,
+                        max = 100000,
+                        default = 5000,
                     }),
                     shopRerollSections = table.freeze({
                         'All',
@@ -7368,6 +7380,14 @@ do
                     kind = 'bool',
                     default = false,
                 },
+                itchesBuys = {
+                    kind = 'number',
+                    range = ADVENTURE.itchesBuys,
+                },
+                itchesMaxCost = {
+                    kind = 'number',
+                    range = ADVENTURE.itchesMaxCost,
+                },
                 shopRerollTimes = {
                     kind = 'number',
                     range = ADVENTURE.shopRerollTimes,
@@ -7876,6 +7896,9 @@ do
                 buyBasicCards = true,
                 buyCharacterCards = true,
                 shopReroll = true,
+                autoBuyItches = true,
+                itchesBuys = true,
+                itchesMaxCost = true,
                 shopRerollTimes = true,
                 shopRerollSections = true,
                 buyStarterCards = true,
@@ -8057,7 +8080,9 @@ do
                 toggle(misc, settings, 'autoBossReward', 'Auto Boss Reward',
 [[After a boss floor, claim the rarest Memoria or Familiar on a placed unit, or skip when none; the next room waits for it.]])
                 toggle(misc, settings, 'autoBuyItches', 'Auto Buy Itches',
-[[Buy from the Stitches NPC when it appears on the map and you have enough Yen.]])
+[[When Itches (the Stitches NPC) appears on the map, walk to it and buy with Yen, then come back.]])
+                slider(misc, settings, 'itchesBuys', 'Itches Buys', 'Purchases per Itches (each one costs more).')
+                slider(misc, settings, 'itchesMaxCost', 'Itches Max Cost (Yen)', 'Never pay more Yen than this for one purchase.')
 
                 local characterCard = Style.section(tab, 'Auto Character Card', 'id-card', false)
 
@@ -9074,6 +9099,7 @@ do
             local NEW_RUN_FALLBACK_SECONDS = 40
             local MAP_POLL_SECONDS = 10
             local SHOP_REROLL_WAIT_SECONDS = 4
+            local ITCHES_STAY_SECONDS = 1.5
             local TASK_WAIT_SECONDS = (config).thresholds.adventureTaskWaitSeconds
             local TASK_WAIT_RETRY_SECONDS = (config).thresholds.adventureTaskWaitRetrySeconds
             local VOTE_RETRY_SECONDS = (config).thresholds.adventureVoteRetrySeconds
@@ -9332,6 +9358,25 @@ do
                         end
 
                         return nil
+                    end,
+                    stageMechanics = optionalModule(replicated, paths.stageMechanicsClient2),
+                    yen = function()
+                        local yenHandler = optionalModule(env.game:GetService('StarterPlayer'), paths.playerYenHandler)
+
+                        if type(yenHandler) == 'table' and type(yenHandler.GetYen) == 'function' then
+                            local ok, value = pcall(yenHandler.GetYen, yenHandler)
+
+                            return if ok and type(value) == 'number'then value else nil
+                        end
+
+                        return nil
+                    end,
+                    rootCFrame = function()
+                        local players = env.game:GetService('Players')
+                        local character = players.LocalPlayer and players.LocalPlayer.Character
+                        local root = character and character:FindFirstChild('HumanoidRootPart')
+
+                        return root and root.CFrame
                     end,
                     basicCardNames = (function()
                         local ok, catalog = pcall(Catalog.read)
@@ -10433,6 +10478,80 @@ do
                         answer()
                     end
                 end
+
+                local itches = {}
+                local itchesBought = {}
+                local itchesBusy = false
+
+                local function buyItches()
+                    local saved = getSettings()
+
+                    if itchesBusy or not self.active or saved.get('autoBuyItches') ~= true or not deps.isAdventure() then
+                        return
+                    end
+
+                    local mechanics = deps.stageMechanics
+                    local request = if type(mechanics) == 'table'then mechanics.ItchesInteractRequest else nil
+                    local yenOf = deps.yen
+
+                    if type(request) ~= 'table' or type(request.Fire) ~= 'function' or type(yenOf) ~= 'function' then
+                        return
+                    end
+
+                    local limit = tonumber(saved.get('itchesBuys')) or 0
+                    local maxCost = tonumber(saved.get('itchesMaxCost')) or 0
+
+                    for id, entry in itches do
+                        local cost = tonumber(entry.Cost) or math.huge
+                        local yen = (yenOf)() or 0
+
+                        if (itchesBought[id] or 0) < limit and cost <= maxCost and cost <= yen and entry.CFrame ~= nil then
+                            itchesBusy = true
+
+                            local back = if type(deps.rootCFrame) == 'function'then(deps.rootCFrame)()else nil
+                            local tpFn = deps.teleportTo
+
+                            if type(tpFn) == 'function' then
+                                pcall(tpFn, entry.CFrame)
+                            end
+
+                            local taskApi = deps.task
+
+                            local function finish()
+                                if self.active then
+                                    if pcall(request.Fire, id) then
+                                        itchesBought[id] = (itchesBought[id] or 0) + 1
+
+                                        setStatus(string.format('Auto Buy Itches: bought for %s Yen (%s/%s)', tostring(cost), tostring(itchesBought[id]), tostring(limit)))
+                                        notify('Auto Buy Itches', 'Bought for ' .. tostring(cost) .. ' Yen')
+                                    end
+                                end
+
+                                local function goBack()
+                                    if back ~= nil and type(tpFn) == 'function' then
+                                        pcall(tpFn, back)
+                                    end
+
+                                    itchesBusy = false
+                                end
+
+                                if type(taskApi) == 'table' and type(taskApi.delay) == 'function' then
+                                    (taskApi.delay)(ITCHES_STAY_SECONDS, goBack)
+                                else
+                                    goBack()
+                                end
+                            end
+
+                            if type(taskApi) == 'table' and type(taskApi.delay) == 'function' then
+                                (taskApi.delay)(CHEST_TELEPORT_DELAY_SECONDS, finish)
+                            else
+                                finish()
+                            end
+
+                            return
+                        end
+                    end
+                end
                 local function guarded(name, handler)
                     return function(payload)
                         local ok, err = pcall(handler, payload)
@@ -10470,6 +10589,8 @@ do
                             pcall(askMap.Fire)
                         end
                     end
+
+                    pcall(buyItches)
 
                     for _, sub in subscriptions do
                         pcall(sub.check)
@@ -10776,6 +10897,34 @@ do
                     local roomEntry = if type(events) == 'table'then events.SelectRoomSelectionStarted else nil
 
                     listen(roomEntry, guarded('room offer', onRoomOffer))
+
+                    local mechanics = deps.stageMechanics
+
+                    if type(mechanics) == 'table' then
+                        listen(mechanics.ItchesLoaded, guarded('itches', function(
+                            info
+                        )
+                            itches = {}
+
+                            if type(info) == 'table' and type(info.Items) == 'table' then
+                                for _, item in info.Items do
+                                    if type(item) == 'table' and item.Id ~= nil then
+                                        itches[item.Id] = {
+                                            CFrame = item.CFrame,
+                                            Cost = item.Cost,
+                                        }
+                                    end
+                                end
+                            end
+                        end))
+                        listen(mechanics.ItchesCostUpdated, guarded('itches cost', function(
+                            info
+                        )
+                            if type(info) == 'table' and itches[info.Id] then
+                                itches[info.Id].Cost = info.Cost
+                            end
+                        end))
+                    end
 
                     guardedRetry = function(offer)
                         guarded('room offer', function(payload)
