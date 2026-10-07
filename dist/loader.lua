@@ -1541,7 +1541,7 @@ do
             local function isButton(object)
                 return object:IsA('TextButton') or object:IsA('ImageButton')
             end
-            local function fit(frame, card)
+            local function fit(frame, card, header)
                 local pad = card:FindFirstChildOfClass('UIPadding')
                 local width = card.AbsoluteSize.X
                 local height = card.AbsoluteSize.Y
@@ -1552,8 +1552,15 @@ do
                     top = pad.PaddingTop.Scale * height + pad.PaddingTop.Offset
                 end
 
+                local offsetY = 0
+
+                if header and header.Parent then
+                    offsetY = header.AbsolutePosition.Y - card.AbsolutePosition.Y
+                    height = header.AbsoluteSize.Y
+                end
+
                 frame.Size = ENV.UDim2.fromOffset(width, height)
-                frame.Position = ENV.UDim2.fromOffset(-left, -top)
+                frame.Position = ENV.UDim2.fromOffset(-left, offsetY - top)
             end
             local function corner(parent, radius)
                 local item = ENV.Instance.new('UICorner')
@@ -1651,6 +1658,7 @@ do
                     wired[button] = true
 
                     local glow = nil
+                    local header = nil
                     local scale = nil
                     local hovered = false
 
@@ -1662,7 +1670,9 @@ do
                                 return node
                             end
                             if node:IsA('ImageLabel') and node.AbsoluteSize.X >= MIN_WIDTH then
-                                return if node.AbsoluteSize.Y <= button.AbsoluteSize.Y * SECTION_RATIO then node else button
+                                header = if node.AbsoluteSize.Y <= button.AbsoluteSize.Y * SECTION_RATIO then nil else button
+
+                                return node
                             end
 
                             local parent = node.Parent
@@ -1833,7 +1843,8 @@ do
                             tween(edge, FADE_SECONDS, {Transparency = STROKE_ALPHA})
                         end
 
-                        fit(glow, glow.Parent)
+                        card()
+                        fit(glow, glow.Parent, header)
                         follow()
                         tween(glow, FADE_SECONDS, {BackgroundTransparency = GLOW_ALPHA})
                         grow(TITLE_SCALE)

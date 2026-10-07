@@ -35,7 +35,8 @@ local function isButton(object: any): boolean
 end
 
 -- A card's UIPadding shrinks the area its children's scale sizes refer to; cancel it so the effects cover the box.
-local function fit(frame: any, card: any)
+-- header (optional): only that strip of the card is covered (a section's header row, not its whole body).
+local function fit(frame: any, card: any, header: any?)
     local pad: any = card:FindFirstChildOfClass("UIPadding")
     local width = card.AbsoluteSize.X
     local height = card.AbsoluteSize.Y
@@ -44,9 +45,14 @@ local function fit(frame: any, card: any)
         left = pad.PaddingLeft.Scale * width + pad.PaddingLeft.Offset
         top = pad.PaddingTop.Scale * height + pad.PaddingTop.Offset
     end
+    local offsetY = 0
+    if header and header.Parent then
+        offsetY = header.AbsolutePosition.Y - card.AbsolutePosition.Y
+        height = header.AbsoluteSize.Y
+    end
     -- Fixed pixel size (not scale): a scale size inside an auto-sized card feeds back and grows the card forever.
     frame.Size = ENV.UDim2.fromOffset(width, height)
-    frame.Position = ENV.UDim2.fromOffset(-left, -top)
+    frame.Position = ENV.UDim2.fromOffset(-left, offsetY - top)
 end
 
 local function corner(parent: any, radius: any)
@@ -136,6 +142,7 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
         end
         wired[button] = true
         local glow: any = nil
+        local header: any = nil
         local scale: any = nil
         local hovered = false
         -- The card is the nearest ancestor (or the button itself) that is drawn as a card, so a collapsible
@@ -149,9 +156,11 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
                 end
                 if node:IsA("ImageLabel") and node.AbsoluteSize.X >= MIN_WIDTH then
                     -- A label card much taller than the button wraps a whole section: glow the button only.
-                    return if node.AbsoluteSize.Y <= button.AbsoluteSize.Y * SECTION_RATIO
-                        then node
+                    -- A label card much taller than the button wraps a whole section: glow its header strip.
+                    header = if node.AbsoluteSize.Y <= button.AbsoluteSize.Y * SECTION_RATIO
+                        then nil
                         else button
+                    return node
                 end
                 local parent: any = node.Parent
                 if parent == nil then
@@ -292,7 +301,8 @@ function HoverGlow.attach(library: any, cleanup: { add: (() -> ()) -> () })
                 edge.Color = accent
                 tween(edge, FADE_SECONDS, { Transparency = STROKE_ALPHA })
             end
-            fit(glow, glow.Parent)
+            card() -- refreshes header: the section may have opened or closed since
+            fit(glow, glow.Parent, header)
             follow()
             tween(glow, FADE_SECONDS, { BackgroundTransparency = GLOW_ALPHA })
             grow(TITLE_SCALE)
