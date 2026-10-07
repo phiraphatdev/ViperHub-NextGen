@@ -1103,4 +1103,69 @@ test("Webhook Unit Contribution field layout and removed DPS lines", function()
     assert(string.find(embed.description or "", "DPS", 1, true) == nil, "player DPS line removed")
     assert(string.find(embed.description or "", "Kills/min", 1, true) == nil, "kills per minute removed")
 end)
+test("Settings of every key live in one profile file per game and player; old files move into it", function()
+    local files: { [string]: string } = {}
+    -- A tiny JSON stand-in: tables are kept in a registry and referred to by text.
+    local registry: { [string]: any } = {}
+    local count = 0
+    local http = {
+        JSONEncode = function(_self: any, value: any): string
+            count += 1
+            local id = "json#" .. tostring(count)
+            registry[id] = value
+            return id
+        end,
+        JSONDecode = function(_self: any, text: string): any
+            local value = registry[text]
+            if value == nil then
+                error("bad json")
+            end
+            return value
+        end,
+    }
+    local env: any = {
+        isfolder = function()
+            return true
+        end,
+        makefolder = function() end,
+        isfile = function(p: string)
+            return files[p] ~= nil
+        end,
+        writefile = function(p: string, s: string)
+            files[p] = s
+        end,
+        readfile = function(p: string)
+            return files[p]
+        end,
+        delfile = function(p: string)
+            files[p] = nil
+        end,
+        game = {
+            GetService = function(_self: any, name: string): any
+                if name == "Players" then
+                    return { LocalPlayer = { Name = "iMZulie" } }
+                end
+                return http
+            end,
+        },
+    }
+    files["ViperHubNextGen/AnimeVanguardsJoiner.json"] = http:JSONEncode({ paused = false })
+    assert(FileStorage.useProfile(env, "AnimeVanguards") == "ViperHubNextGen/AnimeVanguards_iMZulie.json")
+    local joiner = assert(FileStorage.new(env, "AnimeVanguardsJoiner"))
+    local misc = assert(FileStorage.new(env, "AnimeVanguardsMisc"))
+    local body = assert(joiner.read())
+    assert(http:JSONDecode(body).paused == false, "an old per-key file is read until it is saved")
+    assert(misc.read() == nil, "a key with no file and no section is empty")
+    assert(joiner.write(http:JSONEncode({ paused = true })))
+    assert(misc.write(http:JSONEncode({ fps = 30 })))
+    assert(files["ViperHubNextGen/AnimeVanguardsJoiner.json"] == nil, "the old file is removed once moved")
+    local document = http:JSONDecode(files["ViperHubNextGen/AnimeVanguards_iMZulie.json"])
+    assert(document.sections.AnimeVanguardsJoiner.paused == true, "both keys live in the one file")
+    assert(document.sections.AnimeVanguardsMisc.fps == 30)
+    assert(http:JSONDecode(assert(joiner.read())).paused == true, "a key reads its own section back")
+    files["ViperHubNextGen/AnimeVanguards_iMZulie.json"] = "not json"
+    local _, readError = joiner.read()
+    assert(readError ~= nil, "a damaged profile is reported, not read as empty")
+    assert(not misc.write(http:JSONEncode({ fps = 1 })), "and never overwritten")
+end)
 print(string.format("PASS: %d unit scenarios (part 2)", passed))
