@@ -5610,7 +5610,12 @@ do
 
                 self.traceFn = trace
 
+                local lastEventAt = -math.huge
+                local stepNow = 0
+
                 local function setStatus(value)
+                    lastEventAt = stepNow
+
                     trace(value)
 
                     local prefix = string.match(value, '^([%w ]+): ')
@@ -5628,6 +5633,31 @@ do
                     for _, listener in table.clone(statusListeners)do
                         pcall(listener, value)
                     end
+                end
+
+                local EVENT_HOLD_SECONDS = 4
+
+                local function liveStatus(now, value)
+                    if now - lastEventAt < EVENT_HOLD_SECONDS or self.status == value then
+                        return
+                    end
+
+                    self.status = value
+
+                    if self.onStatus then
+                        pcall(self.onStatus, value)
+                    end
+                end
+                local function enabledNames()
+                    local names = {}
+
+                    for _, name in Settings.get().priority do
+                        if self.enabled[name] then
+                            table.insert(names, name)
+                        end
+                    end
+
+                    return if#names > 0 then table.concat(names, ', ')else'none'
                 end
 
                 local POSITIVE_REPORT = {
@@ -6297,10 +6327,25 @@ do
                         return
                     end
                     if deps.gameHandler and not deps.gameHandler.IsGameLoaded then
+                        liveStatus(now, 'In a match: waiting for the game to load')
+
                         return
                     end
 
                     local matchData = deps.gameHandler and deps.gameHandler.GameData
+
+                    do
+                        local mode = if type(matchData) == 'table'then tostring(matchData.StageType or 'match')else'match'
+                        local label = if self.currentJoinedName then self.currentJoinedName else mode
+
+                        if AdventureDetect.isAdventureMatch(matchData) then
+                            local floor = if type(matchData) == 'table' and type(matchData.AdventureFloor) == 'number'then' floor ' .. tostring(matchData.AdventureFloor)else''
+
+                            liveStatus(now, 'In Odyssey Adventure' .. floor .. ': the Adventure features run it')
+                        else
+                            liveStatus(now, 'In a match (' .. label .. '): waiting for it to end, then back to the lobby')
+                        end
+                    end
 
                     if AdventureDetect.isAdventureMatch(matchData) or self.currentJoinedName == 'Odyssey Adventure' then
                         self.teleportingToLobby = nil
@@ -6378,6 +6423,8 @@ do
                     end
                 end
                 function self.step(now)
+                    stepNow = now
+
                     local context = self.context
                     local deps = self.dependencies
 
@@ -6478,11 +6525,15 @@ do
                                 self.confirmed = nil
 
                                 setStatus(confirmed.name .. ': Start sent; teleport not confirmed')
+                            else
+                                liveStatus(now, string.format('%s: start sent, waiting for the teleport (%ds)', confirmed.name, math.floor(now - confirmed.startSent)))
                             end
 
                             return
                         end
                         if confirmed.mode == 'Rift' then
+                            liveStatus(now, 'Rift: joining the room')
+
                             return
                         end
                         if not deps.lobby.IsHosting then
@@ -6490,6 +6541,8 @@ do
                                 self.confirmed = nil
 
                                 setStatus(confirmed.name .. ': host state not ready')
+                            else
+                                liveStatus(now, confirmed.name .. ': waiting for the lobby room to be created')
                             end
 
                             return
@@ -6517,6 +6570,8 @@ do
                         return
                     end
                     if Settings.get().paused then
+                        liveStatus(now, 'Paused: Disable Auto Joiners is on')
+
                         return
                     end
                     if self.pending then
@@ -6525,14 +6580,34 @@ do
 
                             setStatus('No server confirmation; retry delayed')
                         else
+                            liveStatus(now, string.format('%s: waiting for the server to confirm (%ds)', tostring(self.pending.name), math.floor(now - self.pending.started)))
+
                             return
                         end
                     end
                     if not deps.lobby or deps.game.PlaceId ~= LOBBY_PLACE_ID or deps.lobby.IsHosting or deps.lobby.IsInLobby then
+                        if deps.lobby and (deps.lobby.IsHosting or deps.lobby.IsInLobby) then
+                            liveStatus(now, if deps.lobby.IsHosting then'Hosting a lobby room: waiting for it to start'else'In a lobby room: waiting for it to start')
+                        end
+
                         return
                     end
 
                     local cooldownActive = now - self.lastAttempt < math.max(Settings.get().cooldown, RETRY_SECONDS)
+
+                    do
+                        local names = enabledNames()
+
+                        if names == 'none' then
+                            liveStatus(now, 'No joiner is enabled')
+                        elseif cooldownActive then
+                            local waitLeft = math.max(Settings.get().cooldown, RETRY_SECONDS) - (now - self.lastAttempt)
+
+                            liveStatus(now, string.format('Cooldown: next join check in %ds (enabled: %s)', math.ceil(waitLeft), names))
+                        else
+                            liveStatus(now, 'Checking what to join, in priority order: ' .. names)
+                        end
+                    end
 
                     for _, name in Settings.get().priority do
                         local mode = MODES[name]
