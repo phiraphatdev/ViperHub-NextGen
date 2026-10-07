@@ -770,7 +770,7 @@ test("Joiner report lists every mode in priority order with off and decision sta
     JoinerSettings.setPaused(false)
     runtime.setEnabled("Rift", true)
     local report = table.concat(runtime.getReport(), "\n")
-    assert(string.find(report, "❌ Rift — no decision yet", 1, true) ~= nil)
+    assert(string.find(report, "⏳ Rift — on", 1, true) ~= nil)
     assert(string.find(report, "❌ Daily Challenge — off", 1, true) ~= nil)
     runtime.setEnabled("Rift", false)
     JoinerSettings.setPaused(true)

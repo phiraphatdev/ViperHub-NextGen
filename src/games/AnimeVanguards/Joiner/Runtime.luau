@@ -303,7 +303,15 @@ function Runtime.new(dependencies: any?): any
                     math.max(0, now - entry.at)
                 )
             else
-                line = "❌ " .. name .. " — no decision yet"
+                -- Enabled, nothing decided yet: joiners decide in the lobby, so inside a match they wait for it.
+                local inMatch = self.dependencies ~= nil and self.dependencies.gameHandler ~= nil
+                line = "⏳ "
+                    .. name
+                    .. (
+                        if inMatch
+                            then " — on, joins from the lobby after this match"
+                            else " — on, checking"
+                    )
             end
             table.insert(lines, line)
         end

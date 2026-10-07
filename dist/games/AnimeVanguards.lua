@@ -5336,7 +5336,9 @@ do
                         elseif entry then
                             line = string.format('%s %s \u{2014} %s (%ds ago)', if isPositive(entry.text)then'\u{2705}'else'\u{274c}', name, entry.text, math.max(0, now - entry.at))
                         else
-                            line = '\u{274c} ' .. name .. ' \u{2014} no decision yet'
+                            local inMatch = self.dependencies ~= nil and self.dependencies.gameHandler ~= nil
+
+                            line = '\u{23f3} ' .. name .. (if inMatch then' \u{2014} on, joins from the lobby after this match'else' \u{2014} on, checking')
                         end
 
                         table.insert(lines, line)
