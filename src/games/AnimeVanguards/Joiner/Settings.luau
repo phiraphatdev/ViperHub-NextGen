@@ -48,6 +48,27 @@ local bountyRun: any = nil
 local joinerRun: any = nil
 local storage: FileStorage.Storage? = nil
 local encode: ((any) -> string)? = nil
+local decode: ((string) -> any)? = nil
+local fileLoaded = false
+local applyData: (any) -> ()
+
+-- A settings file that was not readable at start-up must not be overwritten with defaults: before the first change,
+-- read it again and take its values (observed live: the Joiner file was reset to defaults, all joiners off, paused).
+local function ensureLoaded()
+    local activeStorage = storage
+    local decodeFn = decode
+    if fileLoaded or not activeStorage or not decodeFn then
+        return
+    end
+    local body, readError = activeStorage.read()
+    if readError or not body then
+        return
+    end
+    local ok, data = pcall(decodeFn, body)
+    if ok and type(data) == "table" and data.schemaVersion == 1 then
+        applyData(data)
+    end
+end
 
 local function known(name: string): boolean
     return table.find(definitions, name) ~= nil
@@ -94,17 +115,25 @@ function Settings.init(env: any)
     encode = function(value: any): string
         return http:JSONEncode(value)
     end
+    decode = function(text: string): any
+        return http:JSONDecode(text)
+    end
     if not body then
+        -- No file yet (or it was not visible this instant): the first change re-checks before saving.
         return
     end
-    local ok, data = pcall(function()
-        return http:JSONDecode(body)
-    end)
+    local ok, data = pcall(decode, body)
     if not ok or type(data) ~= "table" or data.schemaVersion ~= 1 then
         storage = nil
         encode = nil
         return
     end
+    applyData(data)
+end
+
+--- Copies validated fields of a decoded settings file into the module state.
+applyData = function(data: any)
+    fileLoaded = true
     if type(data.paused) == "boolean" then
         paused = data.paused
     end
@@ -304,6 +333,7 @@ end
 
 --- Turns the Team Equipper on or off (it also needs a team chosen for the joiner).
 function Settings.setTeamEquipEnabled(value: boolean): boolean
+    ensureLoaded()
     if type(value) ~= "boolean" then
         return false
     end
@@ -314,6 +344,7 @@ end
 
 --- Turns the Macro Equipper on or off (it also needs a macro file chosen for the joiner).
 function Settings.setMacroEquipEnabled(value: boolean): boolean
+    ensureLoaded()
     if type(value) ~= "boolean" then
         return false
     end
@@ -324,6 +355,7 @@ end
 
 --- Chooses the macro file whose units are equipped before joining; file nil clears it (None).
 function Settings.setMacroForJoiner(name: string, file: string?): boolean
+    ensureLoaded()
     if type(name) ~= "string" or not known(name) then
         return false
     end
@@ -340,6 +372,7 @@ end
 
 --- Chooses the saved team ("TeamN") to equip before joining; key nil clears it (None). Returns false when invalid.
 function Settings.setTeamForJoiner(name: string, key: string?): boolean
+    ensureLoaded()
     if type(name) ~= "string" or not known(name) then
         return false
     end
@@ -356,6 +389,7 @@ end
 
 --- Enables or disables changing the stage inside a match before Vote Start.
 function Settings.setChangeStageInMatch(value: boolean): boolean
+    ensureLoaded()
     if type(value) ~= "boolean" then
         return false
     end
@@ -366,6 +400,7 @@ end
 
 --- Records (or clears with nil) the match this joiner created, so only joiner-created matches are switched in the match.
 function Settings.setJoinerRun(run: any): boolean
+    ensureLoaded()
     if run == nil then
         joinerRun = nil
     elseif
@@ -385,6 +420,7 @@ end
 
 --- Records (or clears with nil) the Boss Bounty match the joiner entered, so the match place can recognise it.
 function Settings.setBountyRun(run: any): boolean
+    ensureLoaded()
     if run == nil then
         bountyRun = nil
     elseif
@@ -404,6 +440,7 @@ end
 
 --- Stores a supported mode toggle and writes it immediately when storage exists.
 function Settings.setEnabled(name: string, value: boolean)
+    ensureLoaded()
     if not known(name) or type(value) ~= "boolean" then
         return false
     end
@@ -414,6 +451,7 @@ end
 
 --- Stores a validated current selection and writes it immediately.
 function Settings.setSelection(name: string, value: any)
+    ensureLoaded()
     if not known(name) or type(value) ~= "table" then
         return false
     end
@@ -424,6 +462,7 @@ end
 
 --- Updates the in-match return-to-lobby preferences for a mode.
 function Settings.setBackToLobby(name: string, backToLobby: boolean, returnMode: string): boolean
+    ensureLoaded()
     if type(name) ~= "string" or not known(name) or type(backToLobby) ~= "boolean" then
         return false
     end
@@ -439,6 +478,7 @@ end
 
 --- Updates Regular Challenge target reward item and maps to challenge stage name.
 function Settings.setRegularReward(rewardChoice: string): boolean
+    ensureLoaded()
     local challengeName = REGULAR_REWARD_MAP[rewardChoice]
     if not challengeName then
         return false
@@ -454,6 +494,7 @@ end
 
 --- Sets the global pause flag; returns true only for a valid boolean.
 function Settings.setPaused(value: unknown): boolean
+    ensureLoaded()
     if type(value) ~= "boolean" then
         return false
     end
@@ -464,6 +505,7 @@ end
 
 --- Sets lobby cooldown in whole seconds, clamped to the supported range.
 function Settings.setCooldown(value: unknown): boolean
+    ensureLoaded()
     if type(value) ~= "number" or value ~= value or value == math.huge or value == -math.huge then
         return false
     end
@@ -474,6 +516,7 @@ end
 
 --- Swaps two known Joiners in the priority order; returns whether both exist and differ.
 function Settings.swap(first: unknown, second: unknown): boolean
+    ensureLoaded()
     if type(first) ~= "string" or type(second) ~= "string" or first == second then
         return false
     end

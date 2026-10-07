@@ -2940,7 +2940,54 @@ do
             local HOME_GROUP = 'Home'
             local SYSTEM_GROUP = 'System'
             local FRAME_BUDGET_SECONDS = 0.008
+            local SLOW_CALLS = {}
+            local LAZY_DROPDOWN_VALUES = 10
 
+            local function lazyDropdown(create, target, options)
+                local full = options.Values
+                local copy = table.clone(options)
+                local selected = {}
+
+                if type(options.Value) == 'table' then
+                    for _, item in options.Value do
+                        table.insert(selected, item)
+                    end
+                elseif options.Value ~= nil then
+                    table.insert(selected, options.Value)
+                end
+                if #selected == 0 then
+                    table.insert(selected, full[1])
+                end
+
+                copy.Values = selected
+
+                local element = create(target, copy)
+
+                if type(element) ~= 'table' or type(element.Open) ~= 'function' or type(element.Refresh) ~= 'function' then
+                    return element
+                end
+
+                local filled = false
+                local originalOpen = element.Open
+                local originalRefresh = element.Refresh
+
+                element.Refresh = function(selfArg, values, ...)
+                    filled = true
+
+                    return originalRefresh(selfArg, values, ...)
+                end
+                element.Open = function(selfArg, ...)
+                    if not filled then
+                        filled = true
+
+                        pcall(originalRefresh, element, full)
+                    end
+
+                    return originalOpen(selfArg, ...)
+                end
+
+                return element
+            end
             local function isContainer(value)
                 return type(value) == 'table' and type(value.Toggle) == 'function' and type(value.Paragraph) == 'function'
             end
@@ -2957,8 +3004,26 @@ do
                         end
 
                         return function(selfArg, ...)
-                            local results = table.pack((value)(if selfArg == proxy then target else selfArg,
+                            local callStarted = os.clock()
+                            local options = select(1, ...)
+                            local results
+
+                            if key == 'Dropdown' and type(options) == 'table' and type(options.Values) == 'table' and #options.Values > LAZY_DROPDOWN_VALUES then
+                                results = table.pack(lazyDropdown(value, if selfArg == proxy then target else selfArg, options))
+                            else
+                                results = table.pack((value)(if selfArg == proxy then target else selfArg,
 ...))
+                            end
+
+                            local spent = os.clock() - callStarted
+                            local slow = SLOW_CALLS
+
+                            if spent > 0.05 and #slow < 30 then
+                                local first = select(1, ...)
+                                local title = if type(first) == 'table'then tostring(first.Title)else''
+
+                                table.insert(slow, string.format('%s %s %dms', tostring(key), title, math.floor(spent * 1000)))
+                            end
 
                             for index = 1, results.n do
                                 if isContainer(results[index]) then
@@ -3007,6 +3072,7 @@ do
 
                         if type(timings) == 'table' then
                             timings[tostring(page.title)] = os.clock() - started
+                            timings[tostring(page.title) .. ' at'] = started
                         end
                         if not ok then
                             local log = context.log
@@ -3093,6 +3159,7 @@ do
                 end
 
                 context.pageTimings = {}
+                context.slowCalls = SLOW_CALLS
 
                 local later = {}
 

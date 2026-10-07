@@ -479,6 +479,13 @@ end
 
 -- Auto Join Equipper: Team Equipper rows (one dropdown of owned saved teams per joiner) plus the locked
 -- Macro Equipper (macro file per joiner). Returns an update function the page loop calls to follow team changes.
+local function yieldFrame()
+    local taskApi: any = (getfenv() :: any).task
+    if type(taskApi) == "table" and type(taskApi.wait) == "function" and coroutine.isyieldable() then
+        (taskApi.wait :: any)()
+    end
+end
+
 local function addEquipper(tab: any, runtime: any?): () -> ()
     local section = Style.section(tab, "Auto Join Equipper", "layout-grid", false, 20)
     local function subsection(title: string, icon: string): any
@@ -571,6 +578,8 @@ local function addEquipper(tab: any, runtime: any?): () -> ()
                     pcall(dropdown.Refresh :: any, dropdown, labels)
                 end
                 syncing = false
+                -- Rebuilding a dropdown is slow in WindUI: one per frame, so the game never freezes.
+                yieldFrame()
             end
         end
     end
@@ -612,6 +621,8 @@ local function addEquipper(tab: any, runtime: any?): () -> ()
                     pcall(dropdown.Refresh :: any, dropdown, labels)
                 end
                 syncing = false
+                -- Rebuilding a dropdown is slow in WindUI: one per frame, so the game never freezes.
+                yieldFrame()
             end
         end
     end

@@ -17,6 +17,52 @@ local HOME_GROUP = "Home"
 local SYSTEM_GROUP = "System"
 
 local FRAME_BUDGET_SECONDS = 0.008
+-- Diagnostics: WindUI calls slower than 50 ms while pages draw (bounded), readable as context.slowCalls.
+local SLOW_CALLS: { string } = {}
+
+local LAZY_DROPDOWN_VALUES = 10
+
+-- WindUI builds every dropdown option up front (a 74-entry list took about 0.9 s). Long lists start with only the
+-- selected entries and get the full list the first time they open.
+local function lazyDropdown(create: any, target: any, options: any): any
+    local full: any = options.Values
+    local copy = table.clone(options)
+    local selected: { any } = {}
+    if type(options.Value) == "table" then
+        for _, item in options.Value do
+            table.insert(selected, item)
+        end
+    elseif options.Value ~= nil then
+        table.insert(selected, options.Value)
+    end
+    if #selected == 0 then
+        table.insert(selected, full[1])
+    end
+    copy.Values = selected
+    local element: any = create(target, copy)
+    if
+        type(element) ~= "table"
+        or type(element.Open) ~= "function"
+        or type(element.Refresh) ~= "function"
+    then
+        return element
+    end
+    local filled = false
+    local originalOpen: any = element.Open
+    local originalRefresh: any = element.Refresh
+    element.Refresh = function(selfArg: any, values: any, ...: any): ...any
+        filled = true
+        return originalRefresh(selfArg, values, ...)
+    end
+    element.Open = function(selfArg: any, ...: any): ...any
+        if not filled then
+            filled = true
+            pcall(originalRefresh, element, full)
+        end
+        return originalOpen(selfArg, ...)
+    end
+    return element
+end
 
 -- Building elements is slow in WindUI (a big page took seconds and froze the game). Pages draw through this proxy:
 -- every call on a container (tab, section, group) forwards to WindUI and, once the frame's budget is used, waits a
@@ -34,7 +80,30 @@ local function budgeted(target: any, clock: { started: number }): any
                 return value
             end
             return function(selfArg: any, ...: any): ...any
-                local results = table.pack((value :: any)(if selfArg == proxy then target else selfArg, ...))
+                local callStarted = os.clock()
+                local options: any = select(1, ...)
+                local results
+                if
+                    key == "Dropdown"
+                    and type(options) == "table"
+                    and type(options.Values) == "table"
+                    and #options.Values > LAZY_DROPDOWN_VALUES
+                then
+                    results =
+                        table.pack(lazyDropdown(value, if selfArg == proxy then target else selfArg, options))
+                else
+                    results = table.pack((value :: any)(if selfArg == proxy then target else selfArg, ...))
+                end
+                local spent = os.clock() - callStarted
+                local slow: any = SLOW_CALLS
+                if spent > 0.05 and #slow < 30 then
+                    local first = select(1, ...)
+                    local title = if type(first) == "table" then tostring(first.Title) else ""
+                    table.insert(
+                        slow,
+                        string.format("%s %s %dms", tostring(key), title, math.floor(spent * 1000))
+                    )
+                end
                 for index = 1, results.n do
                     if isContainer(results[index]) then
                         results[index] = budgeted(results[index], clock)
@@ -75,6 +144,7 @@ local function mountPage(host: any, window: any, context: any, page: any, later:
             local timings: any = context.pageTimings
             if type(timings) == "table" then
                 timings[tostring(page.title)] = os.clock() - started
+                timings[tostring(page.title) .. " at"] = started
             end
             if not ok then
                 local log: any = context.log
@@ -154,6 +224,7 @@ function App.mount(
     end
     -- Pages without a group are listed under the game's own name, so every game gets a grouped sidebar.
     context.pageTimings = {}
+    context.slowCalls = SLOW_CALLS
     local later: { () -> () } = {}
     for index, page in pages or {} do
         local group = page.group or (if page.home then HOME_GROUP else tostring(metadata.name))

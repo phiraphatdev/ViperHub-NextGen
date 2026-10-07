@@ -1343,7 +1343,30 @@ do
             local joinerRun = nil
             local storage = nil
             local encode = nil
+            local decode = nil
+            local fileLoaded = false
+            local applyData
 
+            local function ensureLoaded()
+                local activeStorage = storage
+                local decodeFn = decode
+
+                if fileLoaded or not activeStorage or not decodeFn then
+                    return
+                end
+
+                local body, readError = activeStorage.read()
+
+                if readError or not body then
+                    return
+                end
+
+                local ok, data = pcall(decodeFn, body)
+
+                if ok and type(data) == 'table' and data.schemaVersion == 1 then
+                    applyData(data)
+                end
+            end
             local function known(name)
                 return table.find(definitions, name) ~= nil
             end
@@ -1401,14 +1424,15 @@ do
                 encode = function(value)
                     return http:JSONEncode(value)
                 end
+                decode = function(text)
+                    return http:JSONDecode(text)
+                end
 
                 if not body then
                     return
                 end
 
-                local ok, data = pcall(function()
-                    return http:JSONDecode(body)
-                end)
+                local ok, data = pcall(decode, body)
 
                 if not ok or type(data) ~= 'table' or data.schemaVersion ~= 1 then
                     storage = nil
@@ -1416,6 +1440,13 @@ do
 
                     return
                 end
+
+                applyData(data)
+            end
+
+            applyData = function(data)
+                fileLoaded = true
+
                 if type(data.paused) == 'boolean' then
                     paused = data.paused
                 end
@@ -1558,6 +1589,7 @@ do
                     end
                 end
             end
+
             function Settings.get()
                 return {
                     paused = paused,
@@ -1580,6 +1612,8 @@ do
                 }
             end
             function Settings.setTeamEquipEnabled(value)
+                ensureLoaded()
+
                 if type(value) ~= 'boolean' then
                     return false
                 end
@@ -1591,6 +1625,8 @@ do
                 return true
             end
             function Settings.setMacroEquipEnabled(value)
+                ensureLoaded()
+
                 if type(value) ~= 'boolean' then
                     return false
                 end
@@ -1602,6 +1638,8 @@ do
                 return true
             end
             function Settings.setMacroForJoiner(name, file)
+                ensureLoaded()
+
                 if type(name) ~= 'string' or not known(name) then
                     return false
                 end
@@ -1618,6 +1656,8 @@ do
                 return true
             end
             function Settings.setTeamForJoiner(name, key)
+                ensureLoaded()
+
                 if type(name) ~= 'string' or not known(name) then
                     return false
                 end
@@ -1634,6 +1674,8 @@ do
                 return true
             end
             function Settings.setChangeStageInMatch(value)
+                ensureLoaded()
+
                 if type(value) ~= 'boolean' then
                     return false
                 end
@@ -1645,6 +1687,8 @@ do
                 return true
             end
             function Settings.setJoinerRun(run)
+                ensureLoaded()
+
                 if run == nil then
                     joinerRun = nil
                 elseif type(run) == 'table' and type(run.mode) == 'string' and type(run.stage) == 'string' and type(run.act) == 'string' and type(run.at) == 'number' then
@@ -1663,6 +1707,8 @@ do
                 return true
             end
             function Settings.setBountyRun(run)
+                ensureLoaded()
+
                 if run == nil then
                     bountyRun = nil
                 elseif type(run) == 'table' and type(run.mode) == 'string' and type(run.stage) == 'string' and type(run.act) == 'string' and type(run.at) == 'number' then
@@ -1681,6 +1727,8 @@ do
                 return true
             end
             function Settings.setEnabled(name, value)
+                ensureLoaded()
+
                 if not known(name) or type(value) ~= 'boolean' then
                     return false
                 end
@@ -1692,6 +1740,8 @@ do
                 return true
             end
             function Settings.setSelection(name, value)
+                ensureLoaded()
+
                 if not known(name) or type(value) ~= 'table' then
                     return false
                 end
@@ -1703,6 +1753,8 @@ do
                 return true
             end
             function Settings.setBackToLobby(name, backToLobby, returnMode)
+                ensureLoaded()
+
                 if type(name) ~= 'string' or not known(name) or type(backToLobby) ~= 'boolean' then
                     return false
                 end
@@ -1720,6 +1772,8 @@ do
                 return true
             end
             function Settings.setRegularReward(rewardChoice)
+                ensureLoaded()
+
                 local challengeName = REGULAR_REWARD_MAP[rewardChoice]
 
                 if not challengeName then
@@ -1738,6 +1792,8 @@ do
                 return true
             end
             function Settings.setPaused(value)
+                ensureLoaded()
+
                 if type(value) ~= 'boolean' then
                     return false
                 end
@@ -1749,6 +1805,8 @@ do
                 return true
             end
             function Settings.setCooldown(value)
+                ensureLoaded()
+
                 if type(value) ~= 'number' or value ~= value or value == math.huge or value ==
 -math.huge then
                     return false
@@ -1761,6 +1819,8 @@ do
                 return true
             end
             function Settings.swap(first, second)
+                ensureLoaded()
+
                 if type(first) ~= 'string' or type(second) ~= 'string' or first == second then
                     return false
                 end
@@ -3332,6 +3392,13 @@ do
                     pcall(info.SetDesc, info, text)
                 end
             end
+            local function yieldFrame()
+                local taskApi = ((getfenv())).task
+
+                if type(taskApi) == 'table' and type(taskApi.wait) == 'function' and coroutine.isyieldable() then
+                    (taskApi.wait)()
+                end
+            end
             local function addEquipper(tab, runtime)
                 local section = Style.section(tab, 'Auto Join Equipper', 'layout-grid', false, 20)
 
@@ -3463,6 +3530,8 @@ do
                             end
 
                             syncing = false
+
+                            yieldFrame()
                         end
                     end
                 end
@@ -3517,6 +3586,8 @@ do
                             end
 
                             syncing = false
+
+                            yieldFrame()
                         end
                     end
                 end
