@@ -11576,9 +11576,390 @@ do
     end
     do
         local function __modImpl()
+            local MacroEquip = __DARKLUA_BUNDLE_MODULES.i()
+            local Equipper = {}
+            local UNEQUIP_WAIT_SECONDS = 3
+            local EQUIP_WAIT_SECONDS = 2.5
+            local READY_WAIT_SECONDS = 10
+            local MAX_TRIES = 3
+            local MAX_ROUNDS = 2
+            local POLL_SECONDS = 0.25
+
+            function Equipper.new(adapter, clock)
+                local self = {
+                    state = 'idle',
+                    message = '',
+                    missing = {},
+                    busy = false,
+                }
+                local names = {}
+                local phase = 'check'
+                local sentAt = -math.huge
+                local tries = 0
+                local round = 0
+                local index = 1
+                local expected = {}
+                local expectedGuids = {}
+                local startedAt = 0
+
+                local function say(text)
+                    self.message = text
+                end
+                local function teamMatches()
+                    local equipped = adapter.equippedList()
+
+                    if #equipped ~= #expected then
+                        return false
+                    end
+
+                    for position, name in expected do
+                        if equipped[position].name ~= name then
+                            return false
+                        end
+                    end
+
+                    return true
+                end
+                local function plan()
+                    local owned = adapter.ownedUnitList()
+                    local result = MacroEquip.plan(names, {}, owned)
+
+                    self.missing = result.missing
+                    expectedGuids = result.steps
+                    expected = {}
+
+                    for _, guid in expectedGuids do
+                        for _, unit in owned do
+                            if unit.guid == guid then
+                                table.insert(expected, unit.name)
+
+                                break
+                            end
+                        end
+                    end
+                end
+
+                function self.check(document)
+                    local macroNames = MacroEquip.names(if type(document) == 'table'then document.units else nil)
+                    local owned = adapter.ownedUnitList()
+                    local result = MacroEquip.plan(macroNames, {}, owned)
+                    local expectedNames = {}
+
+                    for _, guid in result.steps do
+                        for _, unitInfo in owned do
+                            if unitInfo.guid == guid then
+                                table.insert(expectedNames, unitInfo.name)
+
+                                break
+                            end
+                        end
+                    end
+
+                    local equippedNames = {}
+
+                    for _, unitInfo in adapter.equippedList()do
+                        table.insert(equippedNames, unitInfo.name)
+                    end
+
+                    local extra = {}
+
+                    for _, name in equippedNames do
+                        if not table.find(macroNames, name) then
+                            table.insert(extra, name)
+                        end
+                    end
+
+                    local absent = {}
+
+                    for _, name in expectedNames do
+                        if not table.find(equippedNames, name) then
+                            table.insert(absent, name)
+                        end
+                    end
+
+                    local sameOrder = #equippedNames == #expectedNames
+
+                    if sameOrder then
+                        for position, name in expectedNames do
+                            if equippedNames[position] ~= name then
+                                sameOrder = false
+                            end
+                        end
+                    end
+
+                    local summary
+
+                    if #macroNames == 0 then
+                        summary = 'The macro records no units'
+                    elseif sameOrder then
+                        summary = 'Team matches the macro (' .. tostring(#expectedNames) .. ' units, macro order)'
+                    elseif #absent == 0 and #extra == 0 then
+                        summary = "Same units, but not in the macro's order"
+                    else
+                        summary = 'Team does not match the macro'
+                    end
+
+                    return {
+                        matches = #macroNames > 0 and sameOrder,
+                        equipped = equippedNames,
+                        expected = expectedNames,
+                        missing = result.missing,
+                        extra = extra,
+                        absent = absent,
+                        summary = summary,
+                    }
+                end
+                function self.begin(document)
+                    names = MacroEquip.names(if type(document) == 'table'then document.units else nil)
+                    self.state = 'working'
+                    self.missing = {}
+                    phase = 'ready'
+                    sentAt = -math.huge
+                    tries = 0
+                    round = 0
+                    index = 1
+                    startedAt = clock()
+
+                    say("Equip Macro: reading the macro's units")
+                end
+
+                local function fail(text)
+                    self.state = 'failed'
+
+                    say(text)
+                end
+                local function finish()
+                    self.state = 'done'
+
+                    if #self.missing > 0 then
+                        say('Team ready; not owned: ' .. table.concat(self.missing, ', '))
+                    else
+                        say('Team ready: ' .. table.concat(expected, ', '))
+                    end
+                end
+
+                function self.step(now)
+                    if self.state ~= 'working' then
+                        return self.state
+                    end
+                    if phase == 'ready' then
+                        if not adapter.isReady() then
+                            if now - startedAt > READY_WAIT_SECONDS then
+                                fail("Equip Macro: the game's unit data did not load")
+                            else
+                                say("Equip Macro: waiting for the game's unit data")
+                            end
+
+                            return self.state
+                        end
+                        if #names == 0 then
+                            self.state = 'done'
+
+                            say('The macro records no units')
+
+                            return self.state
+                        end
+
+                        plan()
+
+                        if #expected == 0 then
+                            fail("You own none of the macro's units: " .. table.concat(self.missing, ', '))
+
+                            return self.state
+                        end
+
+                        phase = 'check'
+                    end
+                    if phase == 'check' then
+                        plan()
+
+                        if teamMatches() then
+                            finish()
+
+                            return self.state
+                        end
+
+                        round += 1
+
+                        if round > MAX_ROUNDS then
+                            fail('Equip Macro: the team still does not match the macro')
+
+                            return self.state
+                        end
+
+                        tries = 0
+
+                        if #adapter.equippedList() == 0 then
+                            phase = 'equip'
+                            index = 1
+                        else
+                            phase = 'unequip'
+                        end
+
+                        sentAt = -math.huge
+
+                        return self.state
+                    end
+                    if phase == 'unequip' then
+                        if #adapter.equippedList() == 0 then
+                            phase = 'equip'
+                            index = 1
+                            tries = 0
+                            sentAt = -math.huge
+
+                            return self.state
+                        end
+                        if now - sentAt < UNEQUIP_WAIT_SECONDS then
+                            say('Equip Macro: taking the current team off')
+
+                            return self.state
+                        end
+                        if tries >= MAX_TRIES then
+                            fail('Equip Macro: could not take the current team off')
+
+                            return self.state
+                        end
+
+                        tries += 1
+
+                        sentAt = now
+
+                        if not adapter.unequipAll() then
+                            fail('Equip Macro: the unequip request is unavailable')
+                        else
+                            say('Equip Macro: taking the current team off')
+                        end
+
+                        return self.state
+                    end
+                    if phase == 'equip' then
+                        if index > #expectedGuids then
+                            phase = 'check'
+
+                            return self.state
+                        end
+
+                        local equipped = adapter.equippedList()
+                        local here = equipped[index]
+
+                        if here ~= nil and here.guid == expectedGuids[index] then
+                            index += 1
+
+                            tries = 0
+                            sentAt = -math.huge
+
+                            return self.state
+                        end
+
+                        local label = expected[index]
+
+                        if now - sentAt < EQUIP_WAIT_SECONDS then
+                            say(string.format('Equip Macro: putting %s on slot %d', label, index))
+
+                            return self.state
+                        end
+                        if tries >= MAX_TRIES then
+                            fail(string.format('Equip Macro: %s did not equip', label))
+
+                            return self.state
+                        end
+
+                        tries += 1
+
+                        sentAt = now
+
+                        if not adapter.equipUnit(expectedGuids[index]) then
+                            fail('Equip Macro: the equip request is unavailable')
+                        else
+                            say(string.format('Equip Macro: putting %s on slot %d', label, index))
+                        end
+
+                        return self.state
+                    end
+
+                    return self.state
+                end
+                function self.run(document, taskApi, onStatus, onDone)
+                    if self.busy then
+                        return false
+                    end
+                    if type(taskApi) ~= 'table' or type(taskApi.spawn) ~= 'function' or type(taskApi.wait) ~= 'function' then
+                        return false
+                    end
+
+                    self.busy = true
+                    self.cancelled = false
+
+                    self.begin(document)
+
+                    local spawnFn = taskApi.spawn
+                    local waitFn = taskApi.wait
+
+                    spawnFn(function()
+                        local last = ''
+
+                        while self.state == 'working' and not self.cancelled do
+                            self.step(clock())
+
+                            if onStatus and self.message ~= last then
+                                last = self.message
+
+                                pcall(onStatus, self.message)
+                            end
+                            if self.state == 'working' then
+                                waitFn(POLL_SECONDS)
+                            end
+                        end
+
+                        self.busy = false
+
+                        if self.cancelled then
+                            self.state = 'failed'
+
+                            say('Equip Macro: cancelled')
+                        end
+                        if onStatus then
+                            pcall(onStatus, self.message)
+                        end
+                        if onDone then
+                            pcall(onDone, self.state == 'done', self.message, self.missing)
+                        end
+                    end)
+
+                    return true
+                end
+                function self.cancel()
+                    self.cancelled = true
+                end
+
+                return self
+            end
+
+            return Equipper
+        end
+
+        function __DARKLUA_BUNDLE_MODULES.D()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.D
+
+            if not v then
+                v = {
+                    c = __modImpl(),
+                }
+                __DARKLUA_BUNDLE_MODULES.cache.D = v
+            end
+
+            return v.c
+        end
+    end
+    do
+        local function __modImpl()
             local Style = __DARKLUA_BUNDLE_MODULES.e()
             local Storage = __DARKLUA_BUNDLE_MODULES.s()
             local Document = __DARKLUA_BUNDLE_MODULES.r()
+            local Equipper = __DARKLUA_BUNDLE_MODULES.D()
+            local TeamAdapter = __DARKLUA_BUNDLE_MODULES.t()
+            local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
+            local metadata = __DARKLUA_BUNDLE_MODULES.b()
             local Page = {}
 
             local function humanError(code)
@@ -11608,6 +11989,40 @@ do
                 return s
             end
 
+            local SETTINGS_KEY = 'AnimeVanguardsMacro'
+
+            local function loadAutoEquip(env, codec)
+                local store = FileStorage.new(env, SETTINGS_KEY)
+
+                if not store then
+                    return false
+                end
+
+                local body = store.read()
+
+                if not body then
+                    return false
+                end
+
+                local ok, data = pcall(codec.JSONDecode, codec, body)
+
+                return ok and type(data) == 'table' and data.autoEquip == true
+            end
+            local function saveAutoEquip(env, codec, value)
+                local store = FileStorage.new(env, SETTINGS_KEY)
+
+                if store then
+                    local ok, body = pcall(codec.JSONEncode, codec, {
+                        schemaVersion = 1,
+                        autoEquip = value,
+                    })
+
+                    if ok then
+                        store.write(body)
+                    end
+                end
+            end
+
             function Page.mount(tab, runtime, window, autoPlay)
                 local env = getfenv()
                 local codec = env.game:GetService('HttpService')
@@ -11616,6 +12031,23 @@ do
                 local entered = ''
                 local deletePending = ''
                 local status = nil
+                local autoEquip = loadAutoEquip(env, codec)
+                local teamAdapter = TeamAdapter.new()
+                local equipper = Equipper.new(teamAdapter, os.clock)
+                local session = if type(env.shared) == 'table'then env.shared.ViperHubNextGen else nil
+
+                if type(session) == 'table' then
+                    session.macroEquip = {
+                        equipper = equipper,
+                        adapter = teamAdapter,
+                    }
+                end
+
+                local function inLobby()
+                    local gameObject = env.game
+
+                    return gameObject ~= nil and gameObject.PlaceId == metadata.placeIds[1]
+                end
 
                 tab:Paragraph({
                     Title = 'Macro Studio',
@@ -11867,12 +12299,16 @@ do
                             return
                         end
 
-                        local ok, playError = runtime.play(document)
+                        local function startPlayback()
+                            local ok, playError = runtime.play(document)
 
-                        if not ok then
-                            status:SetDesc(humanError(playError))
-                            playToggle:Set(false, false)
+                            if not ok then
+                                status:SetDesc(humanError(playError))
+                                playToggle:Set(false, false)
+                            end
                         end
+
+                        startPlayback()
                     end,
                 })
 
@@ -11976,28 +12412,84 @@ do
                             return
                         end
 
-                        local team = if runtime.adapter and runtime.adapter.teamUnits then(runtime.adapter.teamUnits)()else{}
-                        local missing = {}
+                        local result = equipper.check(document)
+                        local lines = {}
 
-                        for _, name in document.units do
-                            if not table.find(team, name) then
-                                table.insert(missing, name)
-                            end
+                        table.insert(lines, 'Equipped: ' .. (if#result.equipped > 0 then table.concat(result.equipped, ', ')else'none'))
+
+                        if #result.absent > 0 then
+                            table.insert(lines, 'Not on the team: ' .. table.concat(result.absent, ', '))
+                        end
+                        if #result.extra > 0 then
+                            table.insert(lines, 'Not in the macro: ' .. table.concat(result.extra, ', '))
+                        end
+                        if #result.missing > 0 then
+                            table.insert(lines, 'You do not own: ' .. table.concat(result.missing, ', '))
                         end
 
-                        status:SetDesc(if#document.units == 0 then'No units recorded'else if#missing == 0 then'All macro units are in the current team'else'Missing or team unavailable: ' .. table.concat(missing, ', '))
+                        local text = table.concat(lines, '\n')
+
+                        status:SetDesc(result.summary .. '\n' .. text)
+                        pcall(function()
+                            env.game:GetService('StarterGui'):SetCore('SendNotification', {
+                                Title = (if result.matches then'\u{2705} 'else'\u{274c} ') .. result.summary,
+                                Text = string.sub(text, 1, 250),
+                                Duration = 8,
+                            })
+                        end)
                     end,
                 })
                 misc:Button({
                     Title = "Equip Macro's Units",
-                    Locked = true,
-                    Desc = 'Planned: lobby equip readback required.',
+                    Desc =
+[[Lobby only. If the team is not exactly the selected macro's units (in its order), takes the whole team off and puts them on one by one, slot 1 first.]],
+                    Callback = function()
+                        if runtime.mode ~= 'idle' then
+                            status:SetDesc('Stop recording or playing first')
+
+                            return
+                        end
+                        if selected == '' then
+                            status:SetDesc('Select a macro first')
+
+                            return
+                        end
+                        if not inLobby() then
+                            status:SetDesc('Equip Macro works only in the lobby')
+
+                            return
+                        end
+
+                        local document, err = storage.read(selected)
+
+                        if not document then
+                            status:SetDesc(humanError(err))
+
+                            return
+                        end
+
+                        local started = equipper.run(document, env.task, function(
+                            text
+                        )
+                            status:SetDesc(text)
+                        end, nil)
+
+                        if not started then
+                            status:SetDesc('Equip Macro is already running')
+                        end
+                    end,
                 })
                 misc:Toggle({
                     Title = "Auto Equip Macro's Units",
                     Locked = true,
-                    Value = false,
-                    Desc = 'Planned: disabled in V1.',
+                    Desc =
+[[Planned: inside a match, while Play macro is on and before Vote Start, put the macro's units on the team (never in the lobby). Locked until the in-match unit change is verified.]],
+                    Value = autoEquip,
+                    Callback = function(value)
+                        autoEquip = value
+
+                        saveAutoEquip(env, codec, value)
+                    end,
                 })
                 misc:Paragraph({
                     Title = 'Recorded unit controls',
@@ -12009,14 +12501,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.D()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.D
+        function __DARKLUA_BUNDLE_MODULES.E()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.E
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.D = v
+                __DARKLUA_BUNDLE_MODULES.cache.E = v
             end
 
             return v.c
@@ -12867,14 +13359,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.E()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.E
+        function __DARKLUA_BUNDLE_MODULES.F()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.F
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.E = v
+                __DARKLUA_BUNDLE_MODULES.cache.F = v
             end
 
             return v.c
@@ -12883,7 +13375,7 @@ do
     do
         local function __modImpl()
             local Document = __DARKLUA_BUNDLE_MODULES.r()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.E()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.F()
             local Runtime = {}
             local POLL_SECONDS = 0.2
             local ACTION_TIMEOUT = 12
@@ -13942,14 +14434,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.F()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.F
+        function __DARKLUA_BUNDLE_MODULES.G()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.G
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.F = v
+                __DARKLUA_BUNDLE_MODULES.cache.G = v
             end
 
             return v.c
@@ -14089,14 +14581,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.G()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.G
+        function __DARKLUA_BUNDLE_MODULES.H()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.H
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.G = v
+                __DARKLUA_BUNDLE_MODULES.cache.H = v
             end
 
             return v.c
@@ -14546,14 +15038,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.H()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.H
+        function __DARKLUA_BUNDLE_MODULES.I()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.I
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.H = v
+                __DARKLUA_BUNDLE_MODULES.cache.I = v
             end
 
             return v.c
@@ -14820,14 +15312,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.I()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.I
+        function __DARKLUA_BUNDLE_MODULES.J()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.J
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.I = v
+                __DARKLUA_BUNDLE_MODULES.cache.J = v
             end
 
             return v.c
@@ -14979,14 +15471,14 @@ do
             return Rules
         end
 
-        function __DARKLUA_BUNDLE_MODULES.J()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.J
+        function __DARKLUA_BUNDLE_MODULES.K()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.K
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.J = v
+                __DARKLUA_BUNDLE_MODULES.cache.K = v
             end
 
             return v.c
@@ -14995,7 +15487,7 @@ do
     do
         local function __modImpl()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Rules = __DARKLUA_BUNDLE_MODULES.J()
+            local Rules = __DARKLUA_BUNDLE_MODULES.K()
             local Adapter = {}
 
             local function resolve(root, path)
@@ -15420,14 +15912,14 @@ do
             return Adapter
         end
 
-        function __DARKLUA_BUNDLE_MODULES.K()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.K
+        function __DARKLUA_BUNDLE_MODULES.L()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.L
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.K = v
+                __DARKLUA_BUNDLE_MODULES.cache.L = v
             end
 
             return v.c
@@ -15437,8 +15929,8 @@ do
         local function __modImpl()
             local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
             local config = __DARKLUA_BUNDLE_MODULES.c()
-            local Adapter = __DARKLUA_BUNDLE_MODULES.K()
-            local Rules = __DARKLUA_BUNDLE_MODULES.J()
+            local Adapter = __DARKLUA_BUNDLE_MODULES.L()
+            local Rules = __DARKLUA_BUNDLE_MODULES.K()
             local Runtime = {}
             local STORAGE_KEY = 'AnimeVanguardsAutoPlay'
             local SCHEMA_VERSION = 3
@@ -16025,14 +16517,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.L()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.L
+        function __DARKLUA_BUNDLE_MODULES.M()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.M
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.L = v
+                __DARKLUA_BUNDLE_MODULES.cache.M = v
             end
 
             return v.c
@@ -16490,14 +16982,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.M()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.M
+        function __DARKLUA_BUNDLE_MODULES.N()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.N
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.M = v
+                __DARKLUA_BUNDLE_MODULES.cache.N = v
             end
 
             return v.c
@@ -16667,14 +17159,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.N()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.N
+        function __DARKLUA_BUNDLE_MODULES.O()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.O
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.N = v
+                __DARKLUA_BUNDLE_MODULES.cache.O = v
             end
 
             return v.c
@@ -16967,14 +17459,14 @@ do
             return Embed
         end
 
-        function __DARKLUA_BUNDLE_MODULES.O()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.O
+        function __DARKLUA_BUNDLE_MODULES.P()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.P
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.O = v
+                __DARKLUA_BUNDLE_MODULES.cache.P = v
             end
 
             return v.c
@@ -16982,7 +17474,7 @@ do
     end
     do
         local function __modImpl()
-            local Embed = __DARKLUA_BUNDLE_MODULES.O()
+            local Embed = __DARKLUA_BUNDLE_MODULES.P()
             local Events = {}
             local UNIT_ROWS = 6
             local SHARE_BAR = 10
@@ -17431,14 +17923,14 @@ do
             return Events
         end
 
-        function __DARKLUA_BUNDLE_MODULES.P()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.P
+        function __DARKLUA_BUNDLE_MODULES.Q()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.Q
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.P = v
+                __DARKLUA_BUNDLE_MODULES.cache.Q = v
             end
 
             return v.c
@@ -17447,7 +17939,7 @@ do
     do
         local function __modImpl()
             local Style = __DARKLUA_BUNDLE_MODULES.e()
-            local Events = __DARKLUA_BUNDLE_MODULES.P()
+            local Events = __DARKLUA_BUNDLE_MODULES.Q()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local Page = {}
             local WEBHOOK = (config).webhook
@@ -17615,14 +18107,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.Q()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.Q
+        function __DARKLUA_BUNDLE_MODULES.R()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.R
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.Q = v
+                __DARKLUA_BUNDLE_MODULES.cache.R = v
             end
 
             return v.c
@@ -17838,14 +18330,14 @@ do
             return Sender
         end
 
-        function __DARKLUA_BUNDLE_MODULES.R()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.R
+        function __DARKLUA_BUNDLE_MODULES.S()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.S
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.R = v
+                __DARKLUA_BUNDLE_MODULES.cache.S = v
             end
 
             return v.c
@@ -17949,14 +18441,14 @@ do
             return Session
         end
 
-        function __DARKLUA_BUNDLE_MODULES.S()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.S
+        function __DARKLUA_BUNDLE_MODULES.T()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.T
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.S = v
+                __DARKLUA_BUNDLE_MODULES.cache.T = v
             end
 
             return v.c
@@ -17967,10 +18459,10 @@ do
             local FileStorage = __DARKLUA_BUNDLE_MODULES.l()
             local config = __DARKLUA_BUNDLE_MODULES.c()
             local metadata = __DARKLUA_BUNDLE_MODULES.b()
-            local Embed = __DARKLUA_BUNDLE_MODULES.O()
-            local Events = __DARKLUA_BUNDLE_MODULES.P()
-            local Sender = __DARKLUA_BUNDLE_MODULES.R()
-            local Session = __DARKLUA_BUNDLE_MODULES.S()
+            local Embed = __DARKLUA_BUNDLE_MODULES.P()
+            local Events = __DARKLUA_BUNDLE_MODULES.Q()
+            local Sender = __DARKLUA_BUNDLE_MODULES.S()
+            local Session = __DARKLUA_BUNDLE_MODULES.T()
             local Runtime = {}
             local STORAGE_KEY = 'AnimeVanguardsWebhook'
             local SCHEMA_VERSION = 1
@@ -19334,14 +19826,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.T()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.T
+        function __DARKLUA_BUNDLE_MODULES.U()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.U
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.T = v
+                __DARKLUA_BUNDLE_MODULES.cache.U = v
             end
 
             return v.c
@@ -19418,14 +19910,14 @@ do
             return Page
         end
 
-        function __DARKLUA_BUNDLE_MODULES.U()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.U
+        function __DARKLUA_BUNDLE_MODULES.V()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.V
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.U = v
+                __DARKLUA_BUNDLE_MODULES.cache.V = v
             end
 
             return v.c
@@ -19769,14 +20261,14 @@ do
             return Runtime
         end
 
-        function __DARKLUA_BUNDLE_MODULES.V()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.V
+        function __DARKLUA_BUNDLE_MODULES.W()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.W
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.V = v
+                __DARKLUA_BUNDLE_MODULES.cache.W = v
             end
 
             return v.c
@@ -19792,18 +20284,18 @@ local JoinerRuntime = __DARKLUA_BUNDLE_MODULES.v()
 local AdventurePage = __DARKLUA_BUNDLE_MODULES.y()
 local AdventureAdapter = __DARKLUA_BUNDLE_MODULES.z()
 local AdventureRuntime = __DARKLUA_BUNDLE_MODULES.C()
-local MacroPage = __DARKLUA_BUNDLE_MODULES.D()
-local MacroRuntime = __DARKLUA_BUNDLE_MODULES.F()
-local GamePage = __DARKLUA_BUNDLE_MODULES.G()
-local GameAdapter = __DARKLUA_BUNDLE_MODULES.H()
-local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.I()
-local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.L()
-local StatusPage = __DARKLUA_BUNDLE_MODULES.M()
-local DashboardPage = __DARKLUA_BUNDLE_MODULES.N()
-local WebhookPage = __DARKLUA_BUNDLE_MODULES.Q()
-local WebhookRuntime = __DARKLUA_BUNDLE_MODULES.T()
-local MiscPage = __DARKLUA_BUNDLE_MODULES.U()
-local MiscRuntime = __DARKLUA_BUNDLE_MODULES.V()
+local MacroPage = __DARKLUA_BUNDLE_MODULES.E()
+local MacroRuntime = __DARKLUA_BUNDLE_MODULES.G()
+local GamePage = __DARKLUA_BUNDLE_MODULES.H()
+local GameAdapter = __DARKLUA_BUNDLE_MODULES.I()
+local AutoPlayPage = __DARKLUA_BUNDLE_MODULES.J()
+local AutoPlayRuntime = __DARKLUA_BUNDLE_MODULES.M()
+local StatusPage = __DARKLUA_BUNDLE_MODULES.N()
+local DashboardPage = __DARKLUA_BUNDLE_MODULES.O()
+local WebhookPage = __DARKLUA_BUNDLE_MODULES.R()
+local WebhookRuntime = __DARKLUA_BUNDLE_MODULES.U()
+local MiscPage = __DARKLUA_BUNDLE_MODULES.V()
+local MiscRuntime = __DARKLUA_BUNDLE_MODULES.W()
 local active = false
 local joiner = JoinerRuntime.new()
 local adventure = AdventureAdapter.new()

@@ -8,6 +8,10 @@ Dependencies: Storage; Runtime
 local Style = require("../Style")
 local Storage = require("./Storage")
 local Document = require("./Document")
+local Equipper = require("./Equipper")
+local TeamAdapter = require("../Joiner/TeamAdapter")
+local FileStorage = require("../../../platform/FileStorage")
+local metadata = require("../Metadata")
 local Page = {}
 
 local function humanError(code: any): string
@@ -34,6 +38,32 @@ local function humanError(code: any): string
     return s
 end
 
+local SETTINGS_KEY = "AnimeVanguardsMacro"
+
+-- The Auto Equip Macro's Units switch is saved with the other settings (section AnimeVanguardsMacro of the profile).
+local function loadAutoEquip(env: any, codec: any): boolean
+    local store = FileStorage.new(env, SETTINGS_KEY)
+    if not store then
+        return false
+    end
+    local body = store.read()
+    if not body then
+        return false
+    end
+    local ok, data = pcall(codec.JSONDecode, codec, body)
+    return ok and type(data) == "table" and data.autoEquip == true
+end
+
+local function saveAutoEquip(env: any, codec: any, value: boolean)
+    local store = FileStorage.new(env, SETTINGS_KEY)
+    if store then
+        local ok, body = pcall(codec.JSONEncode, codec, { schemaVersion = 1, autoEquip = value })
+        if ok then
+            store.write(body)
+        end
+    end
+end
+
 --- Mounts macro controls and returns nothing.
 function Page.mount(tab: any, runtime: any, window: any?, autoPlay: any?)
     local env: any = getfenv()
@@ -43,6 +73,19 @@ function Page.mount(tab: any, runtime: any, window: any?, autoPlay: any?)
     local entered = ""
     local deletePending = ""
     local status: any = nil
+    local autoEquip = loadAutoEquip(env, codec)
+    local teamAdapter = TeamAdapter.new()
+    local equipper = Equipper.new(teamAdapter, os.clock)
+    -- Diagnostics: the equipper and its team adapter are readable from the session.
+    local session: any = if type(env.shared) == "table" then env.shared.ViperHubNextGen else nil
+    if type(session) == "table" then
+        session.macroEquip = { equipper = equipper, adapter = teamAdapter }
+    end
+    -- Units can only be changed in the lobby: in a match the team is already fixed.
+    local function inLobby(): boolean
+        local gameObject: any = env.game
+        return gameObject ~= nil and gameObject.PlaceId == metadata.placeIds[1]
+    end
     tab:Paragraph({
         Title = "Macro Studio",
         Desc = "Record confirmed game actions; replay requires a live match. Advanced features are planned.",
@@ -227,11 +270,15 @@ function Page.mount(tab: any, runtime: any, window: any?, autoPlay: any?)
                 playToggle:Set(false, false)
                 return
             end
-            local ok, playError = runtime.play(document)
-            if not ok then
-                status:SetDesc(humanError(playError))
-                playToggle:Set(false, false)
+            local function startPlayback()
+                local ok, playError = runtime.play(document)
+                if not ok then
+                    status:SetDesc(humanError(playError))
+                    playToggle:Set(false, false)
+                end
             end
+            -- Auto Equip Macro's Units belongs inside the match, before Vote Start (not here, not in the lobby).
+            startPlayback()
         end,
     })
     local function updatePlayMacroLock()
@@ -313,34 +360,71 @@ function Page.mount(tab: any, runtime: any, window: any?, autoPlay: any?)
                 status:SetDesc(tostring(err))
                 return
             end
-            local team = if runtime.adapter and runtime.adapter.teamUnits
-                then (runtime.adapter.teamUnits :: any)()
-                else {}
-            local missing = {}
-            for _, name in document.units do
-                if not table.find(team, name) then
-                    table.insert(missing, name)
-                end
-            end
-            status:SetDesc(
-                if #document.units == 0
-                    then "No units recorded"
-                    else if #missing == 0
-                        then "All macro units are in the current team"
-                        else "Missing or team unavailable: " .. table.concat(missing, ", ")
+            local result = equipper.check(document)
+            -- A readable report as a notification, and the same text in the status line.
+            local lines: { string } = {}
+            table.insert(
+                lines,
+                "Equipped: " .. (if #result.equipped > 0 then table.concat(result.equipped, ", ") else "none")
             )
+            if #result.absent > 0 then
+                table.insert(lines, "Not on the team: " .. table.concat(result.absent, ", "))
+            end
+            if #result.extra > 0 then
+                table.insert(lines, "Not in the macro: " .. table.concat(result.extra, ", "))
+            end
+            if #result.missing > 0 then
+                table.insert(lines, "You do not own: " .. table.concat(result.missing, ", "))
+            end
+            local text = table.concat(lines, "\n")
+            status:SetDesc(result.summary .. "\n" .. text)
+            pcall(function()
+                env.game:GetService("StarterGui"):SetCore("SendNotification", {
+                    Title = (if result.matches then "✅ " else "❌ ") .. result.summary,
+                    Text = string.sub(text, 1, 250),
+                    Duration = 8,
+                })
+            end)
         end,
     })
     misc:Button({
         Title = "Equip Macro's Units",
-        Locked = true,
-        Desc = "Planned: lobby equip readback required.",
+        Desc = "Lobby only. If the team is not exactly the selected macro's units (in its order), takes the whole team off and puts them on one by one, slot 1 first.",
+        Callback = function()
+            if runtime.mode ~= "idle" then
+                status:SetDesc("Stop recording or playing first")
+                return
+            end
+            if selected == "" then
+                status:SetDesc("Select a macro first")
+                return
+            end
+            if not inLobby() then
+                status:SetDesc("Equip Macro works only in the lobby")
+                return
+            end
+            local document, err = storage.read(selected)
+            if not document then
+                status:SetDesc(humanError(err))
+                return
+            end
+            local started = equipper.run(document, env.task, function(text: string)
+                status:SetDesc(text)
+            end, nil)
+            if not started then
+                status:SetDesc("Equip Macro is already running")
+            end
+        end,
     })
     misc:Toggle({
         Title = "Auto Equip Macro's Units",
         Locked = true,
-        Value = false,
-        Desc = "Planned: disabled in V1.",
+        Desc = "Planned: inside a match, while Play macro is on and before Vote Start, put the macro's units on the team (never in the lobby). Locked until the in-match unit change is verified.",
+        Value = autoEquip,
+        Callback = function(value: boolean)
+            autoEquip = value
+            saveAutoEquip(env, codec, value)
+        end,
     })
     misc:Paragraph({
         Title = "Recorded unit controls",

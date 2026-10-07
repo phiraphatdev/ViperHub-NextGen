@@ -5,6 +5,7 @@ local AdventureCatalog = require("../../src/games/AnimeVanguards/Adventure/Catal
 local AdventureDetect = require("../../src/games/AnimeVanguards/Adventure/Detect")
 local AdventureChoice = require("../../src/games/AnimeVanguards/Adventure/Choice")
 local AdventureRuntime = require("../../src/games/AnimeVanguards/Adventure/Runtime")
+local MacroEquipper = require("../../src/games/AnimeVanguards/Macro/Equipper")
 local AdventureSettings = require("../../src/games/AnimeVanguards/Adventure/Settings")
 local JoinerRuntime = require("../../src/games/AnimeVanguards/Joiner/Runtime")
 local JoinerSettings = require("../../src/games/AnimeVanguards/Joiner/Settings")
@@ -1721,6 +1722,128 @@ test("Auto Stitches Shop rerolls only after buying what it can, up to the set co
         "two rerolls then leave: " .. table.concat(box.log, ",")
     )
     runtime.stop()
+end)
+
+local function fakeTeam(owned: { any }, equipped: { any }, behavior: any): any
+    local team = { equipped = equipped, log = {} :: { string } }
+    local adapter: any = {}
+    function adapter.isReady()
+        return behavior.ready ~= false
+    end
+    function adapter.ownedUnitList()
+        return owned
+    end
+    function adapter.equippedList()
+        local copy = {}
+        for _, unit in team.equipped do
+            table.insert(copy, { guid = unit.guid, name = unit.name })
+        end
+        return copy
+    end
+    function adapter.unequipAll()
+        table.insert(team.log, "unequipAll")
+        if behavior.unequipWorks ~= false then
+            team.equipped = {}
+        end
+        return true
+    end
+    function adapter.equipUnit(guid: string)
+        table.insert(team.log, "equip:" .. guid)
+        if behavior.equipWorks ~= false and #team.equipped < 6 then
+            for _, unit in owned do
+                if unit.guid == guid then
+                    table.insert(team.equipped, { guid = unit.guid, name = unit.name })
+                end
+            end
+        end
+        return true
+    end
+    team.adapter = adapter
+    return team
+end
+
+local function unit(guid: string, name: string, level: number): any
+    return { guid = guid, name = name, level = level, subTrait = "None", ascensions = 0, takedowns = 0 }
+end
+
+local function drive(equipper: any, seconds: number): string
+    local now = 0
+    while now < seconds and equipper.state == "working" do
+        equipper.step(now)
+        now += 0.25
+    end
+    return equipper.state
+end
+
+test("Equip Macro takes the team off and puts the macro's units on one by one, in order", function()
+    local owned =
+        { unit("a1", "Alpha", 50), unit("a2", "Alpha", 80), unit("b1", "Beta", 10), unit("g1", "Gamma", 5) }
+    local team = fakeTeam(owned, { { guid = "g1", name = "Gamma" }, { guid = "b1", name = "Beta" } }, {})
+    local equipper = MacroEquipper.new(team.adapter, function()
+        return 0
+    end)
+    equipper.begin({ units = { "Beta", "Alpha", "Missing", "Beta" } })
+    assert(drive(equipper, 60) == "done", equipper.message)
+    assert(
+        table.concat(team.log, ",") == "unequipAll,equip:b1,equip:a2",
+        "off first, then Beta (slot 1), then the best Alpha: " .. table.concat(team.log, ",")
+    )
+    assert(
+        #equipper.missing == 1 and equipper.missing[1] == "Missing",
+        "an unowned unit is reported, not fatal"
+    )
+    assert(string.find(equipper.message, "Missing", 1, true) ~= nil, equipper.message)
+end)
+
+test("Equip Macro leaves a team that already matches alone", function()
+    local owned = { unit("a1", "Alpha", 50), unit("b1", "Beta", 10) }
+    local team = fakeTeam(owned, { { guid = "b1", name = "Beta" }, { guid = "a1", name = "Alpha" } }, {})
+    local equipper = MacroEquipper.new(team.adapter, function()
+        return 0
+    end)
+    equipper.begin({ units = { "Beta", "Alpha" } })
+    assert(drive(equipper, 10) == "done" and #team.log == 0, "nothing sent: " .. table.concat(team.log, ","))
+    -- Same units in another order is not the macro's order: it is redone.
+    local swapped = fakeTeam(owned, { { guid = "a1", name = "Alpha" }, { guid = "b1", name = "Beta" } }, {})
+    local second = MacroEquipper.new(swapped.adapter, function()
+        return 0
+    end)
+    second.begin({ units = { "Beta", "Alpha" } })
+    assert(
+        drive(second, 60) == "done" and swapped.equipped[1].name == "Beta",
+        "slot 1 is the macro's first unit"
+    )
+end)
+
+test("Equip Macro fails clearly when the game does not take the requests", function()
+    local owned = { unit("a1", "Alpha", 50) }
+    local stuck = fakeTeam(owned, { { guid = "a1", name = "Alpha" } }, { unequipWorks = false })
+    local first = MacroEquipper.new(stuck.adapter, function()
+        return 0
+    end)
+    first.begin({ units = { "Beta", "Alpha" } })
+    local owned2 = { unit("a1", "Alpha", 50), unit("b1", "Beta", 1) }
+    local team = fakeTeam(owned2, { { guid = "a1", name = "Alpha" } }, { unequipWorks = false })
+    local equipper = MacroEquipper.new(team.adapter, function()
+        return 0
+    end)
+    equipper.begin({ units = { "Beta", "Alpha" } })
+    assert(
+        drive(equipper, 60) == "failed" and string.find(equipper.message, "take", 1, true) ~= nil,
+        equipper.message
+    )
+    local none = fakeTeam({}, {}, {})
+    local third = MacroEquipper.new(none.adapter, function()
+        return 0
+    end)
+    third.begin({ units = { "Beta" } })
+    assert(drive(third, 10) == "failed" and string.find(third.message, "none", 1, true) ~= nil, third.message)
+    local loading = fakeTeam(owned, {}, { ready = false })
+    local fourth = MacroEquipper.new(loading.adapter, function()
+        return 0
+    end)
+    fourth.begin({ units = { "Alpha" } })
+    assert(drive(fourth, 30) == "failed" and string.find(fourth.message, "did not load", 1, true) ~= nil)
 end)
 
 test("Adventure picks a reward unit after an Elite floor", function()
