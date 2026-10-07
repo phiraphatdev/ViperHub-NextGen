@@ -187,13 +187,35 @@ function GameModule.start(context: Types.Context)
         if not context.alive or not active then
             return
         end
-        joiner.start(context)
-        macro.start(context)
-        gameSettings.start(context)
-        autoPlay.start(context)
-        webhook.start(context, { joiner = joiner, autoPlay = autoPlay, macro = macro })
-        misc.start(context)
-        adventureRun.start()
+        local timings: { [string]: number } = {}
+        local function timed(name: string, run: () -> ())
+            local started = os.clock()
+            run()
+            timings[name] = os.clock() - started
+        end
+        timed("joiner", function()
+            joiner.start(context)
+        end)
+        timed("macro", function()
+            macro.start(context)
+        end)
+        timed("gameSettings", function()
+            gameSettings.start(context)
+        end)
+        timed("autoPlay", function()
+            autoPlay.start(context)
+        end)
+        timed("webhook", function()
+            webhook.start(context, { joiner = joiner, autoPlay = autoPlay, macro = macro })
+        end)
+        timed("misc", function()
+            misc.start(context)
+        end)
+        timed("adventure", function()
+            adventureRun.start()
+        end)
+        local contextAny: any = context
+        contextAny.startTimings = timings
         -- Diagnostics: the Adventure runtime (status and bounded history) is readable from the session.
         local session: any = (getfenv() :: any).shared and (getfenv() :: any).shared.ViperHubNextGen
         if type(session) == "table" then

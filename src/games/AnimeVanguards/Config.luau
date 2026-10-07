@@ -408,7 +408,7 @@ return table.freeze({
         presetSwitchTimeoutSeconds = 8,
         presetRequestSeconds = 8,
         -- Wait after the game reports loaded before any feature starts (keeps early network traffic away from the join).
-        startDelaySeconds = 6,
+        startDelaySeconds = 1.5,
         -- Rift open but the attempt count not reported yet (seen right after loading): hold this long before skipping.
         riftAttemptWaitSeconds = 45,
         -- After the reward wait, the joiner holds its lobby return while another feature (the webhook) is still sending.

@@ -12,6 +12,15 @@ local Detect = require("./Detect")
 local Choice = require("./Choice")
 local Listen = require("./Listen")
 local Catalog = require("./Catalog")
+
+-- The catalog reads several game modules: read it once per session.
+local cachedCatalog: any = nil
+local function readCatalog(): any
+    if cachedCatalog == nil then
+        cachedCatalog = Catalog.read()
+    end
+    return cachedCatalog
+end
 local Runtime = {}
 
 local PICK_DELAY_SECONDS: number = (config :: any).thresholds.adventurePickDelaySeconds
@@ -293,10 +302,16 @@ local function liveDependencies(): any
         -- True when every basic card of the pool is owned at its level cap (the run's card state, found in memory:
         -- BasicCards/ReserveBasicCards {CardName, Level, Rarity}).
         allBasicCardsOwned = (function(): () -> boolean
-            local cached: any = setmetatable({}, { __mode = "v" })
+            local cached: any = {}
+            local lastScan = -math.huge
             return function(): boolean
                 local state: any = cached.state
                 if type(state) ~= "table" or type(rawget(state, "BasicCards")) ~= "table" then
+                    -- A memory scan freezes the game for a moment: never more than every 30 s.
+                    if os.clock() - lastScan < 30 then
+                        return false
+                    end
+                    lastScan = os.clock()
                     state = nil
                     local getgc: any = (getfenv() :: any).getgc
                     if type(getgc) ~= "function" then
@@ -333,7 +348,7 @@ local function liveDependencies(): any
                         end
                     end
                 end
-                local okCatalog, catalog = pcall(Catalog.read)
+                local okCatalog, catalog = pcall(readCatalog)
                 if not okCatalog or type(catalog) ~= "table" then
                     return false
                 end
@@ -354,7 +369,7 @@ local function liveDependencies(): any
             return root and root.CFrame
         end,
         basicCardNames = (function(): any
-            local ok, catalog = pcall(Catalog.read)
+            local ok, catalog = pcall(readCatalog)
             if not ok or type(catalog) ~= "table" then
                 return nil
             end
@@ -366,7 +381,7 @@ local function liveDependencies(): any
         end)(),
         characterCardName = (function(): any
             local ok, catalog = pcall(function()
-                return Catalog.read()
+                return readCatalog()
             end)
             return if ok and type(catalog) == "table" then catalog.characterCardName else nil
         end)(),
@@ -865,7 +880,7 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
             else nil
         local nameOf: any = deps.characterCardName
         if type(nameOf) ~= "table" then
-            local okCatalog, catalog = pcall(Catalog.read)
+            local okCatalog, catalog = pcall(readCatalog)
             nameOf = if okCatalog and type(catalog) == "table" then catalog.characterCardName else nil
         end
         -- The order follows the run's own character (a resumed run can differ from the saved choice).
@@ -1399,6 +1414,9 @@ function Runtime.new(getSettings: () -> any, injected: any?): any
         local request = if type(mechanics) == "table" then mechanics.ItchesInteractRequest else nil
         local yenOf: any = deps.yen
         if type(request) ~= "table" or type(request.Fire) ~= "function" or type(yenOf) ~= "function" then
+            return
+        end
+        if next(itches) == nil then
             return
         end
         local ownedFn: any = deps.allBasicCardsOwned

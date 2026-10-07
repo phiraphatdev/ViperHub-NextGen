@@ -566,7 +566,7 @@ do
                     macroListCacheSeconds = 5,
                     presetSwitchTimeoutSeconds = 8,
                     presetRequestSeconds = 8,
-                    startDelaySeconds = 6,
+                    startDelaySeconds = 1.5,
                     riftAttemptWaitSeconds = 45,
                     returnGateMaxSeconds = 8,
                     adventureStateRetrySeconds = 5,
@@ -9093,6 +9093,16 @@ do
             local Choice = __DARKLUA_BUNDLE_MODULES.A()
             local Listen = __DARKLUA_BUNDLE_MODULES.B()
             local Catalog = __DARKLUA_BUNDLE_MODULES.w()
+            local cachedCatalog = nil
+
+            local function readCatalog()
+                if cachedCatalog == nil then
+                    cachedCatalog = Catalog.read()
+                end
+
+                return cachedCatalog
+            end
+
             local Runtime = {}
             local PICK_DELAY_SECONDS = (config).thresholds.adventurePickDelaySeconds
             local REPEAT_SECONDS = (config).thresholds.adventureRepeatSeconds
@@ -9382,14 +9392,18 @@ do
                         return nil
                     end,
                     allBasicCardsOwned = (function()
-                        local cached = setmetatable({}, {
-                            __mode = 'v',
-                        })
+                        local cached = {}
+                        local lastScan = -math.huge
 
                         return function()
                             local state = cached.state
 
                             if type(state) ~= 'table' or type(rawget(state, 'BasicCards')) ~= 'table' then
+                                if os.clock() - lastScan < 30 then
+                                    return false
+                                end
+
+                                lastScan = os.clock()
                                 state = nil
 
                                 local getgc = ((getfenv())).getgc
@@ -9435,7 +9449,7 @@ do
                                 end
                             end
 
-                            local okCatalog, catalog = pcall(Catalog.read)
+                            local okCatalog, catalog = pcall(readCatalog)
 
                             if not okCatalog or type(catalog) ~= 'table' then
                                 return false
@@ -9462,7 +9476,7 @@ do
                         return root and root.CFrame
                     end,
                     basicCardNames = (function()
-                        local ok, catalog = pcall(Catalog.read)
+                        local ok, catalog = pcall(readCatalog)
 
                         if not ok or type(catalog) ~= 'table' then
                             return nil
@@ -9478,7 +9492,7 @@ do
                     end)(),
                     characterCardName = (function()
                         local ok, catalog = pcall(function()
-                            return Catalog.read()
+                            return readCatalog()
                         end)
 
                         return if ok and type(catalog) == 'table'then catalog.characterCardName else nil
@@ -10019,7 +10033,7 @@ do
                     local nameOf = deps.characterCardName
 
                     if type(nameOf) ~= 'table' then
-                        local okCatalog, catalog = pcall(Catalog.read)
+                        local okCatalog, catalog = pcall(readCatalog)
 
                         nameOf = if okCatalog and type(catalog) == 'table'then catalog.characterCardName else nil
                     end
@@ -10578,6 +10592,9 @@ do
                     local yenOf = deps.yen
 
                     if type(request) ~= 'table' or type(request.Fire) ~= 'function' or type(yenOf) ~= 'function' then
+                        return
+                    end
+                    if next(itches) == nil then
                         return
                     end
 
@@ -19548,17 +19565,45 @@ function GameModule.start(context)
             return
         end
 
-        joiner.start(context)
-        macro.start(context)
-        gameSettings.start(context)
-        autoPlay.start(context)
-        webhook.start(context, {
-            joiner = joiner,
-            autoPlay = autoPlay,
-            macro = macro,
-        })
-        misc.start(context)
-        adventureRun.start()
+        local timings = {}
+
+        local function timed(name, run)
+            local started = os.clock()
+
+            run()
+
+            timings[name] = os.clock() - started
+        end
+
+        timed('joiner', function()
+            joiner.start(context)
+        end)
+        timed('macro', function()
+            macro.start(context)
+        end)
+        timed('gameSettings', function()
+            gameSettings.start(context)
+        end)
+        timed('autoPlay', function()
+            autoPlay.start(context)
+        end)
+        timed('webhook', function()
+            webhook.start(context, {
+                joiner = joiner,
+                autoPlay = autoPlay,
+                macro = macro,
+            })
+        end)
+        timed('misc', function()
+            misc.start(context)
+        end)
+        timed('adventure', function()
+            adventureRun.start()
+        end)
+
+        local contextAny = context
+
+        contextAny.startTimings = timings
 
         local session = ((getfenv())).shared and ((getfenv())).shared.ViperHubNextGen
 

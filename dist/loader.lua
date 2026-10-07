@@ -2939,8 +2939,50 @@ do
             local App = {}
             local HOME_GROUP = 'Home'
             local SYSTEM_GROUP = 'System'
+            local FRAME_BUDGET_SECONDS = 0.008
 
-            local function mountPage(host, window, context, page)
+            local function isContainer(value)
+                return type(value) == 'table' and type(value.Toggle) == 'function' and type(value.Paragraph) == 'function'
+            end
+            local function budgeted(target, clock)
+                local taskApi = ((getfenv())).task
+                local proxy = {}
+
+                setmetatable(proxy, {
+                    __index = function(_, key)
+                        local value = target[key]
+
+                        if type(value) ~= 'function' then
+                            return value
+                        end
+
+                        return function(selfArg, ...)
+                            local results = table.pack((value)(if selfArg == proxy then target else selfArg,
+...))
+
+                            for index = 1, results.n do
+                                if isContainer(results[index]) then
+                                    results[index] = budgeted(results[index], clock)
+                                end
+                            end
+
+                            if os.clock() - clock.started > FRAME_BUDGET_SECONDS and type(taskApi) == 'table' then
+                                pcall(taskApi.wait)
+
+                                clock.started = os.clock()
+                            end
+
+                            return table.unpack(results, 1, results.n)
+                        end
+                    end,
+                    __newindex = function(_, key, value)
+                        target[key] = value
+                    end,
+                })
+
+                return proxy
+            end
+            local function mountPage(host, window, context, page, later)
                 local tab = host:Tab({
                     Title = page.title,
                     Icon = page.icon or 'layout-grid',
@@ -2951,21 +2993,41 @@ do
 
                 if page.render then
                     local render = page.render
-                    local ok = pcall(render, tab, window)
 
-                    if not ok then
-                        local log = context.log
-
-                        if type(log) == 'function' then
-                            (log)('PAGE_RENDER_FAILED')
+                    local function draw()
+                        if context.alive == false then
+                            return
                         end
 
-                        pcall(function()
-                            tab:Paragraph({
-                                Title = page.title,
-                                Desc = 'This page could not be shown.',
-                            })
-                        end)
+                        local started = os.clock()
+                        local ok = pcall(render, if later then budgeted(tab, {
+                            started = os.clock(),
+                        })else tab, window)
+                        local timings = context.pageTimings
+
+                        if type(timings) == 'table' then
+                            timings[tostring(page.title)] = os.clock() - started
+                        end
+                        if not ok then
+                            local log = context.log
+
+                            if type(log) == 'function' then
+                                (log)('PAGE_RENDER_FAILED')
+                            end
+
+                            pcall(function()
+                                tab:Paragraph({
+                                    Title = page.title,
+                                    Desc = 'This page could not be shown.',
+                                })
+                            end)
+                        end
+                    end
+
+                    if later then
+                        table.insert(later, draw)
+                    else
+                        draw()
                     end
                 else
                     tab:Paragraph({
@@ -3030,10 +3092,14 @@ do
                     Overview.mount(host(HOME_GROUP), metadata)
                 end
 
-                for _, page in pages or {}do
+                context.pageTimings = {}
+
+                local later = {}
+
+                for index, page in pages or {}do
                     local group = page.group or (if page.home then HOME_GROUP else tostring(metadata.name))
 
-                    mountPage(host(group), window, context, page)
+                    mountPage(host(group), window, context, page, if index == 1 then nil else later)
                 end
 
                 Settings.mount(window, store, library, keyCodes, context, host(SYSTEM_GROUP))
@@ -3041,6 +3107,21 @@ do
                 local refreshDiagnostics = Diagnostics.mount(host(SYSTEM_GROUP), buffer)
 
                 window:SelectTab(1)
+
+                local taskApi = ((getfenv())).task
+
+                if type(taskApi) == 'table' and type(taskApi.spawn) == 'function' then
+                    (taskApi.spawn)(function()
+                        for _, draw in later do
+                            (taskApi.wait)()
+                            draw()
+                        end
+                    end)
+                else
+                    for _, draw in later do
+                        draw()
+                    end
+                end
 
                 return window, refreshDiagnostics
             end

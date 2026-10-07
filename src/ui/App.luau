@@ -16,8 +16,46 @@ local App = {}
 local HOME_GROUP = "Home"
 local SYSTEM_GROUP = "System"
 
+local FRAME_BUDGET_SECONDS = 0.008
+
+-- Building elements is slow in WindUI (a big page took seconds and froze the game). Pages draw through this proxy:
+-- every call on a container (tab, section, group) forwards to WindUI and, once the frame's budget is used, waits a
+-- frame, so a page fills in over several frames instead of freezing one. Containers it returns are wrapped too.
+local function isContainer(value: any): boolean
+    return type(value) == "table" and type(value.Toggle) == "function" and type(value.Paragraph) == "function"
+end
+local function budgeted(target: any, clock: { started: number }): any
+    local taskApi: any = (getfenv() :: any).task
+    local proxy = {}
+    setmetatable(proxy, {
+        __index = function(_, key: any): any
+            local value: any = target[key]
+            if type(value) ~= "function" then
+                return value
+            end
+            return function(selfArg: any, ...: any): ...any
+                local results = table.pack((value :: any)(if selfArg == proxy then target else selfArg, ...))
+                for index = 1, results.n do
+                    if isContainer(results[index]) then
+                        results[index] = budgeted(results[index], clock)
+                    end
+                end
+                if os.clock() - clock.started > FRAME_BUDGET_SECONDS and type(taskApi) == "table" then
+                    pcall(taskApi.wait)
+                    clock.started = os.clock()
+                end
+                return table.unpack(results, 1, results.n)
+            end
+        end,
+        __newindex = function(_, key: any, value: any)
+            target[key] = value
+        end,
+    })
+    return proxy
+end
+
 -- Creates one tab, rendering it in isolation: a broken page must not take the other tabs (or startup) down.
-local function mountPage(host: any, window: any, context: any, page: any)
+local function mountPage(host: any, window: any, context: any, page: any, later: { () -> () }?)
     local tab = host:Tab({
         Title = page.title,
         Icon = page.icon or "layout-grid",
@@ -27,15 +65,32 @@ local function mountPage(host: any, window: any, context: any, page: any)
     })
     if page.render then
         local render: any = page.render
-        local ok = pcall(render, tab, window)
-        if not ok then
-            local log: any = context.log
-            if type(log) == "function" then
-                (log :: any)("PAGE_RENDER_FAILED")
+        local function draw()
+            if context.alive == false then
+                return
             end
-            pcall(function()
-                tab:Paragraph({ Title = page.title, Desc = "This page could not be shown." })
-            end)
+            local started = os.clock()
+            local ok = pcall(render, if later then budgeted(tab, { started = os.clock() }) else tab, window)
+            -- Diagnostics: how long each page took to draw (seconds), readable from the session.
+            local timings: any = context.pageTimings
+            if type(timings) == "table" then
+                timings[tostring(page.title)] = os.clock() - started
+            end
+            if not ok then
+                local log: any = context.log
+                if type(log) == "function" then
+                    (log :: any)("PAGE_RENDER_FAILED")
+                end
+                pcall(function()
+                    tab:Paragraph({ Title = page.title, Desc = "This page could not be shown." })
+                end)
+            end
+        end
+        -- Pages after the first are drawn just after the window shows, one per frame, so it opens at once.
+        if later then
+            table.insert(later, draw)
+        else
+            draw()
         end
     else
         tab:Paragraph({ Title = page.title, Desc = page.description })
@@ -98,13 +153,28 @@ function App.mount(
         Overview.mount(host(HOME_GROUP), metadata)
     end
     -- Pages without a group are listed under the game's own name, so every game gets a grouped sidebar.
-    for _, page in pages or {} do
+    context.pageTimings = {}
+    local later: { () -> () } = {}
+    for index, page in pages or {} do
         local group = page.group or (if page.home then HOME_GROUP else tostring(metadata.name))
-        mountPage(host(group), window, context, page)
+        mountPage(host(group), window, context, page, if index == 1 then nil else later)
     end
     Settings.mount(window, store, library, keyCodes, context, host(SYSTEM_GROUP))
     local refreshDiagnostics = Diagnostics.mount(host(SYSTEM_GROUP), buffer)
     window:SelectTab(1)
+    local taskApi: any = (getfenv() :: any).task
+    if type(taskApi) == "table" and type(taskApi.spawn) == "function" then
+        (taskApi.spawn :: any)(function()
+            for _, draw in later do
+                (taskApi.wait :: any)()
+                draw()
+            end
+        end)
+    else
+        for _, draw in later do
+            draw()
+        end
+    end
     return window, refreshDiagnostics
 end
 return App
