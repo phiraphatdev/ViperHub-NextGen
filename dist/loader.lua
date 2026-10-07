@@ -3455,17 +3455,30 @@ do
 
                 local taskApi = ((getfenv())).task
 
+                local function pagesDone()
+                    local sharedState = ((getfenv())).shared
+                    local active = if type(sharedState) == 'table'then sharedState.ViperHubNextGen else nil
+
+                    if type(active) == 'table' and type(active.markLoaded) == 'function' then
+                        pcall(active.markLoaded, 'pages')
+                    end
+                end
+
                 if type(taskApi) == 'table' and type(taskApi.spawn) == 'function' then
                     (taskApi.spawn)(function()
                         for _, draw in later do
                             (taskApi.wait)()
                             draw()
                         end
+
+                        pagesDone()
                     end)
                 else
                     for _, draw in later do
                         draw()
                     end
+
+                    pagesDone()
                 end
 
                 return window, refreshDiagnostics
@@ -3852,6 +3865,44 @@ local function run()
     local window, refreshDiagnostics = App.mount(exports.ui, context, gameModule.metadata, store, buffer, ENV.Enum.KeyCode, gameModule.pages, gameModule.windowTags)
 
     session.window = window
+
+    local library = exports.ui
+
+    session.notifyHub = function(title, text, seconds)
+        local saved = session.config
+
+        if saved ~= nil and saved.get().notifications == false then
+            return
+        end
+        if type(library) == 'table' and type(library.Notify) == 'function' then
+            pcall(library.Notify, library, {
+                Title = title,
+                Content = text,
+                Duration = seconds or 6,
+                Icon = 'zap',
+            })
+        end
+    end
+
+    local pending = {
+        pages = true,
+        features = true,
+    }
+
+    session.markLoaded = function(step)
+        if pending[step] == nil then
+            return
+        end
+
+        pending[step] = nil
+
+        if next(pending) == nil and context.alive then
+            local session2 = session
+
+            session2.notifyHub('ViperHub NextGen', 'Loaded: every page and feature is ready.', 6)
+            buffer.push('FULLY_LOADED')
+        end
+    end
 
     context.cleanup.add(gameModule.stop)
     gameModule.start(context)

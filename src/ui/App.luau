@@ -241,17 +241,26 @@ function App.mount(
     local refreshDiagnostics = Diagnostics.mount(host(SYSTEM_GROUP), buffer)
     window:SelectTab(1)
     local taskApi: any = (getfenv() :: any).task
+    local function pagesDone()
+        local sharedState: any = (getfenv() :: any).shared
+        local active: any = if type(sharedState) == "table" then sharedState.ViperHubNextGen else nil
+        if type(active) == "table" and type(active.markLoaded) == "function" then
+            pcall(active.markLoaded, "pages")
+        end
+    end
     if type(taskApi) == "table" and type(taskApi.spawn) == "function" then
         (taskApi.spawn :: any)(function()
             for _, draw in later do
                 (taskApi.wait :: any)()
                 draw()
             end
+            pagesDone()
         end)
     else
         for _, draw in later do
             draw()
         end
+        pagesDone()
     end
     return window, refreshDiagnostics
 end

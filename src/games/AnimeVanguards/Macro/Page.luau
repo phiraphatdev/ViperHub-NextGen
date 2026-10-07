@@ -378,13 +378,11 @@ function Page.mount(tab: any, runtime: any, window: any?, autoPlay: any?)
             end
             local text = table.concat(lines, "\n")
             status:SetDesc(result.summary .. "\n" .. text)
-            pcall(function()
-                env.game:GetService("StarterGui"):SetCore("SendNotification", {
-                    Title = (if result.matches then "✅ " else "❌ ") .. result.summary,
-                    Text = string.sub(text, 1, 250),
-                    Duration = 8,
-                })
-            end)
+            local title = (if result.matches then "✅ " else "❌ ") .. result.summary
+            local hub: any = if type(env.shared) == "table" then env.shared.ViperHubNextGen else nil
+            if type(hub) == "table" and type(hub.notifyHub) == "function" then
+                pcall(hub.notifyHub, title, text, 9)
+            end
         end,
     })
     misc:Button({
@@ -418,8 +416,7 @@ function Page.mount(tab: any, runtime: any, window: any?, autoPlay: any?)
     })
     misc:Toggle({
         Title = "Auto Equip Macro's Units",
-        Locked = true,
-        Desc = "Planned: inside a match, while Play macro is on and before Vote Start, put the macro's units on the team (never in the lobby). Locked until the in-match unit change is verified.",
+        Desc = "Can be switched any time, but acts only inside a match: while Play macro is on, before Vote Start, it puts the macro's units on the team. Never in the lobby.",
         Value = autoEquip,
         Callback = function(value: boolean)
             autoEquip = value

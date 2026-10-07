@@ -286,6 +286,35 @@ local function run()
         gameModule.windowTags
     )
     session.window = window
+    -- Hub notifications (the WindUI toast of the hub, not the game's own): session.notifyHub(title, text, seconds).
+    local library: any = exports.ui
+    session.notifyHub = function(title: string, text: string, seconds: number?)
+        local saved: any = session.config
+        if saved ~= nil and saved.get().notifications == false then
+            return
+        end
+        if type(library) == "table" and type(library.Notify) == "function" then
+            pcall(library.Notify, library, {
+                Title = title,
+                Content = text,
+                Duration = seconds or 6,
+                Icon = "zap",
+            })
+        end
+    end
+    -- "Loaded" notice once every page is drawn and every feature has started (steps are marked by App and the game).
+    local pending: { [string]: boolean } = { pages = true, features = true }
+    session.markLoaded = function(step: string)
+        if pending[step] == nil then
+            return
+        end
+        pending[step] = nil
+        if next(pending) == nil and context.alive then
+            local session2: any = session
+            session2.notifyHub("ViperHub NextGen", "Loaded: every page and feature is ready.", 6)
+            buffer.push("FULLY_LOADED")
+        end
+    end
     context.cleanup.add(gameModule.stop)
     gameModule.start(context)
     if not context.alive then

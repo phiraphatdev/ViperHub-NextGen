@@ -222,6 +222,11 @@ function GameModule.start(context: Types.Context)
             session.adventure = adventureRun
         end
         context.log("GAME_STARTED")
+        local sharedState: any = (getfenv() :: any).shared
+        local active: any = if type(sharedState) == "table" then sharedState.ViperHubNextGen else nil
+        if type(active) == "table" and type(active.markLoaded) == "function" then
+            pcall(active.markLoaded, "features")
+        end
     end
 
     if type(taskApi) == "table" and type(taskApi.spawn) == "function" then

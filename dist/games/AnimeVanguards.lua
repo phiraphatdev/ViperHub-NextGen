@@ -12430,13 +12430,13 @@ do
                         local text = table.concat(lines, '\n')
 
                         status:SetDesc(result.summary .. '\n' .. text)
-                        pcall(function()
-                            env.game:GetService('StarterGui'):SetCore('SendNotification', {
-                                Title = (if result.matches then'\u{2705} 'else'\u{274c} ') .. result.summary,
-                                Text = string.sub(text, 1, 250),
-                                Duration = 8,
-                            })
-                        end)
+
+                        local title = (if result.matches then'\u{2705} 'else'\u{274c} ') .. result.summary
+                        local hub = if type(env.shared) == 'table'then env.shared.ViperHubNextGen else nil
+
+                        if type(hub) == 'table' and type(hub.notifyHub) == 'function' then
+                            pcall(hub.notifyHub, title, text, 9)
+                        end
                     end,
                 })
                 misc:Button({
@@ -12481,9 +12481,8 @@ do
                 })
                 misc:Toggle({
                     Title = "Auto Equip Macro's Units",
-                    Locked = true,
                     Desc =
-[[Planned: inside a match, while Play macro is on and before Vote Start, put the macro's units on the team (never in the lobby). Locked until the in-match unit change is verified.]],
+[[Can be switched any time, but acts only inside a match: while Play macro is on, before Vote Start, it puts the macro's units on the team. Never in the lobby.]],
                     Value = autoEquip,
                     Callback = function(value)
                         autoEquip = value
@@ -20517,6 +20516,13 @@ function GameModule.start(context)
         end
 
         context.log('GAME_STARTED')
+
+        local sharedState = ((getfenv())).shared
+        local active = if type(sharedState) == 'table'then sharedState.ViperHubNextGen else nil
+
+        if type(active) == 'table' and type(active.markLoaded) == 'function' then
+            pcall(active.markLoaded, 'features')
+        end
     end
 
     if type(taskApi) == 'table' and type(taskApi.spawn) == 'function' then
