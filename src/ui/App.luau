@@ -70,7 +70,7 @@ end
 local function isContainer(value: any): boolean
     return type(value) == "table" and type(value.Toggle) == "function" and type(value.Paragraph) == "function"
 end
-local function budgeted(target: any, clock: { started: number }): any
+local function budgeted(target: any, clock: { started: number }, root: boolean?): any
     local taskApi: any = (getfenv() :: any).task
     local proxy = {}
     setmetatable(proxy, {
@@ -80,6 +80,16 @@ local function budgeted(target: any, clock: { started: number }): any
                 return value
             end
             return function(selfArg: any, ...: any): ...any
+                -- Waits only before the tab's own top-level calls, so a section is always filled in the same frame it
+                -- was created (waiting right after creating one left WindUI's open section sized empty, live).
+                if
+                    root ~= false
+                    and os.clock() - clock.started > FRAME_BUDGET_SECONDS
+                    and type(taskApi) == "table"
+                then
+                    pcall(taskApi.wait)
+                    clock.started = os.clock()
+                end
                 local callStarted = os.clock()
                 local options: any = select(1, ...)
                 local results
@@ -106,12 +116,8 @@ local function budgeted(target: any, clock: { started: number }): any
                 end
                 for index = 1, results.n do
                     if isContainer(results[index]) then
-                        results[index] = budgeted(results[index], clock)
+                        results[index] = budgeted(results[index], clock, false)
                     end
-                end
-                if os.clock() - clock.started > FRAME_BUDGET_SECONDS and type(taskApi) == "table" then
-                    pcall(taskApi.wait)
-                    clock.started = os.clock()
                 end
                 return table.unpack(results, 1, results.n)
             end
@@ -139,7 +145,8 @@ local function mountPage(host: any, window: any, context: any, page: any, later:
                 return
             end
             local started = os.clock()
-            local ok = pcall(render, if later then budgeted(tab, { started = os.clock() }) else tab, window)
+            local ok =
+                pcall(render, if later then budgeted(tab, { started = os.clock() }, false) else tab, window)
             -- Diagnostics: how long each page took to draw (seconds), readable from the session.
             local timings: any = context.pageTimings
             if type(timings) == "table" then

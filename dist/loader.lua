@@ -2991,7 +2991,7 @@ do
             local function isContainer(value)
                 return type(value) == 'table' and type(value.Toggle) == 'function' and type(value.Paragraph) == 'function'
             end
-            local function budgeted(target, clock)
+            local function budgeted(target, clock, root)
                 local taskApi = ((getfenv())).task
                 local proxy = {}
 
@@ -3004,6 +3004,12 @@ do
                         end
 
                         return function(selfArg, ...)
+                            if root ~= false and os.clock() - clock.started > FRAME_BUDGET_SECONDS and type(taskApi) == 'table' then
+                                pcall(taskApi.wait)
+
+                                clock.started = os.clock()
+                            end
+
                             local callStarted = os.clock()
                             local options = select(1, ...)
                             local results
@@ -3027,14 +3033,8 @@ do
 
                             for index = 1, results.n do
                                 if isContainer(results[index]) then
-                                    results[index] = budgeted(results[index], clock)
+                                    results[index] = budgeted(results[index], clock, false)
                                 end
-                            end
-
-                            if os.clock() - clock.started > FRAME_BUDGET_SECONDS and type(taskApi) == 'table' then
-                                pcall(taskApi.wait)
-
-                                clock.started = os.clock()
                             end
 
                             return table.unpack(results, 1, results.n)
@@ -3067,7 +3067,7 @@ do
                         local started = os.clock()
                         local ok = pcall(render, if later then budgeted(tab, {
                             started = os.clock(),
-                        })else tab, window)
+                        }, false)else tab, window)
                         local timings = context.pageTimings
 
                         if type(timings) == 'table' then
