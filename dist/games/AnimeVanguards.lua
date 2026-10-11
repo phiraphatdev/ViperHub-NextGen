@@ -231,11 +231,6 @@ do
                             label = 'Rerolls',
                             emoji = '\u{1f3b2}',
                         }),
-                        table.freeze({
-                            key = 'Trophies',
-                            label = 'Trophies',
-                            emoji = '\u{1f3c6}',
-                        }),
                     }),
                     levelAttribute = 'Level',
                     endScreen = table.freeze({

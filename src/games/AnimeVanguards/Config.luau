@@ -145,7 +145,6 @@ return table.freeze({
             table.freeze({ key = "Gems", label = "Gems", emoji = "💎" }),
             table.freeze({ key = "Gold", label = "Gold", emoji = "🪙" }),
             table.freeze({ key = "TraitRerolls", label = "Rerolls", emoji = "🎲" }),
-            table.freeze({ key = "Trophies", label = "Trophies", emoji = "🏆" }),
         }),
         levelAttribute = "Level",
         -- Match end screen layout (PlayerGui.EndScreen), read live: text labels by child path from the screen.
