@@ -264,7 +264,7 @@ function Events.build(kind: string, data: any, ctx: any, config: any): (Embed.Sp
             spec.description = table.concat(lines, "\n")
         end
 
-        -- Unit Contribution (the game's Summary page): damage share bar, damage, DPS while deployed and takedowns.
+        -- Unit Contribution (the game's Summary page): damage share bar, damage and takedowns.
         local unitRows: { any } = if type(info.units) == "table" then info.units else {}
         if #unitRows > 0 then
             local total = 0
@@ -280,24 +280,17 @@ function Events.build(kind: string, data: any, ctx: any, config: any): (Embed.Sp
                 local filled = math.clamp(math.floor(share * SHARE_BAR + 0.5), 0, SHARE_BAR)
                 local style = config.rarityStyle[row.rarity or ""]
                 local badge = if index == 1 then "👑" elseif style then style.emoji else "▫️"
-                local count = if row.placements and row.placements > 1
-                    then string.format(" `x%d`", row.placements)
-                    else ""
-                local dps = if row.deployed and row.deployed > 0
-                    then " • ⚡ `" .. Embed.number(row.damage / row.deployed) .. "/s`"
-                    else ""
+                -- One aligned line per unit: bar and share in one code span, then unit, damage and takedowns.
                 table.insert(
                     contribution,
                     string.format(
-                        "%s **%s**%s\n`%s%s` **%.1f%%** • 💥 `%s`%s • ☠️ `%s`",
-                        tostring(badge),
-                        tostring(row.name),
-                        tostring(count),
+                        "`%s%s %5.1f%%` • %s **%s** • 💥 `%s` • ☠️ `%s`",
                         string.rep("▰", filled),
                         string.rep("▱", SHARE_BAR - filled),
                         share * 100,
+                        tostring(badge),
+                        tostring(row.name),
                         Embed.number(row.damage),
-                        tostring(dps),
                         Embed.commas(row.takedowns)
                     )
                 )

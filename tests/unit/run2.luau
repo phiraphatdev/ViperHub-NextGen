@@ -1090,15 +1090,16 @@ test("Webhook Unit Contribution field layout and removed DPS lines", function()
         end
     end
     assert(field, "contribution field present")
-    assert(string.find(field, "👑 **Wrath (Assault)** `x10`", 1, true) ~= nil, field)
     assert(
-        string.find(field, "**51.4%**", 1, true) ~= nil and string.find(field, "18.5K/s", 1, true) ~= nil,
+        string.find(field, "  51.4%` • 👑 **Wrath (Assault)** • 💥 `6.08M` • ☠️ `62`", 1, true)
+            ~= nil,
         field
     )
     assert(
-        string.find(field, "**48.6%**", 1, true) ~= nil and string.find(field, "`235`", 1, true) ~= nil,
+        string.find(field, "  48.6%` • ", 1, true) ~= nil and string.find(field, "`235`", 1, true) ~= nil,
         field
     )
+    assert(string.find(field, "/s`", 1, true) == nil and string.find(field, "`x10`", 1, true) == nil, field)
     assert(string.find(field, "Match total", 1, true) ~= nil)
     assert(string.find(embed.description or "", "DPS", 1, true) == nil, "player DPS line removed")
     assert(string.find(embed.description or "", "Kills/min", 1, true) == nil, "kills per minute removed")

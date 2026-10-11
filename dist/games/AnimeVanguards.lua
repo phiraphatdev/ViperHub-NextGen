@@ -17767,10 +17767,8 @@ do
                                 elseif style
                                 then style.emoji
                                 else'\u{25ab}\u{fe0f}'
-                            local count = if row.placements and row.placements > 1 then string.format(' `x%d`', row.placements)else''
-                            local dps = if row.deployed and row.deployed > 0 then' \u{2022} \u{26a1} `' .. Embed.number(row.damage / row.deployed) .. '/s`'else''
 
-                            table.insert(contribution, string.format('%s **%s**%s\n`%s%s` **%.1f%%** \u{2022} \u{1f4a5} `%s`%s \u{2022} \u{2620}\u{fe0f} `%s`', tostring(badge), tostring(row.name), tostring(count), string.rep('\u{25b0}', filled), string.rep('\u{25b1}', SHARE_BAR - filled), share * 100, Embed.number(row.damage), tostring(dps), Embed.commas(row.takedowns)))
+                            table.insert(contribution, string.format('`%s%s %5.1f%%` \u{2022} %s **%s** \u{2022} \u{1f4a5} `%s` \u{2022} \u{2620}\u{fe0f} `%s`', string.rep('\u{25b0}', filled), string.rep('\u{25b1}', SHARE_BAR - filled), share * 100, tostring(badge), tostring(row.name), Embed.number(row.damage), Embed.commas(row.takedowns)))
                         end
 
                         table.insert(contribution, '**Match total** \u{2022} \u{1f4a5} `' .. Embed.number(total) .. '`')
